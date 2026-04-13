@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+        CHANGE_NETWORK_STATE satisfies Android 14's "any of" requirement for
+        FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE. It is a normal (install-time) permission so
+        it is always granted, covering the case where the service auto-restarts after a crash
+        before any USB device permission has been exercised in the new process.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <application
+        android:name=".VtruxApplication"
+        android:label="Vtrux"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+        <!-- Launcher entry point — portrait, blank screen, handles already-connected dongles -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Invisible trampoline launched by Android when an Innomaker is plugged in.
+            Requests USB permission (result goes to VtruxApplication.usbReceiver) then
+            immediately finishes — the logging service runs entirely in the background.
+        -->
+        <activity
+            android:name=".UsbLaunchActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
+        </activity>
+
+    </application>
+
+</manifest>

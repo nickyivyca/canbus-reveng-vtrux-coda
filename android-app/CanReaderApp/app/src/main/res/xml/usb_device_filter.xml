@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Innomaker USB2CAN (candleLight / gs_usb): VID=0x1D50 PID=0x606F -->
+    <usb-device vendor-id="7504" product-id="24687" />
+</resources>
