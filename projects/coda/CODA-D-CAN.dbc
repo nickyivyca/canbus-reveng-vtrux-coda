@@ -1,0 +1,152 @@
+VERSION ""
+
+
+NS_ :
+
+BS_:
+
+BU_: DLCM EPS ESC GWM RCU TCM
+
+
+BO_ 82 ParkingBrake_0x052: 8 Vector__XXX
+ SG_ ParkingBrake : 2|1@0+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 128 EPS_SteeringAngle: 8 EPS
+ SG_ SteeringAngle : 23|16@0+ (0.1,-200.0) [-540|540] "deg" DLCM
+ SG_ CRC8 : 63|8@0+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 448 MCM_CoreTelemetry: 8 DLCM
+ SG_ Torque      : 0|16@1+  (0.1,-3212.8)  [-500|500]     "Nm"  Vector__XXX
+ SG_ HV_Voltage  : 16|16@1+ (0.1,-3212.8)  [0|500]        "V"   Vector__XXX
+ SG_ HV_Current  : 32|16@1+ (0.1,-3212.8)  [-500|500]     "A"   Vector__XXX
+ SG_ Motor_Speed : 48|16@1+ (0.5,-16064.0) [-12000|12000] "rpm" Vector__XXX
+
+BO_ 512 ESC_FrontWheelSpeeds: 8 ESC
+ SG_ SubFrameID              M  :  7|8@0+ (1,0)  [0|255]   "" Vector__XXX
+ SG_ WheelSpeed_RollingCounter m0 : 15|8@0+ (1,0)  [0|125]   "" Vector__XXX
+ SG_ WheelSpeed_LF_secondary m0 : 23|16@0+ (1,0) [0|65535] "" Vector__XXX
+ SG_ WheelSpeed_RF           m0 : 39|16@0+ (1,0) [0|65535] "" Vector__XXX
+ SG_ WheelSpeed_LF           m0 : 55|16@0+ (1,0) [0|65535] "" Vector__XXX
+
+BO_ 520 ESC_BrakePressure: 8 ESC
+ SG_ ESPSysSts : 13|1@0+ (1,0) [0|1] "" DLCM
+ SG_ BrakePressure : 23|16@0+ (1,-4096) [-4096|61439] "" DLCM
+ SG_ WheelSpeed_RR : 39|16@0+ (1,0) [0|65535] "" DLCM
+ SG_ WheelSpeed_LR : 55|16@0+ (1,0) [0|65535] "" DLCM
+
+BO_ 528 VehicleMode_0x210: 6 Vector__XXX
+ SG_ ThottlePedalPos : 23|8@0+ (0.4,0) [0|99.6] "%" DLCM
+
+BO_ 530 DLCM_TorqueRequest: 6 DLCM
+ SG_ BrakeSW  : 16|1@0+ (1,0) [0|1]   "" Vector__XXX
+
+BO_ 533 misc_0x215: 2 Vector__XXX
+
+BO_ 576 SystemState_0x240: 8 Vector__XXX
+
+BO_ 584 ExteriorLights_0x248: 8 Vector__XXX
+
+BO_ 577 MCM_Thermal: 8 DLCM
+
+BO_ 625 misc_0x271: 8 Vector__XXX
+
+BO_ 632 DLCM_DriveKeepalive: 2 DLCM
+
+BO_ 776 TCM_ParkPin: 5 Vector__XXX
+ SG_ ParkPinState    : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ InputShaftSpeed : 8|16@1+ (0.5,-16064.0) [-12000|12000] "rpm" Vector__XXX
+
+BO_ 789 DLCMStatus: 6 DLCM
+ SG_ Brake_SW : 0|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ RollingCounter : 7|6@0+ (1,0) [0|63] "" Vector__XXX
+ SG_ Batt_Volt : 47|8@0+ (0.1,0) [0|25.5] "V" Vector__XXX
+
+BO_ 805 DCANAnchor_0x325: 4 Vector__XXX
+
+BO_ 816 misc_0x330: 1 Vector__XXX
+
+BO_ 880 misc_0x370: 8 Vector__XXX
+
+BO_ 1048 DLCM_Globals_0x418: 6 DLCM
+ SG_ PRND : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ GearStatus : 39|8@0+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1372 TCM_State: 4 Vector__XXX
+ SG_ TCMState : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1408 DCANAnchor_0x580: 4 Vector__XXX
+
+BO_ 1536 misc_0x600: 2 Vector__XXX
+
+BO_ 1786 GWM_VIN: 8 GWM
+ SG_ VIN_Frame M  : 7|8@0+  (1,0) [0|2]    "" Vector__XXX
+ SG_ VIN_C01  m0  : 15|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C02  m0  : 23|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C03  m0  : 31|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C04  m0  : 39|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C05  m0  : 47|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C06  m0  : 55|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C07  m0  : 63|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C08  m1  : 15|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C09  m1  : 23|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C10  m1  : 31|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C11  m1  : 39|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C12  m1  : 47|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C13  m1  : 55|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C14  m1  : 63|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C15  m2  : 15|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C16  m2  : 23|8@0+ (1,0) [32|127] "" Vector__XXX
+ SG_ VIN_C17  m2  : 31|8@0+ (1,0) [32|127] "" Vector__XXX
+
+CM_ BO_ 82 "Parking brake.";
+CM_ BO_ 128 "Steering angle sensor. CRC8-protected at B7.";
+CM_ SG_ 128 SteeringAngle "CRC8-protected.";
+CM_ BO_ 448 "MCM telemetry forwarded by DLCM from private Motor CAN sub-bus.";
+CM_ SG_ 448 Torque "Regen shows negative values.";
+CM_ SG_ 448 HV_Voltage "~335V at mid-SoC LFP pack.";
+CM_ SG_ 448 HV_Current "Positive=discharge.";
+CM_ SG_ 448 Motor_Speed "Positive=forward.";
+CM_ BO_ 512 "ESC front wheel speed message. Multiplexed by B0 (SubFrameID): 0x00=primary wheel speeds (200 Hz); 0x0A/0x0B=startup frames; 0x20=TC event frame (content unknown); 0x14=ABS fault state. Zero encoding 0xC000. Scale TBD.";
+CM_ SG_ 512 SubFrameID "B0 sub-frame selector. 0x00=primary wheel speeds (DBC mux gate). 0x0A/0x0B=startup transition frames. 0x20=TC event frame (content unknown). 0x14=parts car ABS fault (same wheel speed layout as 0x00). Non-0x00 frames do NOT contain valid wheel speeds.";
+CM_ SG_ 512 WheelSpeed_RollingCounter "B1 rolling counter 0-125, valid only in SubFrameID=0x00 sub-frames.";
+CM_ SG_ 512 WheelSpeed_LF "Zero=0xC000. Valid only in SubFrameID=0x00. Outer wheel in right turns. Spikes during FWD TC events. Scale TBD.";
+CM_ SG_ 512 WheelSpeed_RF "Zero=0xC000. Valid only in SubFrameID=0x00. Inner wheel in right turns. Spikes during FWD TC events. Scale TBD.";
+CM_ SG_ 512 WheelSpeed_LF_secondary "Identical to WheelSpeed_LF (B6-B7) -- same physical sensor, redundant broadcast.";
+CM_ BO_ 520 "ESC module. B4-B5=WheelSpeed_RR, B6-B7=WheelSpeed_LR (corrected from prior FL/FR hypothesis).";
+CM_ SG_ 520 BrakePressure "Engages ~40ms after brake switch.";
+CM_ SG_ 520 ESPSysSts "B1 bit 5. Active (0x20) when ESC on, 0x00 at key-off.";
+CM_ SG_ 520 WheelSpeed_RR "Zero=0xC000. Non-driven axle (does not spike during FWD TC events). C102B DTC 'Right Rear Wheel Speed Sensor Circuit' -- parts car confirms by stuck-at-0xFFFF fault sentinel. Scale TBD.";
+CM_ SG_ 520 WheelSpeed_LR "Zero=0xC000. Non-driven axle. Tracks vehicle reference speed. Scale TBD.";
+CM_ BO_ 528 "Vehicle mode / throttle. 50 Hz.";
+CM_ BO_ 530 "DLCM Torque Request message (NOT steering angle -- VICD originally tagged EPS_SAM_1). Two alternating sub-frames at 25 Hz each (50 Hz total). Also carries TorqueRequest and KeepWakeNetworkDLCM per CODACAN, byte positions unconfirmed.";
+CM_ SG_ 530 BrakeSW "Triple-redundancy: same signal at 0x315 B0.bit0 and 0x200 B1.bit0.";
+CM_ BO_ 533 "VICD: misc_Recvd 0x215. Candidate: TCM.ParkLock? 16-bit word, 1/128 scale.";
+CM_ BO_ 576 "System power mode. B0: 0x11=key-on (HV off), 0x01=Ready (HV on). Medium confidence. D+B CAN (gateway rebroadcast). DLC unconfirmed. See notes/driver-inputs.md.";
+CM_ BO_ 584 "Exterior lights state. B1.bit3=any exterior lights on (boolean). B6=possible instrument dimming (unconfirmed). Medium confidence. D+B CAN (gateway rebroadcast). DLC unconfirmed. See notes/driver-inputs.md.";
+CM_ BO_ 577 "MCM motor thermal data relayed by DLCM from private Motor CAN sub-bus. Carries Rotor temp, Stator temp, IGBT temp per CODACAN DLCM tab. Encoding: probable offset -40 degC, per-byte assignment unconfirmed. NOTE: 8 bytes seen in log data -- DLC may be higher than 3, verify before use.";
+CM_ BO_ 625 "VICD: misc_Recvd 0x271. Death Counter partial (integer bytes).";
+CM_ BO_ 632 "DLCM Drive Keepalive. Carries KeepWakeNetworkDLCM and EngineStsRun per CODACAN. B1 bit 6 (mask 0x40) = HV/Drive Ready flag (medium confidence). Signal byte positions unconfirmed.";
+CM_ BO_ 776 "BorgWarner TCM park pin state + input shaft speed. D CAN exclusive. Cross-vehicle match with Vtrux 0x308. B3-B4=constant 0x00. Same encoding as Motor_Speed (0x1C0 B6-B7).";
+CM_ SG_ 776 ParkPinState "0x20=Park, 0x40=NotPark. Pin release leads GMLAN gear-change by ~13ms; pin lock lags by ~65ms (solenoid actuation delay).";
+CM_ SG_ 776 InputShaftSpeed "Zero=0x7D80. Input shaft (not output): ratio to motor RPM = 2.000 on both Vtrux and Coda regardless of gear ratio.";
+CM_ BO_ 789 "DLCM status. B0.bits2-7=rolling counter. B1,B3 zero when stationary.";
+CM_ SG_ 789 Brake_SW "Engages ~40ms before hydraulic pressure.";
+CM_ SG_ 789 Batt_Volt "Cross-check vs DCDC 14VMonitor (0x1D5).";
+CM_ BO_ 805 "D CAN exclusive anchor ID. Never rebroadcast to B CAN. Signal content unknown.";
+CM_ BO_ 816 "VICD: misc_Recvd 0x330. Long_Accel: signed byte, 0.08 m/s2/count.";
+CM_ BO_ 880 "VICD: misc_Recvd 0x370. Death Counter batch (6 bytes used: B0-B4,B7, 0.1 scale).";
+CM_ BO_ 1048 "DLCM globals. Active in both key-on and Ready states.";
+CM_ SG_ 1048 PRND "ASCII-encoded: P=0x50, R=0x52, N=0x4E, D=0x44.";
+CM_ SG_ 1048 GearStatus "B4 uint8. P=0xDD, R=0xBB, N=0x00, D=0x11. Intermediate values during shifts. Medium confidence.";
+CM_ BO_ 1372 "BorgWarner TCM state heartbeat. 10 Hz. B0=TCMState enum (see VAL_). B1-B3=constant 0x00. Cross-vehicle: Coda and Vtrux share identical structure.";
+CM_ SG_ 1372 TCMState "0x42=Steady Park, 0x04=Park releasing (~55ms after 0x308 pin release), 0x85=Drive/Manual, 0x01=Park engaging (~65ms after pin locks).";
+CM_ BO_ 1408 "D CAN exclusive anchor ID. Never rebroadcast to B CAN. Signal content unknown.";
+CM_ BO_ 1536 "VICD: misc_Recvd 0x600. Candidate: TPMS pressure (1.37 kPa/count). RCU on D CAN.";
+CM_ BO_ 1786 "GWM rebroadcasts VIN on D CAN (same 0x6FA as B CAN). See B CAN DBC for full encoding.";
+CM_ SG_ 1786 VIN_Frame "See B CAN DBC for full char layout.";
+
+VAL_ 512 SubFrameID 0 "WheelSpeeds" 10 "Startup_0x0A" 11 "Startup_0x0B" 20 "ABSFault_0x14" 32 "TCEvent_0x20" ;
+VAL_ 776 ParkPinState 32 "Park" 64 "NotPark" ;
+VAL_ 1048 PRND 80 "P" 82 "R" 78 "N" 68 "D" ;
+VAL_ 1372 TCMState 66 "SteadyPark" 4 "ParkReleasing" 133 "Drive" 1 "ParkEngaging" ;
+

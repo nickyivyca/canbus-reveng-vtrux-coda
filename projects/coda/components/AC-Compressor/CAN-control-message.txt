@@ -1,0 +1,16 @@
+The Compressors ID is 0x439 as I had found by connecting only the compressor to a Can Spy.
+
+Now I have the other piece of the puzzle. The compressor is controlled by can ID 0x410.
+
+Below are the key messages controlling the compressor.
+
+SIGNAL NAME, ID, NODE Start, Width, Res, Offset,Sign, Min, Max, Unit
+target_compressor_speed  410 accm 8  8 60  0 False 0 15180 rpm
+max_pwr_consumption      410 accm 0  8 0.1 0 False 0 25.3  kW
+compressor_on_off       410 accm 46 1 1   0 False 0 1  Boolean
+CASS_on_off              410 accm 43 1 1   0 False 0 1  Boolean
+warmup_cycle_cntr_incr  410 accm 41 1 1   0 False 0 1  Boolean
+
+And sent by the compressor
+COMPRESSOR_STATUS        439 accm 56 2 1   0 False 0 3     enum ACTUAL_COMPRESSOR_SPEED 439 accm 48 8 60  0 False 0 15180 rpm
+ACTUAL_POWER_CONSUMPTION 439 accm 40 8 0.1 0 False 0 25.3  kW

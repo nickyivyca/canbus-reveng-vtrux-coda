@@ -1,0 +1,62 @@
+
+herewith the Lear charging data posted on the EVTV forum, sorry it took this long the link they posted did not have share 
+permissions set correctly so could not be accessed until now.
+The post from Mark Weisheimer:-
+
+While I was EVCCON2014 I got a wiring harness that connects the CAN bus to the Lear chargers.
+I made a drawing of the connections and wire colors and I am attaching the PDF of that drawing.
+The connectors are shown from the rear of the 12 pin connector that plugs into the chargers 12 pin connector.
+Byron has identified the Delphi connectors and pins that are used in this connector and will likely post that soon.
+I went through the CAN capture that Jack has posted above and noted that there are only 2 different 0x50 CAN messages 
+in that capture.
+
+0x50 8 00 DC 0F F7 00 00 78 01 which is sent over and over for most of the duration.
+
+0x50 8 00 00 00 00 00 00 78 00 which is sent a relatively few times at the end of the charge and then stops.
+
+The CAN wiring is:
+
+Orange: CAN high
+Green:   CAN low
+
+The data rate is 500Kbs and there is no CAN bus termination in the Lear charger. This CAN bus is shared by the Delphi 
+DC/DC which is terminated with a 120 ohm resistor.
+There is additional wiring information in the document.
+It is my expectation (which is yet untested and thus may be utterly wrong) that the blue/red and black wires are 
+connected to plus 12v aux and ground respectively and are used as enable/disable lines to 3 of the pins on the charger.
+
+I'll post more after I connect a battery, 240 VAC and this cabling and have had a chance to test.
+
+Update 9/12/2014: It does charge at 3.3kw using the command in the first line posted here.
+I am charging into a ~382v Better Place pack using the Master charger with that line.
+I have visitors tomorrow, Byron Izenbaard and Brian Couchene are coming to work with me using this set up in the garage.
+We'll do a few things such as run it at the various available US input voltages of 120vac, 208vac(1/3 of 3 phase commercial
+ power) and 240vac.
+The first and last are common household voltages.
+We'll also rewire the 2nd charger from Slave to Master and run multiple Masters on one CAN bus and observe the results.
+We'll post our results when we are done. I plan to leave this post as the spot for latest available summary and readers can
+ follow along the path in subsequent posts.
+
+Update 9/16/2014: We have verified that aux12vdc and ground are used to signal pin A enable, pin G Master+/Slave- and pin H
+ Master-/Slave+ to turn these chargers on and identify each charger as either a Master or a Slave.
+We can command a charge into the Better Place battery pack and the chargers self split the current load evenly between 
+themselves when using a Master and a Slave.
+The current varying command is at 0x50  byte 6 (byte 6 above is value 78) and we ran it from 10(hex) to FF(hex) and saw 
+1.4 amps total out up to 14.4 amps total out into a 390vdc pack.
+It ran quite cool and reports tons of data. I'll come back with more data after we have decoded more of it.
+It works just fine at 120vac input, 208vac input and 240vac input. We are expecting to see the input voltage in the 
+data sent by the chargers but are still decoding that now.
+
+Update:9/21/2014 Added .xls file with some varied values in Data byte 6 which causes the charger(s) to vary the output 
+power as measured by the current output.
+
+More to come...  
+Attached Files-see above
+
+
+Hope this covers it
+
+
+__________________
+Mark Weisheimer 
+Columbus, Ohio
