@@ -1,0 +1,125 @@
+VERSION ""
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_:
+
+BO_ 68 EPRI_MCU_Cmd2_Response_0044: 5 Vector__XXX
+ SG_ TRAC_RotSpd : 0|16@1+ (1,-32767) [-32767|32768] "rpm" Vector__XXX
+ SG_ TRAC_EmergcyStp_flg : 35|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 201 EPRI_PPEI_Engine_General_Status_1_00C9: 8 Vector__XXX
+ SG_ Engine_Speed : 15|16@0+ (0.25,0) [0|16383.75] "rpm" Vector__XXX
+
+BO_ 288 EPRI_BCM_Vehicle_Odometer_HS_0120: 5 Vector__XXX
+ SG_ VehicleOdometer : 15|32@0+ (0.015625,0) [0|67108863.984] "km" Vector__XXX
+
+BO_ 451 EPRI_PPEI_Engine_Torque_Status_2_01C3: 8 Vector__XXX
+ SG_ EngineTorqueActual : 3|12@0+ (0.5,-848) [-848|1199.5] "Nm" Vector__XXX
+ SG_ EngineTorqueRequested : 19|12@0+ (0.5,-848) [-848|1199.5] "Nm" Vector__XXX
+
+BO_ 707 EPRI_PPEI_Engine_Torque_Status_3_02C3: 8 Vector__XXX
+ SG_ MAP : 48|8@1+ (0.5,0) [0|127.5] "kPa" Vector__XXX
+
+BO_ 977 EPRI_PPEI_Engine_General_Status_2_03D1: 8 Vector__XXX
+ SG_ ECM_InstFuelConsmpRate_volPt : 35|12@0+ (0.025,0) [0|102.375] "L/hr" Vector__XXX
+
+BO_ 1001 EPRI_PPEI_Vehicle_Speed_and_Distance_03E9: 8 Vector__XXX
+ SG_ ECM_VehSpdAvgDrvn_linspd : 6|15@0+ (0.015625,0) [0|511.984] "km/h" Vector__XXX
+ SG_ ECM_DistRollCntAvgDrvn_dist : 20|13@0+ (0.125,0) [0|1023.875] "km" Vector__XXX
+
+BO_ 1098 EPRI_MCU_Thermal1_044A: 4 Vector__XXX
+ SG_ TRAC_DrvCoolFlowReq_pct : 0|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+ SG_ TRAC_MotCoolFlowReq_pct : 8|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+ SG_ TRAC_ThermInd_pct : 16|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+
+BO_ 1105 EPRI_MCU_Info2_0451: 6 Vector__XXX
+
+BO_ 1113 EPRI_MCU_Thermal1_0459: 3 Vector__XXX
+
+BO_ 1122 EPRI_MCU_Info1_0462: 6 Vector__XXX
+ SG_ TRAC_HighPwr_Volt : 8|11@1+ (1,0) [0|2047] "V" Vector__XXX
+ SG_ TRAC_HighPwr_Curr : 24|14@1+ (0.25,-2048) [-2048|2047.75] "A" Vector__XXX
+
+BO_ 1217 EPRI_PPEI_Engine_General_Status_4_04C1: 8 Vector__XXX
+ SG_ ECM_EngineCoolantTemp : 32|8@1+ (1,-40) [-40|215] "degC" Vector__XXX
+ SG_ ECM_EngineAirIntakeTemp : 40|8@1+ (1,-40) [-40|215] "degC" Vector__XXX
+ SG_ ECM_OutsideAirTemp : 48|8@1+ (0.5,-40) [-40|87.5] "degC" Vector__XXX
+
+
+CM_ BO_ 68 "Via Motors TRAC (traction) MCU. Symmetric to GENE 0x0054 on PT bus (+0x10 offset).";
+
+CM_ BO_ 201 "GM PPEI engine speed. B0 not read by EPRI app.";
+
+CM_ BO_ 288 "GM PPEI vehicle odometer. B0 not read. EPRI app displays in miles but km value is authoritative (scale 0.015625 km/count).";
+
+CM_ BO_ 451 "GM PPEI engine torque. Both signals share scale/offset. Zero torque at raw=1696.";
+
+CM_ BO_ 707 "GM PPEI manifold absolute pressure. EPRI plist label 'PPEI_Engine_Torque_Status_3' is the PPEI message name (correct per GM spec); MAP is one of several signals. B0-B5, B7 not read by EPRI app.";
+
+CM_ BO_ 977 "GM PPEI instantaneous fuel consumption. EPRI plist label 'PPEI_Engine_General_Status_2' is the PPEI message name (correct per GM spec); fuel rate is one of several signals (message also contains throttle, cruise speed, AC command).";
+
+CM_ BO_ 1001 "GM PPEI vehicle speed and distance. plist index .2 is a placeholder (value=-1). B4-B7 not read.";
+
+CM_ BO_ 1105 "EPRI ID CONFLICT: plist attributed as TRAC_Mot_Trq but this is GMLAN Gateway_LS_General_Information. SG_ entries removed. GMLAN signals belong in GMW8762_PPEI_GMLAN.dbc.";
+
+CM_ BO_ 1098 "EPRI ID ERROR: plist predicted 0x459 (wrong -0x020 offset from GENE 0x479); actual ID is 0x44A (-0x02F offset). 0x459 has zero frames in all captured logs. Symmetric to GENE 0x0479. B3 is a rolling counter.";
+
+CM_ BO_ 1113 "EPRI ID ERROR: 0x459 has zero frames in all captured logs. Actual message is at 0x44A (see BO_ 1098). SG_ entries removed per DBC signal policy.";
+
+CM_ BO_ 1122 "Via Motors TRAC MCU HV bus current and voltage. Symmetric to GENE 0x0482 on PT bus (+0x20 offset). B5 uncharacterized.";
+
+CM_ BO_ 1217 "GM PPEI engine temperatures. B0-B3 and B7 not read by EPRI app.";
+
+CM_ SG_ 1217 ECM_OutsideAirTemp "Resolution 0.5 degC (unlike coolant/intake which are 1.0 degC).";
+
+
+CM_ SG_ 68 TRAC_RotSpd "Zero at raw=32767 (1-count offset vs PT bus 0x5A2 which uses 32768).";
+CM_ SG_ 68 TRAC_EmergcyStp_flg "Traction MCU emergency stop flag. Symmetric to GENE_EmergcyStp_flg.";
+
+
+
+
+CM_ SG_ 707 MAP "Unsigned (EPRI app reads as signed but unsigned is correct; sea-level ~101 kPa = raw 202).";
+
+
+
+CM_ SG_ 1098 TRAC_DrvCoolFlowReq_pct "Inverter (drive) cooling flow request. Symmetric to GENE_DrvCoolFlowReq_pct (0x0479 B0). Scale assumed by structural symmetry.";
+CM_ SG_ 1098 TRAC_MotCoolFlowReq_pct "Saturates at 100% under sustained traction thermal stress.";
+CM_ SG_ 1098 TRAC_ThermInd_pct "r=+1.000 vs 0x06000002 B5/B6 (PT bus VCU re-broadcast). B3 is a rolling counter -- not a signal.";
+
+
+CM_ SG_ 1122 TRAC_HighPwr_Curr "Same layout as GENE_HighPwr_Curr (log-validated on 0x0482).";
+CM_ SG_ 1122 TRAC_HighPwr_Volt "Same layout as GENE_HighPwr_Volt (log-validated on 0x0482).";
+

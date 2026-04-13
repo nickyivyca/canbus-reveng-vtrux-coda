@@ -1,0 +1,126 @@
+VERSION ""
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO__REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: VCM GENE BMS
+
+BO_ 81 VCM_GenControl_0051: 6 VCM
+ SG_ gen_torque_cmd : 8|16@1+ (1,-32768) [-32768|32767] "" Vector__XXX
+ SG_ gen_rpm_ref : 24|16@1+ (1,-32768) [-1|2047] "rpm" Vector__XXX
+
+BO_ 1041 BMS_SoC_HiRes_0411: 8 BMS
+ SG_ bms_soc_hires : 7|14@0+ (0.01,0) [0|100] "%" Vector__XXX
+
+BO_ 1136 Unknown_0470: 8 Vector__XXX
+ SG_ hv_bus_volt_470 : 8|11@1+ (1,0) [0|2047] "V" Vector__XXX
+
+BO_ 1426 VCM_Pedals_0592: 8 VCM
+ SG_ throttle_pos : 16|16@1+ (1,0) [0|65535] "" Vector__XXX
+
+BO_ 1430 BMS_SoC_0596: 8 VCM
+ SG_ bms_soc : 48|8@1+ (1,0) [0|100] "%" Vector__XXX
+
+BO_ 1432 HCU_Power_0598: 8 VCM
+ SG_ gen_power : 16|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
+
+BO_ 1604 VCM_CruiseDiag_0644: 8 VCM
+ SG_ cruise_mode : 23|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ cruise_speed_setpoint : 19|12@0+ (0.125,0) [0|511.875] "km/h" Vector__XXX
+
+BO_ 776 TCM_ParkPin_0308: 5 Vector__XXX
+ SG_ InputShaftSpeed : 8|16@1+ (0.5,-16064.0) [-12000|12000] "rpm" Vector__XXX
+
+BO_ 1442 VCM_TractMotor_05A2: 8 VCM
+ SG_ trac_rpm : 16|16@1+ (1,-32768) [-32768|32767] "rpm" Vector__XXX
+ SG_ trac_torque_fbk : 32|16@1+ (1,-32768) [-32768|32767] "" Vector__XXX
+
+BO_ 1609 VCM_EvapControl_0649: 8 VCM
+ SG_ vcm_evap_active : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2248146946 VCU_TracThermal_06000002: 8 VCM
+ SG_ trac_therm_ind_pct : 46|10@1+ (1,0) [0|100] "%" Vector__XXX
+
+BO_ 2289188935 EAC_STATUS2: 4 Vector__XXX
+ SG_ eac_hv_input : 16|8@1+ (4,0) [0|1020] "V" Vector__XXX
+
+BO_ 2566849312 EMP_PumpStatus_18FF0320: 8 Vector__XXX
+
+
+CM_ BO_ 81 "VCM->GENE MCU composite command. 100 Hz, DLC=6. B0 purpose unknown. B5 = rolling counter 0x00-0x0F.";
+CM_ SG_ 81 gen_torque_cmd "Positive = motoring (engine cranking). Negative = generating. Null at engine off.";
+CM_ SG_ 81 gen_rpm_ref "Null when engine off (raw=0x7FFF). Zone+fine encoding: B4 is zone selector (127=null, 130-135=active, 256 RPM/zone); B3 is fine RPM within zone. Bit-for-bit identical to 0x052 B2-B3.";
+
+CM_ BO_ 1041 "BMS-sourced (drops when HV battery LV connector unplugged). 16 Hz, DLC=8. High-resolution SoC register. Remaining bytes encode a contactor request signal (changes at startup, not shutdown; not decoded). NOT in EPRI plist.";
+CM_ SG_ 1041 bms_soc_hires "Valid during startup before 0x596 becomes non-zero.";
+
+CM_ BO_ 1136 "NOT in EPRI DBC. POST_CONTACTOR HV bus voltage -- drops to ~3V when contactors open (HVAC pull), no further change on HVD pull. Source ECU unknown.";
+CM_ SG_ 1136 hv_bus_volt_470 "Byte layout assumed symmetric with 0x482 -- not independently verified from Ghidra.";
+
+CM_ BO_ 1426 "VCM-sourced. 100 Hz, DLC=8. B2-B3=throttle position (this DBC). Brake pedal (B4-B5) and switch flags (B0) are in epri-pt-bus.dbc. B1 role unconfirmed.";
+CM_ SG_ 1426 throttle_pos "Scale to physical % unconfirmed.";
+
+CM_ BO_ 1430 "BMS-sourced (drops when HV battery LV connector unplugged). ~1 Hz. Integer SoC percent at B6. NOT in EPRI plist.";
+CM_ SG_ 1430 bms_soc "Integer-rounded version of 0x411. Use 0x411 for sub-percent resolution.";
+
+CM_ BO_ 1432 "VCM/HCU-sourced. ~1 Hz, DLC=8. Power statistics for ESS, traction, and generator channels. B0-B1=ESS power (also in epri-pt-bus.dbc). B4-B5=traction power (also in epri-pt-bus.dbc). B6-B7 = static bias, not power data.";
+CM_ SG_ 1432 gen_power "Near-zero in pure EV mode. Positive = generator providing power to HV bus.";
+
+CM_ BO_ 1604 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz. Cruise control diagnostic -- VCM internal cruise state and speed setpoint. NOTE: NOT a command to the traction inverter (TRAC MCU is on the OBD bus). Signals reflect VCM cruise logic state for diagnostic/monitoring only.";
+CM_ SG_ 1604 cruise_mode "0x8=idle/standby, 0x9=throttle override/auto-disengage, 0xA=active cruise (speed controller running).";
+CM_ SG_ 1604 cruise_speed_setpoint "Zero when inactive. 1 km/h per button press.";
+
+CM_ BO_ 776 "BorgWarner TCM. 100 Hz, DLC=5. B0=ParkRequest/ParkPinState in epri-pt-bus.dbc. B1-B2=InputShaftSpeed (this DBC). B3-B4=constant 0x00. Cross-vehicle: identical encoding on Coda (CODA-D-CAN.dbc). See notes/borgwarner.md.";
+CM_ SG_ 776 InputShaftSpeed "Zero=0x7D80 at rest. Input shaft (not output): ratio vs trac_rpm is 2.000 regardless of gear ratio, matching on both Vtrux and Coda.";
+
+CM_ BO_ 1442 "VCU-sourced re-broadcast of traction motor speed and torque. ~100 Hz, DLC=8. B0-B1 and B6-B7 uncharacterized. See notes/powertrain-messages.md.";
+CM_ SG_ 1442 trac_rpm "Scale assumed 1 RPM/count by symmetry with GENE_RotSpd (0x054) and TRAC_RotSpd (0x044). Positive = forward rotation.";
+CM_ SG_ 1442 trac_torque_fbk "Positive = motoring; regen = negative. Scale to physical Nm unconfirmed.";
+
+CM_ BO_ 1609 "VCU/VCM evap canister purge control. 0x649 on PT bus, ~20 Hz, VCU-sourced. Full message encoding differs between drive and charge modes -- byte fields repurpose themselves; B0 values cannot be compared across modes. See notes/evap-cycle-analysis.md Phase 2D for full investigation.";
+CM_ SG_ 1609 vcm_evap_active "1 = evap purge in progress; clears ~6.1s before VCM commands generator stop. Holds through involuntary stalls; only clears on VCM-declared completion. Lower 7 bits unresolved -- may encode canister load or session context.";
+
+CM_ BO_ 2248146946 "VCU-sourced extended frame (29-bit). Re-broadcasts traction motor thermal load from OBD bus. B5/B6 carry trac_therm_ind_pct; other bytes uncharacterized (B0 multiples of 4, B3 slow 5-value field, B1[7:6] rolling sub-counter). See notes/thermal-investigation.md.";
+CM_ SG_ 2248146946 trac_therm_ind_pct "VCU re-broadcasts from OBD bus 0x44A B2 as integer percent. Traction derate onset ~78-79%. B5[1:0] are ADC jitter.";
+
+CM_ BO_ 2289188935 "Sanden HV AC compressor (SA=0x47) EAC_STATUS2. DLC=4. Broadcasts at exactly 10 Hz regardless of compressor state (on, off, charging). Synchronized pair with 0x0868A047 (EAC_STATUS1). See notes/hvac-investigation.md.";
+CM_ SG_ 2289188935 eac_hv_input "B2=0 before HV contactors close. EPRI-named EAC_CompHVInput.";
+
+
+
+CM_ BO_ 2566849312 "(SA=0x20). EMP WP29 C20 PE glycol coolant pump. J1939 proprietary PGN 0xFF03. Tier: Pump CAN (independent of BMS and 12V tiers). ~1 Hz. No signals decoded. Sole ID attributed to SA=0x20.";
+
+VAL_ 1604 cruise_mode 8 "idle_standby" 9 "throttle_override" 10 "active";
+
+VAL_ 1609 vcm_evap_active 0 "not_active" 1 "evap_in_progress";
+

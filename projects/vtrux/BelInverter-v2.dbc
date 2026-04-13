@@ -1,0 +1,143 @@
+VERSION "0.02"
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BUSG__REL_
+	BU_EV_REL_
+	BUBO__REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: BELINV
+
+BO_ 2566902976 BINV_status: 8 BELINV
+ SG_ BELINV_statusMultiplexer M : 0|8@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ BELINV_keySwitch m0 : 8|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_pilotControlSignal m0 : 9|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_proxEnabled m0 : 10|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_evseConnected m0 : 11|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_vehicleConnected m0 : 12|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_auxPowerSupply m0 : 13|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_chargerEnergyFlowEnable m0 : 14|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_s2Switch m0 : 15|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_chargingInProgress m0 : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_powerChargingInProgress m0 : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_exportEnergy m0 : 18|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_exporting m0 : 19|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_gridTied m0 : 20|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_wakeOutput m0 : 21|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_delayedSleepMode m0 : 23|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_rewakedFromDelayedSleep m0 : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_inverterAlive m0 : 25|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_inverterReady m0 : 26|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_buckBoostAlive m0 : 27|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_buckBoostReady m0 : 28|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_alciResetOn m0 : 29|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_alciActive m0 : 30|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_evseDisconnected m0 : 33|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_autoLowPower m0 : 34|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_standby m0 : 38|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_unitReady m0 : 39|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_state m0 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_shutdownSource m0 : 48|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_stateBeforeLastShutdown m0 : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_buckBoostState m1 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_buckBoostStateBeforeLastShutdown m1 : 48|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_inverterState m2 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_inverterStateBeforeLastShutdown m2 : 48|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_acOk m3 : 8|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_acOverVoltage m3 : 9|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_acUnderVoltage m3 : 10|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_systemBatteryUnderVoltage m3 : 11|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_hvBatteryOverVoltage m3 : 12|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_hvBatteryUnderVoltage m3 : 13|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_overTemperature m3 : 14|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_exportOverLoad m3 : 15|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_inverterFault m3 : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_buckBoostFault m3 : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_wakeOutputError m3 : 19|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_underFrequency m3 : 21|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ BELINV_overFrequency m3 : 22|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2566903232 BELINV_overallTemperature: 8 BELINV
+ SG_ BELINV_overAllInverterTemperature : 0|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_buckBoostTemperature : 16|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_ambientTemperature : 32|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_overallTemperaturePercent : 48|8@1+ (1,0) [0|100] "%" Vector__XXX
+
+BO_ 2566903488 BELINV_inverterOutput: 8 BELINV
+ SG_ BELINV_leg1Voltage : 0|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_leg2Voltage : 16|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_leg1Current : 32|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_leg2Current : 48|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+
+BO_ 2566903744 BELINV_hvBatteryAndCharger: 8 BELINV
+ SG_ BELINV_hvBatteryVoltage : 0|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_hvBatteryCurrent : 16|16@1- (0.05,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_chargerInputVoltage : 32|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_chargerInputCurrent : 48|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+
+BO_ 2566904000 BELINV_j1772Info: 8 BELINV
+ SG_ BELINV_system12vBatteryVoltage : 0|16@1+ (0.02,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_pilotDuty : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_pilotFrequency : 24|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_chargePilotOnlineTime : 40|24@1+ (1,0) [0|16777216] "" Vector__XXX
+
+BO_ 2566904256 BELINV_chargeInfo: 8 BELINV
+ SG_ BELINV_maxAvailableChargingCurrent : 0|16@1- (0.05,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_vehicleState : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 2566904512 BELINV_inverterTemperature: 8 BELINV
+ SG_ BELINV_dc1Temperature : 0|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_dc2Temperature : 16|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_module1Temperature : 32|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_module2Temperature : 48|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+
+BO_ 2566904768 BELINV_buckBoostTemperature: 8 BELINV
+ SG_ BELINV_buckBoostModuleTemperature : 0|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_buckBoostDc1Temperature : 16|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_buckBoostDc2Temperature : 32|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_buckBoostDspTemperature : 48|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
+
+
+CM_ BO_ 2566902976 "(SA=0xC0). Bel inverter/charger status and fault flags. Source: previous DBC. Not in EPRI plist; byte layout unconfirmed by EPRI.";
+
+CM_ BO_ 2566903232 "(SA=0xC0). Bel inverter/charger temperatures. EPRI app: INVCH_Bdc_Temp. B0:B3 from previous DBC only. Note: EPRI identifies B4:B5 as BDC internal temperature, not ambient. overallTemperaturePercent corrected to 8-bit (B6 only); previous DBC had 16-bit.";
+
+CM_ BO_ 2566903488 "(SA=0xC0). Bel inverter AC output. EPRI app: INVCH_Inv_Output.";
+
+CM_ BO_ 2566903744 "(SA=0xC0). Bel charger HV battery and AC input. EPRI app: INVCH_Bdc_Ibat. hvBatteryCurrent signed (bidirectional, positive=charging); other signals unsigned (corrected from previous DBC).";
+
+CM_ BO_ 2566904000 "(SA=0xC0). Bel J1772 pilot and 12V monitoring. EPRI app: INVCH_Bdc_12Vbat. B2-B7 from previous DBC only.";
+
+CM_ BO_ 2566904256 "(SA=0xC0). Bel available charge current and vehicle state. Source: previous DBC. Not in EPRI plist.";
+
+CM_ BO_ 2566904512 "(SA=0xC0). Bel inverter module temperatures. Source: previous DBC. Not in EPRI plist.";
+
+CM_ BO_ 2566904768 "(SA=0xC0). Bel buck-boost converter temperatures. Source: previous DBC. Not in EPRI plist.";
+

@@ -1,0 +1,63 @@
+VERSION ""
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: VCM TRAC_MCU
+
+BO_ 1098 TRAC_MCU_Thermal1_044A: 4 TRAC_MCU
+ SG_ TRAC_DrvCoolFlowReq_pct : 0|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+ SG_ TRAC_MotCoolFlowReq_pct : 8|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+ SG_ TRAC_ThermInd_pct : 16|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+
+BO_ 65 VCM_TRAC_TrqCmd_0041: 6 VCM
+ SG_ TRAC_TrqCmd : 8|16@1+ (0.125,-4096) [-4096|4095.875] "Nm" TRAC_MCU
+
+BO_ 1090 TRAC_TrqFbk_0442: 7 TRAC_MCU
+ SG_ TRAC_TrqFbk : 0|16@1+ (0.125,-4096) [-4096|4095.875] "Nm" Vector__XXX
+
+
+CM_ BO_ 1098 "TRAC MCU thermal status. OBD bus. Symmetric to GENE 0x479 on PT bus (offset -0x02F, not -0x020 as EPRI assumed). EPRI plist predicted 0x459 (wrong); actual ID 0x44A confirmed independently. B3 is a rolling counter.";
+
+CM_ SG_ 1098 TRAC_DrvCoolFlowReq_pct "Inverter (drive) cooling flow request -- PE glycol loop. Symmetric to GENE_DrvCoolFlowReq_pct (0x479 B0).";
+CM_ SG_ 1098 TRAC_MotCoolFlowReq_pct "Saturates at 100% under sustained traction thermal stress.";
+CM_ SG_ 1098 TRAC_ThermInd_pct "r=+1.000 vs 0x06000002 B5/B6 (PT bus VCU re-broadcast). B3 is rolling counter -- not a signal.";
+
+CM_ BO_ 65 "VCM-to-TRAC-MCU traction torque command. OBD bus. Symmetric to 0x051 (GENE torque command, PT bus). NOT in epri-obd-bus.dbc.";
+
+CM_ BO_ 1090 "TRAC MCU traction torque feedback. OBD bus. Symmetric to 0x471 (GENE torque feedback, PT bus). epri-obd-bus.dbc incorrectly names 0x451 as TRAC_Mot_Trq (0x451 is GMLAN Gateway_LS_General_Information). B6 is a rolling counter.";
+
+CM_ SG_ 65 TRAC_TrqCmd ">32768 = motoring, <32768 = regen. B0=status nibble. B3=0xFF, B4=0x7F constants. B5=rolling counter. Scale 0.125 Nm/count unconfirmed (assumed symmetric to 0x051).";
+
+CM_ SG_ 1090 TRAC_TrqFbk "Positive = motoring; regen = negative. B3, B5=status bytes. B6=rolling counter. Scale 0.125 Nm/count unconfirmed (assumed symmetric to 0x471).";
+
