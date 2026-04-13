@@ -1,0 +1,12 @@
+# canre project dependencies
+# Install with: py -3.12 -m pip install -r requirements.txt
+
+# CAN hardware abstraction (ixxat, kvaser, pcan, socketcan, virtual)
+python-can>=4.6.1
+
+# DBC parsing and signal decoding
+cantools>=41.1.1
+
+# ISO 15765-2 transport layer (used by uds_interrogator.py)
+# Note: package is 'can-isotp' but imports as 'isotp'
+can-isotp>=2.0.7
