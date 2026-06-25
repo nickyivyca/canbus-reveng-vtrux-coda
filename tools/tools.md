@@ -1,13 +1,158 @@
-﻿# Tools Reference
+# Tools Reference
 
+> **Staleness check:** Each section shows a `Source last modified` timestamp in `YYYY-MM-DD HH:MM:SS` format (file mtime). If the `.py` file's mtime is newer than the timestamp shown here, re-read the source before relying on this documentation. When updating a timestamp, always include the full date and time — not just the date.
+
+## CANFrame field names (common mistake)
+
+When writing scripts or scratchpads that touch `CANFrame` objects:
+
+- **`frame.arbitration_id`** — correct. `arb_id` is only a local variable name used inside parsers before being passed as the constructor kwarg `arbitration_id=`; it is not a `CANFrame` attribute.
+- **`frame.bus`** — correct. `channel` is a `python-can` concept (hardware channel spec for `can.interface.Bus(channel=...)`); the `CANFrame` dataclass field is `bus`. Never use `frame.channel`.
+
+---
 
 **Vehicle-specific tools** are kept alongside their vehicle's project files, not here:
 - Coda: `projects/coda/tools/` — see `projects/coda/tools/README.md`
 - Vtrux: `projects/vtrux/tools/` — see `projects/vtrux/tools/README.md`
 
+**Cross-tool investigations and benchmarks** live in `tools/notes/` — see `tools/notes/README.md`.
+
+---
+
+## dbc_parity_generate.py
+*Source last modified: 2026-05-10*
+*Consumed by: `android-app/CanLoggerApps/cancore/src/test/java/com/reverseit/cancore/DbcParityTest.kt`*
+
+Generates parity test cases for the Kotlin DBC decoder by running each
+Vtrux DBC through cantools and dumping the (payload -> decoded signals)
+mapping to a TSV the Kotlin test loads from its classpath. For each
+non-multiplexed message, generates N random payloads. For multiplexed
+messages, generates N payloads per mux value (with the multiplexer bits
+forced to each value in turn). Copies the source DBC files into
+`cancore/src/test/resources/dbcs/` so the test has self-contained fixtures.
+
+**Requires:** `pip install cantools` (already a project dep).
+
+**Usage (default: all four Vtrux DBCs, 30 cases each):**
+```
+py -3.12 tools/dbc_parity_generate.py
+```
+
+**Optional flags:**
+```
+  --dbc PATH        DBC file (repeatable; default: Vtrux set)
+  --output-dir DIR  cancore test resources root (default: the cancore module)
+  --cases N         Random payloads per message / per mux value (default: 30)
+  --seed N          PRNG seed for reproducibility (default: 42)
+```
+
+**Output format** (TSV at `cancore/src/test/resources/dbc_parity_cases.tsv`):
+```
+dbc_basename<TAB>message_id_decimal<TAB>payload_hex<TAB>sig=val;sig=val;...
+```
+String-valued signals (from DBC value tables) are emitted as quoted strings
+and skipped by the Kotlin test (the protocol emits raw scalars per §11/§13;
+enum mapping is client-side).
+
+Regenerate any time a Vtrux DBC changes, then run `:cancore:testDebugUnitTest`
+to validate parity.
+
+---
+
+## can_display_server.py
+*Source last modified: 2026-05-10 16:09:24*
+*Companion files: `can_display_client.py`, `can_display_bus_identity_vtrux.json`, `can_display_server_requirements.txt`*
+*Protocol spec: `android-app/notes/protocols/can-display-protocol.md` (v1)*
+
+Reference implementation of the CAN Display Protocol v1. WebSocket server that
+replays a recorded CAN log and streams server-decoded signal values to a
+display client. Built so the `:display` Android module and other clients can be
+developed and validated without phone hardware.
+
+Supports the full Tier 1 aggregation set (`decimate`, `latest`, `min`, `max`,
+`mean`) on tumbling windows, anchor-ID-based bus identification, bearer-token
+auth, and protocol takeover semantics (a new authenticated client supersedes
+any existing session per protocol §10).
+
+**Requires:** `pip install -r tools/can_display_server_requirements.txt`
+(`websockets >= 12.0`, `cantools`).
+
+**Usage:**
+```
+py -3.12 tools/can_display_server.py [options]
+
+  --log PATH              CAN log to replay (BUSMASTER, candump, SavvyCAN, TRC,
+                          Vector ASC; auto-detected) [required]
+  --bus-identity PATH     JSON file mapping named buses to anchor-ID lists
+                          (see can_display_bus_identity_vtrux.json) [required]
+  --dbc PATH              Optional. Overrides the DBC sent by the client in its
+                          `config` message; useful for testing without a real
+                          client. By default the client's DBC is used.
+  --port N                WebSocket listen port (default: 9878 -- distinct from
+                          LogFileServer's 9877)
+  --token T               Bearer token. Random 16-hex generated and printed at
+                          startup if omitted.
+  --speed F               Replay speed multiplier (default 1.0; 0 = no delay)
+  --loop                  Loop the log when it ends
+  --verbose               Log every wire message
+  --dump-subscription-summary
+                          On client config, log a human-readable subscription
+                          summary
+```
+
+**Bus identity JSON format:**
+```json
+[
+  {"name": "powertrain", "anchor_ids": ["0x051", "0x592-0x5A2"]},
+  {"name": "vehicle",    "anchor_ids": ["0x1E5", "0x500"]},
+  {"name": "obd",        "anchor_ids": ["0x040-0x044"]}
+]
+```
+- `anchor_ids` accepts decimal ints, hex-prefixed strings, and `lo-hi` ranges.
+- The shipped `can_display_bus_identity_vtrux.json` covers Vtrux PT/Vehicle/OBD
+  buses as documented in `projects/vtrux/vtrux.md`.
+
+**Bus identification:** the server pre-scans the first 2 s of the log,
+counting anchor-ID matches per channel, and assigns each named bus to the
+channel with the highest count above a threshold (3 anchors, or all anchors if
+fewer than 3 are configured). Identified buses receive a `bus_identified`
+status; unidentified buses with subscriptions receive `bus_silent`.
+
+**Decode:** uses `cantools.database.decode_message()` against the DBC supplied
+by the client (or `--dbc` override). Multiplexed messages (protocol §8.5) are
+supported: cantools transparently decodes the multiplexer signal first, then
+returns only the signals from the matching mux group. Signals from inactive
+mux groups are absent on a per-frame basis; the aggregator updates only on
+frames where the signal is present (sparse-update semantics). Value-table
+(enum) signals decode to their underlying scalar; clients map to strings if
+needed.
+
+**Aggregation:** tumbling windows of `1/rate_hz` seconds, per protocol §7.
+`decimate` emits every Nth frame where N = round(observed_bus_rate / rate_hz).
+
+**Companion smoke-test client (`can_display_client.py`):** loads a DBC and a
+JSON manifest, connects, sends `config`, prints incoming frames. Useful for
+end-to-end verification without the Android client.
+
+```
+py -3.12 tools/can_display_client.py \
+    --url ws://localhost:9878/stream \
+    --token <token printed by server> \
+    --dbc projects/vtrux/epri-pt-bus.dbc \
+    --manifest tools/artifacts/smoke_manifest.json
+```
+
+The manifest file contains a single `subscriptions` array matching the
+protocol's `config.subscriptions` schema.
+
+**Aggregation primitives unit-test:**
+`tools/artifacts/test_can_display_aggregation.py` validates the running
+sum/min/max/mean primitives against known sequences. Run with `py -3.12`.
+
 ---
 
 ## influx_upload.py
+*Source last modified: 2026-05-05 22:50:25*
 
 Uploads CAN log data to InfluxDB 1.x for Grafana visualization. Decodes frames against
 per-vehicle DBC sets (cantools) and writes signal values to the `signals` measurement.
@@ -19,17 +164,18 @@ channel number in the log file.
 
 **Requires:** `pip install influxdb cantools`
 
-**Default connection:** `10.0.0.4:8086`, database `canbus-data`, user `claude`.
+**Default connection:** `localhost:8086`, database `canbus-data`, user `claude`.
 
 **Usage:**
 ```
-py -3.11 tools/influx_upload.py <log> [<log2> ...] --vehicle <name> [options]
+py -3.11 tools/influx_upload.py <log|folder> [<log2|folder2> ...] --vehicle <name> [options]
 
-  log                    Log file(s) to upload (auto-detects format)
+  log / folder           One or more log files or folders. Folders are expanded
+                         non-recursively to .log/.asc/.trc/.csv files, sorted by name.
   --vehicle, -v          Vehicle name: vtrux | coda  [required]
                          Loads the vehicle's default DBC set and bus anchor IDs.
   --dbc, -d DBC [...]    Extra DBC file(s) appended after the vehicle defaults
-  --host                 InfluxDB host (default: 10.0.0.4)
+  --host                 InfluxDB host (default: localhost)
   --port                 InfluxDB port (default: 8086)
   --database             InfluxDB database name (default: canbus-data)
   --user                 InfluxDB username (default: claude)
@@ -39,13 +185,17 @@ py -3.11 tools/influx_upload.py <log> [<log2> ...] --vehicle <name> [options]
   --delete               DROP existing series for vehicle+session before uploading
   --dry-run              Parse and count points but do not write to InfluxDB
   --batch-size N         Points per write batch (default: 5000)
+  --success-log FILE     Append-only file recording successfully uploaded log paths.
+                         On re-run, files already listed are skipped automatically.
+                         Use with folder uploads so interrupted batches can be resumed.
+                         No-op in --dry-run mode.
 ```
 
 **Vehicle default DBCs:**
 
 | Vehicle | DBCs loaded by default |
 |---------|----------------------|
-| vtrux | `vtrux-powertrain.dbc`, `BelInverter.dbc`, `GMW8762_PPEI_GMLAN.dbc` |
+| vtrux | `vtrux-powertrain.dbc`, `BelInverter.dbc` |
 | coda | `CODA-B-CAN.dbc`, `CODA-D-CAN.dbc`, `CODA-C-CAN-cells.dbc` |
 
 **Data model:**
@@ -101,6 +251,13 @@ DROP SERIES FROM signals WHERE "vehicle"='vtrux' AND "session"='2026-03-15_M0'
 # Basic upload using vehicle defaults
 py -3.11 tools/influx_upload.py canlog_20260315_143000_M0_T0.log --vehicle vtrux
 
+# Upload all logs in a folder (non-recursive)
+py -3.11 tools/influx_upload.py projects/vtrux/logs/ --vehicle vtrux
+
+# Upload a folder with a success log so interrupted runs can resume
+py -3.11 tools/influx_upload.py projects/vtrux/logs/ --vehicle vtrux \
+    --success-log projects/vtrux/notes/artifacts/upload_done.txt
+
 # Add an extra DBC on top of the defaults
 py -3.11 tools/influx_upload.py <log> --vehicle coda --dbc projects/coda/extra.dbc
 
@@ -117,6 +274,7 @@ py -3.11 tools/influx_upload.py <log> --vehicle vtrux --dry-run
 ---
 
 ## uds_interrogator.py
+*Source last modified: 2026-03-15*
 *API reference: `canre/uds/uds.md`*
 
 Scans a CAN bus for UDS-responding ECUs and fully interrogates each one.
@@ -178,6 +336,7 @@ during each probe and flags ECUs that respond on an ID other than request_id+8.
 ---
 
 ## make_graph.py
+*Source last modified: 2026-03-12*
 *Notes and .gdf format findings: `tools/savvycan-graphing.md`*
 
 Generates SavvyCAN Graph Definition (`.gdf`) files from DBC signals. Replaces the slow
@@ -209,7 +368,7 @@ py -3.12 tools/make_graph.py \
 
 # Step 2: append a signal from a second DBC
 py -3.12 tools/make_graph.py \
-    --dbc projects/vtrux/GMW8762_PPEI_GMLAN.dbc \
+    --dbc projects/vtrux/epri-obd-bus.dbc \
     --signal SomeMsg.SomeSignal \
     --output projects/vtrux/notes/artifacts/my_graph.gdf --append
 ```
@@ -226,7 +385,7 @@ py -3.12 tools/make_graph.py \
 SavvyCAN may use a different bit-addressing convention — hand-edit the `.gdf` if needed.
 
 **Notes:**
-- DBC files with overlapping signals (e.g. GMW8762 GMLAN) load with `strict=False` — noisy
+- DBC files with overlapping signals (e.g. large GMLAN DBCs) load with `strict=False` — noisy
   "Overwriting message" warnings are suppressed automatically.
 - Extended CAN IDs stored without the 0x80000000 marker are fixed automatically on load.
 - Save `.gdf` files to `projects/<vehicle>/notes/artifacts/` for reuse across sessions.
@@ -234,6 +393,7 @@ SavvyCAN may use a different bit-addressing convention — hand-edit the `.gdf` 
 ---
 
 ## can_monitor.py
+*Source last modified: 2026-03-09*
 
 Live CAN monitor with vehicle-aware GUI. Auto-detects dongles, sniffs for 5 s to identify which
 physical channel is which logical bus (anchor detection), then opens a PyQt5 window showing decoded
@@ -284,6 +444,7 @@ last mode is the fallback default. Mode switches automatically on every 50 ms ti
 ---
 
 ## can_logger.py
+*Source last modified: 2026-03-09*
 
 Multi-device CAN logger. Auto-detects all connected dongles and logs traffic from all of them simultaneously to a single BUSMASTER-format `.log` file.
 
@@ -316,6 +477,7 @@ py -3.11 tools/can_logger.py [options]     <- direct (must be in admin prompt fo
 ---
 
 ## can_replayer.py
+*Source last modified: 2026-02-18 21:48:56*
 
 Plays back a captured log file through connected CAN hardware at the original timing. Complementary to `can_logger.py`.
 
@@ -358,9 +520,8 @@ Start the logger first, then the replayer. Frame counts should match to within a
 
 ---
 
-
-
 ## status_events.py
+*Source last modified: 2026-03-28 12:57:46*
 
 Status event finder with two modes: **auto-discovery** (default) surveys all IDs and auto-selects discrete status signals, or **watch-profile** uses a manually curated signal set. Tracks byte-level and optionally bit-level transitions, filters to quiet signals, detects and excludes rolling counters, and clusters co-occurring transitions into events.
 
@@ -408,6 +569,7 @@ python tools/status_events.py <log> [log ...] [options]
 ---
 
 ## survey.py
+*Source last modified: 2026-02-15 12:39:49*
 
 CLI wrapper around `canre.analysis.survey`. Surveys CAN bus traffic from a log file or directory, reporting an ID inventory with frame counts, frequencies, and byte-level statistics.
 
@@ -431,6 +593,7 @@ python tools/survey.py <path> [options]
 ---
 
 ## analyze_id.py
+*Source last modified: 2026-05-02 23:28:11*
 
 Deep-dive analysis of a single CAN arbitration ID. Three separate passes: bit-level statistics, rolling counter detection, and checksum detection. Optionally decodes against a DBC file.
 
@@ -442,6 +605,8 @@ python tools/analyze_id.py <log> [log ...] [options]
   --id ID          CAN ID in hex (e.g. 0x123) [required]
   --bus N          Filter to specific bus number
   --dbc FILE       Optional DBC file for signal decoding context
+  --start SECS     Start of time window in seconds (relative to capture start)
+  --end SECS       End of time window in seconds (relative to capture start)
 ```
 
 **Output sections:**
@@ -456,6 +621,7 @@ python tools/analyze_id.py <log> [log ...] [options]
 
 
 ## compare.py
+*Source last modified: 2026-02-15 12:40:04*
 
 Compares two CAN bus captures: IDs unique to each, and byte-level diffs for shared IDs.
 
@@ -473,6 +639,7 @@ python tools/compare.py <log_a> <log_b> [options]
 
 
 ## extract_timeseries.py
+*Source last modified: 2026-03-28 12:58:23*
 
 Extracts a raw signal time series from a CAN log for a specific ID and byte range. Outputs CSV.
 
@@ -496,6 +663,7 @@ python tools/extract_timeseries.py <log> [log ...] [options]
 ---
 
 ## dbc_skeleton.py
+*Source last modified: 2026-02-15 12:40:14*
 
 Generates a skeleton DBC file from observed CAN traffic. One message per observed ID, with DLC from traffic.
 
@@ -511,6 +679,7 @@ python tools/dbc_skeleton.py <log> [options]
 ---
 
 ## dbc_validate.py
+*Source last modified: 2026-02-15 12:40:16*
 
 Validates a DBC file against actual CAN traffic. Reports coverage, undefined IDs, and decode errors.
 
@@ -526,6 +695,7 @@ python tools/dbc_validate.py <dbc> <log> [options]
 ---
 
 ## merge_logs.py
+*Source last modified: 2026-02-15 12:40:21*
 
 Merges chunked CAN log captures. Supports both `_M{bus}_T{chunk}` (BUSMASTER multi-bus) and `_T{chunk}` (timestamp-keyed sessions) naming patterns. Detects capture groups in a directory and either prints a frame count summary or writes merged CSV.
 
@@ -543,6 +713,7 @@ python tools/merge_logs.py <directory> [options]
 ---
 
 ## list_sessions.py
+*Source last modified: 2026-02-16 19:34:14*
 
 Lists and groups CAN log files in a directory by capture session.
 

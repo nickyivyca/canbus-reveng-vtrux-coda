@@ -224,9 +224,9 @@ def decode_0x410(data):
     B0, B1, B2, B3, B4, B5, B6, B7 = data[:8]
     alarm_idx    = (B1 >> 6) & 3
     chgc_idx     = (B0 >> 6) & 3
-    raw_ibat     = B2 | ((B1 & 0xF) << 8)
+    raw_gfd      = B2 | ((B1 & 0xF) << 8)
     raw_vbat     = B7 | ((B6 & 0xF) << 8)
-    raw_gfd      = (B4 << 8) | B5
+    raw_ibat     = (B4 << 8) | B5
     b1_name      = BMS_B1_NAMES.get(B1, f"0x{B1:02X}")
     b2_name      = BMS_B2_NAMES.get(B2, f"0x{B2:02X}")
     return {
@@ -243,11 +243,11 @@ def decode_0x410(data):
         'bms_b2':     b2_name,
         'bms_b1_raw': B1,
         'bms_b2_raw': B2,
-        'ibat':       None if raw_ibat >= 0xFFE else round(raw_ibat * 0.25, 1),
+        'gfd':        None if raw_gfd >= 0xFFE else round(raw_gfd * 0.25, 2),
         'soc':        None if B3 >= 0xFE        else round(B3 * 0.5, 1),
         'vbat':       None if raw_vbat >= 0xFFE else round(raw_vbat * 0.25, 1),
-        'gfd':        None if (raw_gfd & 0xFFFE) == 0xFFFE
-                           else round(raw_gfd * 0.025 - 1000.0, 2),
+        'ibat':       None if (raw_ibat & 0xFFFE) == 0xFFFE
+                           else round(raw_ibat * 0.025 - 1000.0, 1),
     }
 
 
@@ -366,7 +366,7 @@ TIMELINE_FIELDS = {
     0x044:  ['emerstop'],
     0x400:  ['hsc_enable', 'hsc_epo', 'hsc_mainc_close', 'hsc_leakage_ena'],
     0x410:  ['hvil_mon', 'epo', 'on_plug', 'ready', 'cpwr_cmd', 'chg_done',
-             'cool_req', 'alarm', 'chgc_stat', 'bms_b1', 'bms_b2'],
+             'cool_req', 'alarm', 'chgc_stat', 'bms_b1', 'bms_b2', 'gfd'],
     0x420:  ['cell_overvolt', 'cell_undervolt', 'iso_r'],
     0x430:  ['chga_ena', 'veh_mon', 'chga_mon', 'mod_ena', 'validity'],
     0x440:  ['mainc_stat', 'balancing'],
@@ -415,6 +415,8 @@ def fault_tag(aid, field, old_val, new_val):
             return '  *** BMS IN FAULT STATE ***'
         if field == 'bms_b2' and new_val == 'isolation_shutdown':
             return '  *** ISOLATION FAULT SHUTDOWN ***'
+        if field == 'gfd' and isinstance(new_val, float) and new_val < 800:
+            return f'  *** ISOLATION LOW gfd={new_val} ***'
     if aid == 0x420:
         if field == 'cell_overvolt' and new_val == 1:
             return '  *** CELL OVERVOLTAGE ***'
@@ -422,7 +424,7 @@ def fault_tag(aid, field, old_val, new_val):
             return '  *** CELL UNDERVOLTAGE ***'
         # iso_r=0 is NOT a reliable fault indicator on its own -- it also drops to 0
         # on any normal BMS shutdown. Real isolation faults are caught by
-        # bms_b2 -> isolation_shutdown (which fires ~134ms before EPO in a real event).
+        # gfd < 800 (which fires ~150ms before EPO) and/or bms_b2 -> isolation_shutdown.
     if aid in (0x054, 0x044):
         if field == 'emerstop' and new_val == 1:
             lbl = 'GENERATOR' if aid == 0x054 else 'TRACTION'
@@ -482,6 +484,9 @@ def build_events(accumulated):
                 continue
             # Only report iso_r when it drops below 180 (normal range is 180-200+)
             if field == 'iso_r' and isinstance(new_val, (int, float)) and new_val >= 180:
+                continue
+            # Only report gfd when it drops below 900 (normal = 1000.0 exactly)
+            if field == 'gfd' and isinstance(new_val, (int, float)) and new_val >= 900:
                 continue
             tag = fault_tag(aid, field, old_val, new_val)
             # For mainc_stat, also emit using the idx field internally for fault tagging
@@ -658,6 +663,9 @@ def build_fault_summary(first_snap, events):
         # A transition TO settled_fault mid-log is still caught by the timeline fault tag.
         if d.get('bms_b2') == 'isolation_shutdown':
             faults.append("BMS in isolation_shutdown state at t=0 (bms_b2=0x00)")
+        gfd0 = d.get('gfd')
+        if gfd0 is not None and gfd0 < 800:
+            faults.append(f"ISOLATION LOW at t=0 (gfd={gfd0}) -- isolation fault active or BMS cold-start")
 
     d = first_snap.get(0x420)
     if d:

@@ -28,12 +28,24 @@ def main():
     parser.add_argument("--id", required=True, help="CAN ID to analyze (hex, e.g. 0x123)")
     parser.add_argument("--bus", type=int, default=None, help="Filter to specific bus")
     parser.add_argument("--dbc", help="Optional DBC file for signal decoding context")
+    parser.add_argument("--start", type=float, default=None,
+                        help="Start of time window in seconds (relative to capture start)")
+    parser.add_argument("--end", type=float, default=None,
+                        help="End of time window in seconds (relative to capture start)")
     args = parser.parse_args()
 
     target_id = int(args.id, 16) if args.id.startswith("0x") or args.id.startswith("0X") else int(args.id, 16)
 
     # Load all frames once; reuse for all passes.
     all_frames = _load_frames(args.log)
+
+    if args.start is not None or args.end is not None:
+        t0 = args.start if args.start is not None else float("-inf")
+        t1 = args.end if args.end is not None else float("inf")
+        all_frames = [f for f in all_frames if t0 <= f.timestamp <= t1]
+        window_desc = f" [t={t0:.1f}s..{t1:.1f}s]" if args.start is not None and args.end is not None \
+            else (f" [t>={t0:.1f}s]" if args.start is not None else f" [t<={t1:.1f}s]")
+        print(f"Time window filter applied: {len(all_frames)} frames retained{window_desc}")
 
     # First pass: bit statistics
     print(f"=== Analysis of ID {args.id} ===\n")

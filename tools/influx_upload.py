@@ -12,6 +12,7 @@ Requires:  pip install influxdb cantools
 """
 import argparse
 import contextlib
+import glob
 import io
 import queue
 import re
@@ -25,6 +26,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from canre.parsers import parse_file
+from canre.parsers.autodetect import detect_format
+from canre.parsers.busmaster import BusmasterParser
 
 try:
     import cantools
@@ -35,6 +38,11 @@ try:
     from influxdb import InfluxDBClient
 except ImportError:
     InfluxDBClient = None
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 
 # ---------------------------------------------------------------------------
@@ -51,9 +59,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VEHICLE_PROFILES = {
     "vtrux": {
         "dbcs": [
-            PROJECT_ROOT / "projects/vtrux/vtrux-powertrain.dbc",
-            PROJECT_ROOT / "projects/vtrux/BelInverter.dbc",
-            PROJECT_ROOT / "projects/vtrux/GMW8762_PPEI_GMLAN.dbc",
+            PROJECT_ROOT / "projects/vtrux/epri-pt-bus.dbc",
+            PROJECT_ROOT / "projects/vtrux/epri-obd-bus.dbc",
+            PROJECT_ROOT / "projects/vtrux/BelInverter-v2.dbc",
+            PROJECT_ROOT / "projects/vtrux/vtrux-powertrain-experimental.dbc",
+            PROJECT_ROOT / "projects/vtrux/vtrux-obd-experimental.dbc",
         ],
         # Powertrain: 0x051 is exclusive and fires at 100 Hz — most reliable anchor
         # Vehicle (Vehicle): 0x1E5/0x500 never appear on the other buses
@@ -69,7 +79,7 @@ VEHICLE_PROFILES = {
         #   {"can_id": 0xXXX, "bus": "..."}    -- exclude entire message on a specific bus
         #   {"can_id": 0xXXX}                  -- exclude entire message on all buses
         #
-        # VCM gateway modifications (see notes/gmlan-signals-investigation.md):
+        # VCM gateway modifications (real data bus differs per ID):
         # OBD bus carries wrong/synthetic data for these IDs — real data is on Vehicle bus.
         # Vehicle bus carries wrong/synthetic data for these IDs — real data is on OBD bus.
         # Faithfully bridged IDs are excluded from the non-source bus to avoid duplicates.
@@ -265,32 +275,84 @@ def derive_start_epoch(path: Path, log_duration: float = 0.0, tz=timezone.utc) -
     return path.stat().st_mtime - log_duration
 
 
-def scan_log(path: Path) -> tuple[dict, float, int]:
+def scan_log(path: Path) -> tuple[dict, dict, float]:
     """
     Single streaming pass over the log to collect:
-      - channel_ids: {bus_int: set of arbitration_ids}
-      - last_timestamp: float (seconds) — used to compute log duration
-      - frame_count: total frames seen
-    Very low memory: only tracks one set of IDs per channel.
+      - channel_ids:    {bus_int: set of arbitration_ids}     -- for anchor matching
+      - channel_counts: {bus_int: total frame count}          -- for churn filtering
+      - last_timestamp: float (seconds), only used as a mtime fallback for
+                        derive_start_epoch when the BUSMASTER header and the
+                        filename-date both fail to parse.
+
+    Per-channel frame counts let identify_buses filter out the Android-logger
+    startup churn described in projects/vtrux/vtrux.md ("Bus number churn in
+    Android T0"): T0 captures can carry 20+ transient channel numbers, each
+    with only a handful of frames, before settling on a stable bus number.
+
+    For BUSMASTER logs (the primary format), this dispatches to
+    `BusmasterParser.scan_ids` -- a stripped-down line scanner that skips
+    timestamp conversion, data-byte hex decoding, and CANFrame allocation,
+    roughly halving the scan-pass cost. (Benchmark: scan_log was ~23% of a
+    535 MB upload's profiled runtime; the fast path nets ~50-70s real-world
+    on that workload.)
+
+    For other log formats (candump, PEAK TRC, SavvyCAN, Vector ASC) we fall
+    back to a full parse via `parse_file`. Those formats are rare in this
+    project; the extra cost is acceptable to keep the fast path
+    BUSMASTER-only and avoid duplicating parsing logic in five places.
     """
+    parser = detect_format(path)
+    if isinstance(parser, BusmasterParser):
+        return BusmasterParser.scan_ids(path)
+
     channel_ids: dict[int, set] = defaultdict(set)
+    channel_counts: dict[int, int] = defaultdict(int)
     last_ts = 0.0
-    count = 0
-    for frame in parse_file(path):
+    for frame in parser.parse_file(path):
         channel_ids[frame.bus].add(frame.arbitration_id)
+        channel_counts[frame.bus] += 1
         last_ts = frame.timestamp
-        count += 1
-    return dict(channel_ids), last_ts, count
+    return dict(channel_ids), dict(channel_counts), last_ts
 
 
-def identify_buses(channel_ids: dict, bus_anchors: list) -> dict:
+def identify_buses(
+    channel_ids: dict,
+    channel_counts: dict,
+    bus_anchors: list,
+    min_frames: int = 100,
+    min_fraction: float = 0.05,
+) -> dict:
     """
-    Map channel integers to named bus strings using anchor ID sets.
-    Channels that match nothing get the name 'ch<N>'.
-    Returns {channel_int: bus_name_str}.
+    Map channel integers to named bus strings using anchor ID sets, with
+    Android-logger churn filtering (see projects/vtrux/vtrux.md "Bus number
+    churn in Android T0").
+
+    A channel is kept only if its frame count is BOTH >= min_frames absolute
+    AND >= min_fraction of the highest-count channel. Channels failing
+    either test are tagged None and their data is skipped at upload time.
+
+    The fraction filter is the primary signal. Surveying 999 Android T0
+    logs, the canonical churn case (vtrux_20260503_171127_T0) has a real
+    PT bus at 155k frames alongside 9 noise channels of 2-7k frames each
+    -- pure absolute thresholds fail to separate them, but a 5%-of-max
+    cutoff cleanly does. Real captures dominate noise by 10x+ in frame
+    count whether on Android or laptop USB capture.
+
+    Channels passing the count test but lacking any anchor match get the
+    fallback name 'ch<N>' (uploaded with channel number as the bus tag).
+
+    Returns {channel_int: bus_name_str_or_None}.
     """
+    if not channel_counts:
+        return {}
+    max_count = max(channel_counts.values())
+    threshold = max(min_frames, int(max_count * min_fraction))
+
     mapping = {}
     for channel, ids in channel_ids.items():
+        if channel_counts.get(channel, 0) < threshold:
+            mapping[channel] = None
+            continue
         for bus_name, anchors in bus_anchors:
             if ids & anchors:
                 mapping[channel] = bus_name
@@ -298,6 +360,29 @@ def identify_buses(channel_ids: dict, bus_anchors: list) -> dict:
         else:
             mapping[channel] = f"ch{channel}"
     return mapping
+
+
+def estimate_avg_bytes_per_line(path: Path, sample_bytes: int = 100_000) -> float:
+    """
+    Estimate average bytes per line by reading the first *sample_bytes* of
+    the file and counting newlines. Used to drive a rough byte-based
+    progress display without a frame-counting pre-pass: progress estimate
+    is `frames_seen * avg_bytes_per_line / file_size`.
+
+    The estimate ignores headers (which are negligible vs millions of data
+    lines) and is parser-agnostic -- every CAN log format we support has
+    one frame per line. Returns 0.0 if the file is empty or unreadable, in
+    which case the caller should suppress the progress display.
+    """
+    try:
+        with open(path, "rb") as fh:
+            sample = fh.read(sample_bytes)
+    except OSError:
+        return 0.0
+    newlines = sample.count(b"\n")
+    if newlines == 0:
+        return 0.0
+    return len(sample) / newlines
 
 
 _EXTENDED_BIT = 0x80000000
@@ -342,33 +427,47 @@ def load_databases(dbc_paths: list[Path]) -> list:
     return result
 
 
-def decode_frame(frame, databases: list) -> dict:
+def build_id_index(databases: list) -> dict:
     """
-    Try each database in order. Collect signals from all that match.
-    If two DBCs define the same signal name for the same ID, later wins.
-    Returns {} if no database decodes the frame.
+    Build {frame_id: [db, ...]} so each frame goes straight to the DBCs that
+    actually define it. Avoids the per-frame "try every DBC and catch the
+    KeyError" pattern, which is dominant on logs with many loaded DBCs.
+
+    Most IDs land in exactly one DBC (single-element list); the few that
+    appear in multiple DBCs are merged in decode_frame, preserving the
+    previous "later DBC wins on signal-name collision" behaviour.
     """
-    signals = {}
+    index: dict[int, list] = {}
     for _name, db in databases:
+        for msg in db.messages:
+            index.setdefault(msg.frame_id, []).append(db)
+    return index
+
+
+def decode_frame(frame, id_index: dict) -> dict:
+    """
+    Decode a frame using the frame_id -> [db,...] index built by build_id_index.
+    Returns {} if no DBC defines this ID or all decode attempts fail.
+    """
+    dbs = id_index.get(frame.arbitration_id)
+    if not dbs:
+        return {}
+    if len(dbs) == 1:
         try:
-            result = db.decode_message(
-                frame.arbitration_id,
-                frame.data,
-                decode_choices=False,
+            return dbs[0].decode_message(
+                frame.arbitration_id, frame.data, decode_choices=False,
             )
-            signals.update(result)
+        except Exception:
+            return {}
+    signals: dict = {}
+    for db in dbs:
+        try:
+            signals.update(db.decode_message(
+                frame.arbitration_id, frame.data, decode_choices=False,
+            ))
         except Exception:
             pass
     return signals
-
-
-def all_dbc_ids(databases: list) -> set:
-    """Return the union of all message frame_ids across all loaded databases."""
-    ids = set()
-    for _name, db in databases:
-        for msg in db.messages:
-            ids.add(msg.frame_id)
-    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -433,41 +532,96 @@ def stream_and_write(
     upload_raw: bool,
     bus_map: dict,
     batch_size: int,
-    client,
+    http_session,
+    write_url: str,
     dry_run: bool,
-    total_frames: int = 0,
     exclude_global: set = frozenset(),
     exclude_bus_signal: set = frozenset(),
     exclude_id: set = frozenset(),
     exclude_bus_id: set = frozenset(),
-    gzip: bool = False,
 ) -> int:
     """
     Single streaming pass: decode each frame and write to InfluxDB in
-    fixed-size batches. A background writer thread sends batches while the
-    main thread continues decoding, hiding network round-trip latency.
-    Returns total points queued (or counted in dry-run mode).
+    fixed-size batches. A background writer thread POSTs pre-built line
+    protocol while the main thread continues decoding, hiding network
+    round-trip latency. Returns total points queued (or counted in dry-run
+    mode).
+
+    Schema: one point per DECODED FRAME, with each signal stored as a field.
+    Tag set is {vehicle, bus, can_id, session} -- signal name is NOT a tag,
+    so series cardinality stays bounded and Grafana queries scan a single
+    series per CAN ID. Querying a signal becomes SELECT "Signal_Name" instead
+    of WHERE signal='Signal_Name'.
+
+    Wire format: line protocol is generated here directly, not via
+    influxdb-python's ``client.write_points`` / ``make_line``. The pure-Python
+    client serializer was the second-largest hot spot in the 535MB benchmark
+    (~65s tottime in `make_line` plus ~71s in `_escape_tag` -- 12 escape
+    calls per point even though the tag set is fixed across the whole upload).
+    Here, the static tag prefix `signals,bus=X,can_id=0x...,session=Y,vehicle=Z `
+    is built once per (bus, can_id) pair and cached, so the per-point
+    work is just a field-list f-string concat plus a ts_ns concat.
+
+    Tag-value escaping is bypassed by relying on the project's invariants:
+    bus names are alphanumeric+underscore (`powertrain`, `b_can`, `ch20`),
+    can_ids are `0xNNN`, session names come from filename derivation or a
+    user-supplied `--session` (assumed safe), vehicle names are CLI args.
+    None of these can carry the line-protocol special characters
+    `, =` so escaping is unnecessary in this script's context. Field names
+    (signal names from the DBC, plus `dlc`/`bN`) are likewise safe.
     """
-    known_ids = all_dbc_ids(databases)
-    batch: list = []
+    id_index = build_id_index(databases)
+    can_id_hex_cache: dict[int, str] = {}
+    sig_prefix_cache: dict[tuple, str] = {}
+    raw_prefix_cache: dict[tuple, str] = {}
     queued = 0
     frames_seen = 0
 
-    # Producer/consumer pipeline: main thread decodes; worker thread writes.
-    # Queue depth 3 lets the worker stay one batch ahead without unbounded memory.
+    file_size = path.stat().st_size
+    avg_bytes_per_line = estimate_avg_bytes_per_line(path)
+    can_show_pct = file_size > 0 and avg_bytes_per_line > 0
+
+    # Tag prefix builders. Tags are emitted in alphabetical order so that the
+    # InfluxDB engine can take the cached series hash without resorting -- a
+    # convention the official client follows internally.
+    def signals_prefix(bus_name: str, can_id_hex: str) -> str:
+        key = (bus_name, can_id_hex)
+        cached = sig_prefix_cache.get(key)
+        if cached is None:
+            cached = (f"signals,bus={bus_name},can_id={can_id_hex},"
+                      f"session={session},vehicle={vehicle} ")
+            sig_prefix_cache[key] = cached
+        return cached
+
+    def raw_prefix(bus_name: str, can_id_hex: str) -> str:
+        key = (bus_name, can_id_hex)
+        cached = raw_prefix_cache.get(key)
+        if cached is None:
+            cached = (f"raw,bus={bus_name},can_id={can_id_hex},"
+                      f"session={session},vehicle={vehicle} ")
+            raw_prefix_cache[key] = cached
+        return cached
+
+    # Lines accumulate as Python strings; encoded once per flush.
+    batch: list[str] = []
+
     write_queue: queue.Queue = queue.Queue(maxsize=3)
     write_error: list = [None]
 
     def writer_worker():
         while True:
             item = write_queue.get()
-            if item is None:          # sentinel — time to exit
+            if item is None:
                 write_queue.task_done()
                 break
-            pts = item
             try:
                 if not dry_run:
-                    client.write_points(pts, time_precision="n")
+                    resp = http_session.post(write_url, data=item, timeout=60)
+                    if resp.status_code >= 300:
+                        raise RuntimeError(
+                            f"InfluxDB write failed {resp.status_code}: "
+                            f"{resp.text[:300]}"
+                        )
             except Exception as exc:
                 write_error[0] = exc
             finally:
@@ -482,11 +636,16 @@ def stream_and_write(
             return
         if write_error[0]:
             raise write_error[0]
-        pts = list(batch)
+        body = "".join(batch).encode("utf-8")
+        n_lines = len(batch)
         batch.clear()
-        queued += len(pts)
-        write_queue.put(pts)   # blocks if worker is behind (natural back-pressure)
-        pct = f" ({frames_seen * 100 // total_frames}%)" if total_frames else ""
+        queued += n_lines
+        write_queue.put(body)
+        if can_show_pct:
+            est_pct = int(frames_seen * avg_bytes_per_line * 100 / file_size)
+            pct = f" (~{est_pct}%)"
+        else:
+            pct = ""
         print(f"  {queued} points queued{pct}", end="\r", flush=True)
 
     for frame in parse_file(path):
@@ -494,19 +653,30 @@ def stream_and_write(
         if frame.is_tx:
             continue
 
-        ts_ns = int((start_epoch + frame.timestamp) * 1_000_000_000)
-        can_id_hex = f"0x{frame.arbitration_id:03X}"
-        bus_name = bus_map.get(frame.bus, f"ch{frame.bus}")
+        arb_id = frame.arbitration_id
 
-        # Skip entire message if its CAN ID is excluded for this bus (or all buses)
-        if frame.arbitration_id in exclude_id:
+        if arb_id in exclude_id:
             continue
-        if (bus_name, frame.arbitration_id) in exclude_bus_id:
+
+        # bus_map[chan] is None for transient/churn channels (see Vtrux T0
+        # Android startup behaviour, vtrux.md "Bus number churn in Android T0").
+        bus_name = bus_map.get(frame.bus)
+        if bus_name is None:
             continue
+
+        if (bus_name, arb_id) in exclude_bus_id:
+            continue
+
+        ts_ns = int((start_epoch + frame.timestamp) * 1_000_000_000)
+        can_id_hex = can_id_hex_cache.get(arb_id)
+        if can_id_hex is None:
+            can_id_hex = f"0x{arb_id:03X}"
+            can_id_hex_cache[arb_id] = can_id_hex
 
         decoded = False
-        if frame.arbitration_id in known_ids:
-            signals = decode_frame(frame, databases)
+        if arb_id in id_index:
+            signals = decode_frame(frame, id_index)
+            field_parts = []
             for sig_name, sig_value in signals.items():
                 if sig_value is None:
                     continue
@@ -514,42 +684,32 @@ def stream_and_write(
                     continue
                 if (bus_name, sig_name) in exclude_bus_signal:
                     continue
-                batch.append({
-                    "measurement": "signals",
-                    "tags": {
-                        "vehicle": vehicle,
-                        "bus":     bus_name,
-                        "signal":  sig_name,
-                        "can_id":  can_id_hex,
-                        "session": session,
-                    },
-                    "fields": {"value": float(sig_value)},
-                    "time": ts_ns,
-                })
+                field_parts.append(f"{sig_name}={float(sig_value)}")
+            if field_parts:
+                batch.append(
+                    f"{signals_prefix(bus_name, can_id_hex)}"
+                    f"{','.join(field_parts)} {ts_ns}\n"
+                )
             decoded = bool(signals)
 
         if upload_raw and not decoded:
-            fields = {"dlc": frame.dlc}
+            # raw measurement: int fields written with the InfluxDB 'i' suffix
+            # so they stay typed as integers in the database (line protocol's
+            # default for `field=N` is float).
+            field_parts = [f"dlc={frame.dlc}i"]
             for i, b in enumerate(frame.data):
-                fields[f"b{i}"] = b
-            batch.append({
-                "measurement": "raw",
-                "tags": {
-                    "vehicle": vehicle,
-                    "bus":     bus_name,
-                    "can_id":  can_id_hex,
-                    "session": session,
-                },
-                "fields": fields,
-                "time": ts_ns,
-            })
+                field_parts.append(f"b{i}={b}i")
+            batch.append(
+                f"{raw_prefix(bus_name, can_id_hex)}"
+                f"{','.join(field_parts)} {ts_ns}\n"
+            )
 
         if len(batch) >= batch_size:
             flush()
 
-    flush()  # queue any remainder
-    write_queue.put(None)   # send sentinel to stop worker
-    write_queue.join()      # wait for all batches to finish writing
+    flush()
+    write_queue.put(None)
+    write_queue.join()
     if write_error[0]:
         raise write_error[0]
     label = "counted" if dry_run else "written"
@@ -567,8 +727,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Upload using vehicle default DBCs
+  # Upload a single file
   py -3.11 tools/influx_upload.py canlog_20260315_143000_M0_T0.log --vehicle vtrux
+
+  # Upload all logs in a folder (non-recursive, .log/.asc/.trc/.csv)
+  py -3.11 tools/influx_upload.py projects/vtrux/logs/ --vehicle vtrux
+
+  # Upload a folder with a success log so interrupted runs can resume
+  py -3.11 tools/influx_upload.py projects/vtrux/logs/ --vehicle vtrux
+      --success-log projects/vtrux/notes/artifacts/upload_done.txt
 
   # Add an extra DBC on top of the vehicle defaults
   py -3.11 tools/influx_upload.py <log> --vehicle coda --dbc projects/coda/extra.dbc
@@ -583,13 +750,15 @@ Examples:
   py -3.11 tools/influx_upload.py <log> --vehicle vtrux --dry-run
     """,
     )
-    p.add_argument("logs", nargs="+", help="Log file(s) to upload (auto-detects format)")
+    p.add_argument("logs", nargs="+",
+                   help="Log file(s) or folder(s) to upload (auto-detects format). "
+                        "Folders are expanded non-recursively to .log/.asc/.trc/.csv files.")
     p.add_argument("--vehicle", "-v", required=True,
                    help=f"Vehicle name ({', '.join(VEHICLE_PROFILES)}). "
                         "Sets default DBC list and bus anchor IDs.")
     p.add_argument("--dbc", "-d", nargs="+", metavar="DBC",
                    help="Extra DBC file(s) to load in addition to the vehicle defaults")
-    p.add_argument("--host",     default="10.0.0.4",    help="InfluxDB host (default: 10.0.0.4)")
+    p.add_argument("--host",     default="localhost",    help="InfluxDB host (default: localhost)")
     p.add_argument("--port",     type=int, default=8086, help="InfluxDB port (default: 8086)")
     p.add_argument("--database", default="canbus-data",  help="InfluxDB database (default: canbus-data)")
     p.add_argument("--user",     default="claude",       help="InfluxDB username (default: claude)")
@@ -614,11 +783,20 @@ Examples:
                    help="Parse and count points but do not write to InfluxDB")
     p.add_argument("--batch-size", type=int, default=5000,
                    help="Points per write batch (default: 5000)")
+    p.add_argument("--success-log", metavar="FILE",
+                   help="File to append successfully uploaded log paths to (append-only). "
+                        "Skips files whose resolved path is already listed. "
+                        "Use this when uploading a folder so interrupted batches can be resumed "
+                        "without re-uploading files that already finished. "
+                        "No-op in --dry-run mode.")
     args = p.parse_args()
 
     # Dependency checks
     if InfluxDBClient is None:
         print("Error: influxdb package not installed.  pip install influxdb", file=sys.stderr)
+        sys.exit(1)
+    if requests is None:
+        print("Error: requests package not installed.  pip install requests", file=sys.stderr)
         sys.exit(1)
     if cantools is None:
         print("Error: cantools not installed.  pip install cantools", file=sys.stderr)
@@ -661,14 +839,25 @@ Examples:
         n_sigs = sum(len(m.signals) for m in db.messages)
         print(f"  {name}: {len(db.messages)} messages, {n_sigs} signals")
 
-    # Connect
+    # InfluxDBClient is kept for control-plane queries (DROP SERIES, etc.).
+    # Writes go through a plain requests.Session pointed at /write -- the
+    # per-point custom serializer in stream_and_write was profiled as ~3-5x
+    # faster than the official client's `make_line` once tag-prefix caching
+    # is in place. http_session uses HTTP keepalive, so we get the same
+    # single-TCP-connection behaviour the InfluxDBClient had for writes.
     client = None
+    http_session = None
+    write_url = None
     if not args.dry_run:
         client = InfluxDBClient(
             host=args.host, port=args.port,
             username=args.user, password=args.password,
             database=args.database,
         )
+        http_session = requests.Session()
+        http_session.auth = (args.user, args.password)
+        write_url = (f"http://{args.host}:{args.port}/write"
+                     f"?db={args.database}&precision=n")
 
     try:
         recording_tz = _parse_tz(args.tz)
@@ -677,60 +866,137 @@ Examples:
         sys.exit(1)
     print(f"Recording timezone: {args.tz}")
 
-    for log_str in args.logs:
-        log_path = Path(log_str)
-        if not log_path.exists():
-            print(f"\nSkipping {log_str}: file not found", file=sys.stderr)
+    # Expand positional args:
+    #   foo.log              -> use as-is
+    #   path/to/folder/      -> expand to all .log/.asc/.trc/.csv inside
+    #   path/with/*.log      -> shell-style glob (script-side, so PowerShell
+    #                           and cmd users get the same convenience as Bash)
+    _LOG_EXTS = {'.log', '.asc', '.trc', '.csv'}
+    log_paths: list[Path] = []
+    for entry in args.logs:
+        if any(c in entry for c in '*?['):
+            matches = sorted(Path(p) for p in glob.glob(entry))
+            if not matches:
+                print(f"Warning: no files matched glob {entry}", file=sys.stderr)
+            log_paths.extend(matches)
             continue
+        p_entry = Path(entry)
+        if p_entry.is_dir():
+            expanded = sorted(f for f in p_entry.iterdir()
+                              if f.is_file() and f.suffix.lower() in _LOG_EXTS)
+            if not expanded:
+                print(f"Warning: no log files found in folder {entry}", file=sys.stderr)
+            log_paths.extend(expanded)
+        else:
+            log_paths.append(p_entry)
 
-        session = args.session or derive_session(log_path)
+    # Load already-uploaded paths from the success log (if provided).
+    done_paths: set[str] = set()
+    if args.success_log:
+        sl_path = Path(args.success_log)
+        if sl_path.exists():
+            for line in sl_path.read_text(encoding='utf-8').splitlines():
+                line = line.strip()
+                if line:
+                    done_paths.add(line)
+        if done_paths:
+            print(f"Success log: {len(done_paths)} file(s) already uploaded, will skip.")
 
-        print(f"\n--- {log_path.name}")
-        print(f"  session : {session}")
+    # Pre-compute (log_path, session) pairs for files we will actually upload,
+    # so --delete can run ONCE per unique session before the upload loop
+    # begins. Previous behaviour ran DROP per file, which on a multi-file
+    # upload sharing one --session caused each file to wipe the previous
+    # file's data, leaving only the last file's points in InfluxDB.
+    pending: list[tuple[Path, str]] = []
+    skipped_done: list[Path] = []
+    failed: list[str] = []
+    for log_path in log_paths:
+        resolved_str = str(log_path.resolve())
+        if resolved_str in done_paths:
+            skipped_done.append(log_path)
+            continue
+        if not log_path.exists():
+            print(f"Skipping {log_path}: file not found", file=sys.stderr)
+            failed.append(str(log_path))
+            continue
+        pending.append((log_path, args.session or derive_session(log_path)))
 
-        if args.delete and not args.dry_run:
-            print(f"  Dropping existing series for vehicle={args.vehicle} session={session} ...")
+    if args.delete and not args.dry_run and pending:
+        unique_sessions = sorted(set(s for _, s in pending))
+        print(f"\nDropping existing series for "
+              f"{len(unique_sessions)} session(s) before upload ...")
+        for sess in unique_sessions:
+            print(f"  vehicle={args.vehicle} session={sess}")
             client.query(
                 f"DROP SERIES FROM signals "
-                f"WHERE \"vehicle\"='{args.vehicle}' AND \"session\"='{session}'"
+                f"WHERE \"vehicle\"='{args.vehicle}' AND \"session\"='{sess}'"
             )
             if args.raw:
                 client.query(
                     f"DROP SERIES FROM raw "
-                    f"WHERE \"vehicle\"='{args.vehicle}' AND \"session\"='{session}'"
+                    f"WHERE \"vehicle\"='{args.vehicle}' AND \"session\"='{sess}'"
                 )
 
-        # Pass 1: scan for bus IDs and log duration (streaming, low memory)
-        print(f"  Scanning ...")
-        channel_ids, log_duration, frame_count = scan_log(log_path)
-        print(f"  {frame_count} frames")
+    for log_path in skipped_done:
+        print(f"\nSkipping {log_path.name}: already in success log")
 
-        start_epoch = derive_start_epoch(log_path, log_duration, recording_tz)
-        start_dt = datetime.fromtimestamp(start_epoch, tz=timezone.utc).strftime(
-            "%Y-%m-%d %H:%M:%S UTC"
-        )
-        print(f"  anchor  : {start_dt}")
+    for log_path, session in pending:
+        resolved_str = str(log_path.resolve())
 
-        bus_map = identify_buses(channel_ids, bus_anchors)
-        for ch, name in sorted(bus_map.items()):
-            n = sum(1 for ids in [channel_ids.get(ch, set())] for _ in ids)
-            print(f"  ch{ch} -> {name}  ({len(channel_ids.get(ch, set()))} unique IDs)")
+        print(f"\n--- {log_path.name}")
+        print(f"  session : {session}")
 
-        # Pass 2: stream decode + write
-        print(f"  Writing ...")
-        stream_and_write(
-            log_path, databases, args.vehicle, session,
-            start_epoch, args.raw, bus_map,
-            args.batch_size, client, args.dry_run,
-            total_frames=frame_count,
-            exclude_global=exclude_global,
-            exclude_bus_signal=exclude_bus_signal,
-            exclude_id=exclude_id,
-            exclude_bus_id=exclude_bus_id,
-            gzip=args.compress,
-        )
+        try:
+            # Pass 1: scan for per-channel IDs and frame counts (streaming, low memory).
+            # The frame counts feed identify_buses' churn filter (Vtrux Android T0).
+            print(f"  Scanning ...")
+            channel_ids, channel_counts, log_duration = scan_log(log_path)
+            total_frames = sum(channel_counts.values())
+            print(f"  {total_frames} frames across {len(channel_counts)} channel(s)")
+
+            start_epoch = derive_start_epoch(log_path, log_duration, recording_tz)
+            start_dt = datetime.fromtimestamp(start_epoch, tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S UTC"
+            )
+            print(f"  anchor  : {start_dt}")
+
+            bus_map = identify_buses(channel_ids, channel_counts, bus_anchors)
+            for ch, name in sorted(bus_map.items()):
+                count = channel_counts.get(ch, 0)
+                n_ids = len(channel_ids.get(ch, set()))
+                if name is None:
+                    print(f"  ch{ch} -> SKIP transient ({count} frames, {n_ids} unique IDs)")
+                else:
+                    print(f"  ch{ch} -> {name}  ({count} frames, {n_ids} unique IDs)")
+
+            # Pass 2: stream decode + write. Progress is byte-based, estimated
+            # from file_size and a sniffed avg-bytes-per-line ratio (no frame
+            # count needed); the '~' prefix flags it as approximate.
+            print(f"  Writing ...")
+            stream_and_write(
+                log_path, databases, args.vehicle, session,
+                start_epoch, args.raw, bus_map,
+                args.batch_size, http_session, write_url, args.dry_run,
+                exclude_global=exclude_global,
+                exclude_bus_signal=exclude_bus_signal,
+                exclude_id=exclude_id,
+                exclude_bus_id=exclude_bus_id,
+            )
+
+        except Exception as exc:
+            print(f"\n  ERROR uploading {log_path.name}: {exc}", file=sys.stderr)
+            failed.append(str(log_path))
+            continue
+
+        if args.success_log and not args.dry_run:
+            with open(args.success_log, 'a', encoding='utf-8') as sf:
+                sf.write(resolved_str + '\n')
 
     print("\nDone.")
+    if failed:
+        print(f"  {len(failed)} file(s) failed or not found:", file=sys.stderr)
+        for f in failed:
+            print(f"    {f}", file=sys.stderr)
 
 
 if __name__ == "__main__":

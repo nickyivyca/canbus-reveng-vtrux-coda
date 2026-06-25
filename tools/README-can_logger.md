@@ -1,4 +1,4 @@
-﻿# Multi-Device CAN Logger
+# Multi-Device CAN Logger
 
 ## Overview
 
