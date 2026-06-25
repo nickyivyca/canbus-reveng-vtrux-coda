@@ -15,5 +15,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "CanLoggerApps"
 include(":cancore")
+include(":display")
 include(":coda")
 include(":vtrux")
+include(":companion")

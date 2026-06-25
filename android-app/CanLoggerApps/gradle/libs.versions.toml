@@ -8,6 +8,12 @@ lifecycle = "2.7.0"
 activityCompose = "1.9.0"
 composeBom = "2024.04.01"
 composeCompiler = "1.5.10"
+nanohttpd = "2.3.1"
+datastore = "1.0.0"
+documentfile = "1.0.1"
+okhttp = "4.12.0"
+emoji2 = "1.4.0"
+javaWebSocket = "1.5.7"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -22,6 +28,12 @@ compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
+nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version.ref = "nanohttpd" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+androidx-emoji2-bundled = { group = "androidx.emoji2", name = "emoji2-bundled", version.ref = "emoji2" }
+java-websocket = { group = "org.java-websocket", name = "Java-WebSocket", version.ref = "javaWebSocket" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

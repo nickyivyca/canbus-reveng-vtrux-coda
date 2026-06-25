@@ -1,0 +1,336 @@
+VERSION ""
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_:
+
+BO_ 84 EPRI_MCU_Cmd2_Response_0054: 5 Vector__XXX
+ SG_ GENE_RotSpd : 0|16@1+ (1,-32767) [-32767|32768] "rpm" Vector__XXX
+ SG_ GENE_EmergcyStp_flg : 35|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1040 EPRI_BCM_Status_0410: 8 Vector__XXX
+ SG_ bcm_ready : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_epo : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_on_plug : 2|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_hvil_mon : 3|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_mainc_stat : 4|2@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ bcm_chgc_stat : 6|2@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ bcm_cpwr_cmd : 12|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_alarm : 14|2@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ bcm_gfd : 11|12@0+ (0.25,0) [0|1023.75] "" Vector__XXX
+ SG_ bcm_soc : 24|8@1+ (0.5,0) [0|127.5] "%" Vector__XXX
+ SG_ bcm_ibat : 39|16@0+ (0.025,-1000) [-1000|639.175] "A" Vector__XXX
+ SG_ bcm_chg_done : 52|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_cool_req : 53|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_vbat : 51|12@0+ (0.25,0) [0|1023.75] "V" Vector__XXX
+
+BO_ 1056 EPRI_BCM_Limits_0420: 8 Vector__XXX
+ SG_ bcm_dis_max : 7|12@0+ (0.25,0) [0|1023.75] "A" Vector__XXX
+ SG_ bcm_chg_max : 11|12@0+ (0.25,0) [0|1023.75] "A" Vector__XXX
+ SG_ bcm_cell_undervolt : 54|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_cell_overvolt : 55|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1072 EPRI_BCM_Data1_0430: 8 Vector__XXX
+ SG_ bcm_chga_ena : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_cell_vmax : 4|13@0+ (0.001,0) [0|3.8] "V" Vector__XXX
+ SG_ bcm_cell_vmin : 20|13@0+ (0.001,0) [0|3.8] "V" Vector__XXX
+ SG_ bcm_veh_mon : 21|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_chga_mon : 22|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_mod_ena : 23|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_cell_tmax : 32|8@1+ (0.5,-40) [-40|80] "degC" Vector__XXX
+ SG_ bcm_cell_tmin : 40|8@1+ (0.5,-40) [-40|80] "degC" Vector__XXX
+ SG_ bcm_lvbat : 56|8@1+ (0.1,0) [0|25.3] "V" Vector__XXX
+
+BO_ 1088 EPRI_BCM_Data2_0440: 8 Vector__XXX
+ SG_ bcm_mainc_stat : 2|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ bcm_fault_mon : 6|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_balancing : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ bcm_fgd : 8|8@1+ (0.5,0) [0|126.5] "%" Vector__XXX
+ SG_ bcm_vbus_pos : 39|12@0+ (0.25,0) [0|1023.75] "V" Vector__XXX
+ SG_ bcm_vbus_neg : 43|12@0+ (0.25,-500) [-500|523.75] "V" Vector__XXX
+ SG_ bcm_balancing_cnt : 56|8@1+ (1,0) [0|253] "" Vector__XXX
+
+BO_ 1137 EPRI_MCU_Info2_0471: 7 Vector__XXX
+ SG_ GENE_Mot_Trq : 0|16@1+ (0.125,-4096) [-4096|4095.875] "Nm" Vector__XXX
+
+BO_ 1145 EPRI_MCU_Thermal1_0479: 4 Vector__XXX
+ SG_ GENE_DrvCoolFlowReq_pct : 0|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+ SG_ GENE_MotCoolFlowReq_pct : 8|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+ SG_ GENE_ThermInd_pct : 16|8@1+ (0.78125,0) [0|100] "%" Vector__XXX
+
+BO_ 1154 EPRI_MCU_Info1_0482: 6 Vector__XXX
+ SG_ GENE_HighPwr_Volt : 8|11@1+ (1,0) [0|2047] "V" Vector__XXX
+ SG_ GENE_HighPwr_Curr : 24|14@1+ (0.25,-2048) [-2048|2047.75] "A" Vector__XXX
+
+BO_ 1426 EPRI_HCU_Sensor_0592: 8 Vector__XXX
+ SG_ EVSESwitchState : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ ExportPowerState : 2|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ IgnitionKeyState : 4|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Veh_BrakePdl_Pos : 32|16@1+ (0.01,0) [0|100] "%" Vector__XXX
+
+BO_ 1432 EPRI_HCU_VIRTSENS_7_PwrStatAvg_0598: 8 Vector__XXX
+ SG_ DBL_ESSPwrAvg : 0|16@1- (0.01,0) [-327.68|327.67] "kW" Vector__XXX
+ SG_ DBL_TracPwrAvg : 32|16@1- (0.01,0) [-327.68|327.67] "kW" Vector__XXX
+
+BO_ 1433 EPRI_HCU_VIRTSENS_5_Pressures_0599: 8 Vector__XXX
+ SG_ GeneOilPress : 0|16@1+ (0.1,0) [0|6553.5] "kPa" Vector__XXX
+ SG_ TracOilPress : 32|16@1+ (0.1,0) [0|6553.5] "kPa" Vector__XXX
+
+BO_ 1573 EPRI_Veh_Odo_0625: 8 Vector__XXX
+ SG_ VehicleOdometer : 7|24@0+ (1,0) [0|16777215] "km" Vector__XXX
+ SG_ VehicleConfig : 29|3@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2566903232 EPRI_INVCH_Bdc_Temp_18FFD5C0: 8 Vector__XXX
+ SG_ INVCH_Bdc_Temperature_Int : 32|16@1- (0.1,0) [-3276.8|3276.7] "degC" Vector__XXX
+ SG_ INVCH_Bdc_TempPercent : 48|8@1+ (1,0) [0|255] "%" Vector__XXX
+
+BO_ 2566903475 EPRI_DCDC_18FFD6B3: 8 Vector__XXX
+ SG_ DCDC_LV_Volt : 0|16@1+ (0.05,0) [0|3276.75] "V" Vector__XXX
+ SG_ DCDC_LV_Curr : 16|16@1+ (0.05,0) [0|3276.75] "A" Vector__XXX
+ SG_ DCDC_HV_Volt : 32|16@1+ (0.05,0) [0|3276.75] "V" Vector__XXX
+ SG_ DCDC_Temperature : 48|16@1- (0.1,0) [-3276.8|3276.7] "degC" Vector__XXX
+
+BO_ 2566903488 EPRI_INVCH_Inv_Output_18FFD6C0: 8 Vector__XXX
+ SG_ INVCH_Inv_Vout1_RMS : 0|16@1+ (0.05,0) [0|3276.75] "V" Vector__XXX
+ SG_ INVCH_Inv_Vout2_RMS : 16|16@1+ (0.05,0) [0|3276.75] "V" Vector__XXX
+ SG_ INVCH_Inv_Iout1_RMS : 32|16@1+ (0.05,0) [0|3276.75] "A" Vector__XXX
+ SG_ INVCH_Inv_Iout2_RMS : 48|16@1+ (0.05,0) [0|3276.75] "A" Vector__XXX
+
+BO_ 2566903744 EPRI_INVCH_Bdc_Ibat_18FFD7C0: 8 Vector__XXX
+ SG_ INVCH_Bdc_Vbat : 0|16@1+ (0.05,0) [0|3276.75] "V" Vector__XXX
+ SG_ INVCH_Bdc_Ibat : 16|16@1- (0.05,0) [-1638.4|1638.35] "A" Vector__XXX
+ SG_ INVCH_Chg_Vin_RMS : 32|16@1+ (0.05,0) [0|3276.75] "V" Vector__XXX
+ SG_ INVCH_Chg_Iin_RMS : 48|16@1+ (0.05,0) [0|3276.75] "A" Vector__XXX
+
+BO_ 2566904000 EPRI_INVCH_Bdc_12Vbat_18FFD8C0: 8 Vector__XXX
+ SG_ INVCH_Bdc_12Vbat : 0|16@1+ (0.02,0) [0|1310.7] "V" Vector__XXX
+
+
+BO_ 83 EPRI_OperatingMode_0053: 1 Vector__XXX
+ SG_ OperationState : 0|4@1+ (1,0) [0|8] "" Vector__XXX
+ SG_ OperationMode : 4|3@1+ (1,0) [0|3] "" Vector__XXX
+
+BO_ 776 EPRI_ParkRequest_0308: 1 Vector__XXX
+ SG_ ParkRequest : 5|2@1+ (1,0) [0|3] "" Vector__XXX
+
+BO_ 1024 EPRI_HV_BCM_Control_0400: 1 Vector__XXX
+ SG_ hsc_bcm_enable : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ hsc_bcm_epo : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ hsc_bcm_mainc_close : 2|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ hsc_bcm_leakage_ena : 3|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1372 EPRI_ParkLock_055C: 4 Vector__XXX
+ SG_ parkLockState : 0|3@1+ (1,0) [0|6] "" Vector__XXX
+ SG_ parkSensor : 6|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ driveSensor : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1408 EPRI_TCM_CANError_0580: 3 Vector__XXX
+ SG_ tcm_CAN_ERR : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1583 EPRI_HCU_SwVersion_062F: 6 Vector__XXX
+ SG_ HCU_SwIDType_Enum : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ HCU_SwIDPrj_Enum : 2|6@1+ (1,0) [0|63] "" Vector__XXX
+ SG_ MajorVersion : 8|7@1+ (1,0) [0|127] "" Vector__XXX
+ SG_ MinorVersion : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1594 EPRI_VehicleConfig_063A: 8 Vector__XXX
+ SG_ iVehCfg_chgr_md : 56|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ iVehCfg_ess_md : 57|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1627 EPRI_HCU_DTC_065B: 8 Vector__XXX
+ SG_ DTC_Code : 55|16@0+ (1,0) [0|65535] "" Vector__XXX
+
+BO_ 2566902976 EPRI_INVCH_Bdc_Status_18FFD4C0: 8 Vector__XXX
+ SG_ INVCH_Bdc_Page M : 0|8@1+ (1,0) [0|3] "" Vector__XXX
+ SG_ INV_Bdc_bEVSEConnected m0 : 11|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bCharging m0 : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bExporting m0 : 19|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bGridTied m0 : 20|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INVCH_Bdc_Signal_State m0 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ INVCH_Bdc_bBoost_St m1 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ INVCH_Bdc_Inverter_St m2 : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ INV_Bdc_bACOk m3 : 8|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bACOV m3 : 9|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bACUV m3 : 10|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bBatteryUV m3 : 11|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bHVBatteryOV m3 : 12|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bHVBatteryUV m3 : 13|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bOTP m3 : 14|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bExportOverload m3 : 15|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bInverterFault m3 : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ INV_Bdc_bBBFault m3 : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+
+CM_ BO_ 84 "Via Motors GENE (generator) MCU.";
+
+CM_ BO_ 1040 "A123 BMS status message. bcm_mainc_stat and bcm_chgc_stat share the OPEN/CLOSED/HIGH/LOW array. bcm_alarm is a 4-entry NONE/TYPE1/TYPE2/TYPE3 array from B1[7:6].";
+
+CM_ BO_ 1056 "A123 BMS charge/discharge current limits. bcm_cell_overvolt/undervolt are boolean flags from B6.";
+
+CM_ BO_ 1072 "A123 BMS cell data. Voltage sentinel 0x1FFE (8.190V) falls inside declared range -- EPRI uses explicit equality checks, not range filtering. Temperature sentinel raw>=0xFE excluded by DBC range. bcm_lvbat B7[6:5]=0x60 when 12V falls below 12.8V (BMS offline) -- BMS_ValidityMux byproduct, not a dedicated flag.";
+
+CM_ BO_ 1088 "A123 BMS balancing state and HV bus voltages. bcm_mainc_stat here is 4-bit (16-entry contactor state machine) -- distinct from 2-bit bcm_mainc_stat in 0x0410.";
+
+CM_ BO_ 1137 "Via Motors GENE MCU motor torque. B2-B6 uncharacterized.";
+
+CM_ BO_ 1145 "Via Motors GENE MCU thermal status.";
+
+CM_ BO_ 1154 "Via Motors GENE MCU HV bus current and voltage.";
+
+CM_ BO_ 1426 "HCU sensor inputs. EVSESwitchState (B0 bit1), ExportPowerState (B0 bit2), IgnitionKeyState (B0 bit4) not in plist sampling. B6-B7 uncharacterized.";
+
+CM_ BO_ 1432 "HCU average power statistics. B2-B3 and B6-B7 uncharacterized (see vtrux-powertrain-experimental.dbc for generator power at B2-B3).";
+
+CM_ BO_ 1433 "HCU motor cooling oil pressures. Note: plist index .1=traction, .2=generator (reversed from format string order). B2-B3 and B6-B7 uncharacterized.";
+
+CM_ BO_ 1573 "HCU vehicle odometer and platform config. Scale 1 km/count (integer km). B4-B7 uncharacterized.";
+
+CM_ BO_ 2566903232 "Bel Power Solutions inverter/charger -- BDC temperature. INVCH_Bdc = bidirectional DC stage.";
+
+CM_ BO_ 2566903475 "Separate DC-DC step-down converter (NOT the Bel INVCH unit). Not in BelInverter.dbc.";
+
+CM_ BO_ 2566903488 "Bel Power Solutions inverter -- AC output. INVCH_Inv = inverter sub-stage (DC->AC). Vout1/Vout2 = split-phase 120V/120V. Cross-validated against BelInverter.dbc.";
+
+CM_ BO_ 2566903744 "Bel Power Solutions bidirectional charger -- HV battery and AC input. INVCH_Bdc_Ibat: signed (bidirectional); positive = charging, negative = discharging/export.";
+
+CM_ BO_ 2566904000 "Bel Power Solutions -- 12V battery monitoring. Cross-validated against BelInverter.dbc.";
+
+
+CM_ SG_ 84 GENE_RotSpd "Zero at raw=32767 (0x7FFF). Note: GENE uses 32767, not 32768 like trac_rpm.";
+
+CM_ SG_ 1040 bcm_gfd "Ground fault detection (isolation monitor). Normal=1000.0 (raw=4000). Fault=0.0 (raw=0) -- fires 150ms before EPO in isolation test; does not fire in charge fault EPO or normal drives.";
+CM_ SG_ 1040 bcm_ibat "Negative=discharge, positive=charge. Zero at raw=40000. Invalid if (raw & 0xFFFE)==0xFFFE.";
+CM_ SG_ 1040 bcm_mainc_stat "Shares array with bcm_chgc_stat.";
+CM_ SG_ 1040 bcm_chgc_stat "Shares array with bcm_mainc_stat.";
+
+
+CM_ SG_ 1072 bcm_cell_vmax "Sentinel raw=0x1FFE (8.190V) excluded by DBC range -- healthy LFP cells stay below 3.8V.";
+CM_ SG_ 1072 bcm_cell_tmax "Sentinel raw>=0xFE excluded by DBC range. Supersedes prior experimental formula raw-100.";
+CM_ SG_ 1072 bcm_lvbat "Typical: 14.0V (DCDC running), 12.7V (at rest/shutdown).";
+
+CM_ SG_ 1088 bcm_mainc_stat "16-entry contactor sequence state machine. See VAL_.";
+CM_ SG_ 1088 bcm_fgd "Role unconfirmed (plist label only). Always at sentinel 0xFE in all 73 captured logs -- never populated by this BMS configuration.";
+CM_ SG_ 1088 bcm_vbus_neg "Zero at raw=2000.";
+
+CM_ SG_ 1137 GENE_Mot_Trq "Zero at raw=32768. Offset -4096 Nm.";
+
+CM_ BO_ 1145 "B3 uncharacterized.";
+CM_ BO_ 1154 "B5 uncharacterized.";
+
+CM_ SG_ 1154 GENE_HighPwr_Curr "Zero at raw=8192. Byte-swapped (BE) alternative gives absurd values -- use Intel LE.";
+
+
+CM_ SG_ 1432 DBL_ESSPwrAvg "Positive = battery discharging.";
+CM_ SG_ 1432 DBL_TracPwrAvg "Positive = traction motor producing power.";
+
+CM_ SG_ 1573 VehicleOdometer "Scale 1 km/count (integer km). See vtrux.md 'How to Tell the Two Trucks Apart'.";
+CM_ SG_ 1573 VehicleConfig "0=K2XX (Silverado/Tahoe-based Vtrux), 1=GMT-600 (Express van Vtrux).";
+
+
+
+
+CM_ SG_ 2566903744 INVCH_Bdc_Ibat "Positive=charging, negative=discharging/export.";
+
+
+CM_ BO_ 83 "HCU operating mode and state machine.";
+
+CM_ SG_ 83 OperationMode "0=NTRL; other values are error strings (app defect -- only 0 is a real mode).";
+CM_ SG_ 83 OperationState "9-entry state machine, valid 0-8.";
+
+CM_ BO_ 776 "HCU park request command. B1-B2=InputShaftSpeed decoded in vtrux-powertrain-experimental.dbc.";
+
+CM_ SG_ 776 ParkRequest "0=OFF, 1=Park, 2=UnPark.";
+
+CM_ BO_ 1024 "HV BCM control word (HCU-to-BMS commands).";
+
+CM_ SG_ 1024 hsc_bcm_epo "Emergency power off command.";
+
+CM_ BO_ 1372 "BorgWarner TCM state. See notes/borgwarner.md.";
+
+
+CM_ BO_ 1408 "TCM CAN error flag.";
+
+
+CM_ BO_ 1583 "HCU software version fields, bit-packed. Three fields not in SG_ (cross-byte): HCU_SwIDMaturity_Enum=(B0[0]<<1)|(B1>>7) 2-bit; HCU_SwIDVehVariant_Enum=(B3<<2)|(B4>>6) 10-bit; HCU_SwIDCalVer_Cnt=(B4[5:0]<<2)|(B5>>6) 8-bit.";
+
+
+CM_ BO_ 1594 "Vehicle configuration flags -- charger type and ESS pack type.";
+
+CM_ SG_ 1594 iVehCfg_chgr_md "0=POWERONE, 1=DRS.";
+CM_ SG_ 1594 iVehCfg_ess_md "0=A123, 1=VALENCE.";
+
+CM_ BO_ 1627 "HCU DTC dispatcher. Never observed in any captured log -- scan-tool-requested stored DTC readout only. B0-B5 not read.";
+
+CM_ SG_ 1627 DTC_Code "16-bit SAE J2012 code (big-endian). 29-entry lookup -- see VAL_.";
+
+CM_ BO_ 2566902976 "Bel Power Solutions INVCH_Bdc multi-page status. B0=page selector. Cross-validated against BelInverter.dbc (EPRI app missing 3 fault flags on page 3).";
+
+CM_ SG_ 2566902976 INVCH_Bdc_Signal_State "Page 0. 29-entry state dictionary. See VAL_.";
+CM_ SG_ 2566902976 INVCH_Bdc_bBoost_St "Page 1. 21-entry buck-boost state dictionary. See VAL_.";
+CM_ SG_ 2566902976 INVCH_Bdc_Inverter_St "Page 2. 35-entry inverter state dictionary. See VAL_.";
+CM_ SG_ 2566902976 INV_Bdc_bACOk "Also in BelInverter.dbc as BELINV_acOk.";
+CM_ SG_ 2566902976 INV_Bdc_bACOV "AC over-voltage.";
+CM_ SG_ 2566902976 INV_Bdc_bACUV "AC under-voltage.";
+CM_ SG_ 2566902976 INV_Bdc_bBatteryUV "12V battery under-voltage.";
+CM_ SG_ 2566902976 INV_Bdc_bHVBatteryOV "HV battery over-voltage.";
+CM_ SG_ 2566902976 INV_Bdc_bHVBatteryUV "HV battery under-voltage.";
+CM_ SG_ 2566902976 INV_Bdc_bOTP "Over-temperature protection.";
+CM_ SG_ 2566902976 INV_Bdc_bExportOverload "Export overload.";
+CM_ SG_ 2566902976 INV_Bdc_bBBFault "Buck-boost fault.";
+
+VAL_ 1040 bcm_alarm 0 "NONE" 1 "TYPE1" 2 "TYPE2" 3 "TYPE3" ;
+VAL_ 1040 bcm_chgc_stat 0 "OPEN" 1 "CLOSED" 2 "HIGH" 3 "LOW" ;
+VAL_ 1040 bcm_mainc_stat 0 "OPEN" 1 "CLOSED" 2 "HIGH" 3 "LOW" ;
+
+VAL_ 1088 bcm_mainc_stat 0 "ALL_OPEN" 1 "FAILED_MAINP_OR_R_WELD" 2 "CLOSE_MAINR" 3 "FAILED_MAINR_OPEN" 4 "FAILED_MAINN_WELD" 5 "CLOSE_MAINN" 6 "FAILED_MAINN_OPEN" 7 "WAIT_PRECHARGE" 8 "CLOSE_MAINP" 9 "OPEN_MAINR" 10 "FAILED_MAINP_OPEN" 11 "MAIN_PN_CLOSED_DRIVE" 12 "MAIN_P_CLOSED_CHARGE" 13 "SHUTDOWN_REQUEST" 14 "ALL_OPEN_SHUTDOWN" ;
+
+VAL_ 1573 VehicleConfig 0 "K2XX" 1 "GMT600" ;
+
+
+VAL_ 83 OperationMode 0 "NTRL" 1 "Invalid_1" 2 "Invalid_2" ;
+VAL_ 83 OperationState 0 "INIT" 1 "STBY" 2 "ACTIVATION" 3 "DEACTIVATION" 4 "OPERATIONAL" 5 "FAILURE" 6 "SHTDWN" 7 "WAIT4COOLING" 8 "PWR_OFF_RDY" ;
+
+VAL_ 776 ParkRequest 0 "OFF" 1 "Park" 2 "UnPark" ;
+
+VAL_ 1372 parkLockState 0 "OFF" 1 "Park" 2 "Parked" 3 "ParkStalled" 4 "Unparking" 5 "Unparked" 6 "UnparkStalled" ;
+
+VAL_ 1594 iVehCfg_chgr_md 0 "POWERONE" 1 "DRS" ;
+VAL_ 1594 iVehCfg_ess_md 0 "A123" 1 "VALENCE" ;
+
+VAL_ 1627 DTC_Code 3431 "aChgr_p0d67ChgrPfrm_dtc" 6688 "sEss_p1a20BecmAFlt" 2683 "sEss_p0a7bBecmMilOnReq" 6689 "sEss_p1a21BecmACritFlt" 6785 "sEss_p1a81HvilPrfmGene" 6786 "sEss_p1a82HvilPrfmTrac" 6784 "sEss_p1a80HvilPrfmDcdc" 2726 "sEss_p0aa6HvIso" 6816 "sChgr_p1aa0ChgrShtdwn" 2571 "cEss_p0a0bHvilPrfm" 2591 "cEss_p0a1fEss" 54016 "diagHcu_u1300AppIntrptTsk" 54017 "diagHcu_u1301LowMemTsk2" 54018 "diagHcu_u1302LowMemTsk1" 54019 "diagHcu_u1303LowMemIdleTsk" 54020 "diagHcu_u1304LowMemIntrpt" 54021 "diagHcu_u1305LowMemKernel" 54022 "diagHcu_u1306ShtdwnTsk" 54023 "diagHcu_u1307LowMemHeap" 54033 "diagHcu_u1311HighCpuTsk2" 54032 "diagHcu_u1310HighCpuAppIntrptTsk" 54034 "diagHcu_u1312HighCpuTsk1" 54035 "diagHcu_u1313HighCpuShtdwnTsk" 54036 "diagHcu_u1314CpuIdleApp" 49449 "inAbstrCanEbcm_u0129LostRx" 49408 "inAbstrCanEcm_u0100LostRx" 49515 "inAbstrCanAccm_u016BLostRx" 49425 "inAbstrCanBecm_u0111LostRx" 49814 "inAbstrCanBdc_u0296LostRx" ;
+
+VAL_ 2566902976 INVCH_Bdc_Signal_State 0 "INIT" 1 "WAKE_UP" 2 "VEH_CHARGE" 3 "OTP" 4 "SLEEP" 5 "DELAYED_SLEEP" 6 "TEST" 7 "EXPORT" 8 "STANDBY" 9 "DEBUG" 10 "NOT_CONN_A" 11 "CONN_B" 12 "ACCEPT_ENERGY_CD" 13 "ENERGY_DISC_E" 14 "ERR" 15 "SHUTDOWN_CHARGER" 20 "CHRGR_SHTDOWN_1" 21 "CHRGR_SHTDOWN_2" 22 "CHRGR_SHTDOWN_3" 23 "CHRGR_SHTDOWN_4" 30 "EXP_INIT" 31 "EXP_DISABLED" 32 "EXP_ENERGY" 33 "EXP_SHTDOWN" 34 "EXP_ALCI" 40 "EXP_SHTDWN_1" 41 "EXP_SHTDWN_2" 42 "EXP_SHTDWN_3" 43 "EXP_SHTDWN_4" ;
+
+VAL_ 2566902976 INVCH_Bdc_bBoost_St 0 "FIRST_START" 1 "IDDLE" 2 "UV_OV" 3 "STARTUP" 4 "RUNNING" 5 "LATCHED_FAULT1" 6 "BUS_ERROR" 7 "OTP" 8 "DEBUG" 9 "INIT" 10 "OVERLOAD" 11 "DRIVER_FAULT" 12 "SHORTCIRCUIT" 13 "DCDC_SOFTSTART" 14 "BB_SOFTSTART" 15 "SOFTSTART" 16 "JUMP_BOOTLOADER" 17 "GOTO_SLEEP" 18 "BB_DEBUG" 19 "DC_DEBUG" 20 "WATCHDOG" ;
+
+VAL_ 2566902976 INVCH_Bdc_Inverter_St 0 "FIRST_START" 1 "IDDLE" 2 "INV_UV_OV" 3 "INV_STARTUP" 4 "INV_RUNNING" 5 "LATCHED_FAULT" 6 "BUS_ERROR" 7 "OTP" 8 "INV_DEBUG" 9 "INIT" 10 "DRIVER_FAULT" 11 "OVERLOAD" 12 "SHORTCIRCUIT" 13 "INV_SOFTSTART" 14 "BB_SOFTSTART" 15 "SOFTSTART" 16 "JUMP_BOOTLOADER" 17 "GOTO_SLEEP" 18 "PFC_DC_UV_OV" 19 "INV_DRIVER_SOFTSTART" 20 "ALCI_ACTIVE" 21 "INV_RELAY_START" 22 "PFC_DEBUG" 23 "PFC_DRIVER_SOFTSTART" 24 "PFC_SOFTSTART" 25 "PFC_RELAY_START" 26 "PFC_RUNNING" 27 "DC_DEBUG" 28 "INV_DC_DEBUG" 29 "PFC_AC_UV_OV" 30 "WATCHDOG" 31 "INV_DC_DEBUG_NO_PROT" 32 "INV_ENABLE_N" 33 "PFC_ENABLE_N" 34 "INV_HICCUP" ;

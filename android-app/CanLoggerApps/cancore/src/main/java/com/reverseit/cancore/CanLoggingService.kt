@@ -76,8 +76,15 @@ class CanLoggingService : Service() {
 
         private const val MAX_SEGMENT_BYTES = 50L * 1024 * 1024        // 50 MB
         private const val MAX_SEGMENT_MS    = 5L * 60 * 1000            // 5 min
-        private const val MAX_TOTAL_BYTES   = 2L * 1024 * 1024 * 1024  // 2 GB
+        private const val MAX_TOTAL_BYTES   = 10L * 1024 * 1024 * 1024 // 10 GB
         private const val SCREEN_POLL_MS    = 5_000L                    // poll interval
+
+        // Filename of the segment currently being written, or null when idle. Read by
+        // LogFileServer to refuse GET/DELETE on the live file. Written from the IO scope
+        // and read from arbitrary server threads, hence @Volatile.
+        @Volatile
+        var currentSegmentName: String? = null
+            private set
     }
 
     inner class LocalBinder : Binder() {
@@ -101,6 +108,8 @@ class CanLoggingService : Service() {
     private var receiverRegistered = false
 
     var segmentPolicy: LogSegmentPolicy = NoOpSegmentPolicy
+
+    private var wakeLock: PowerManager.WakeLock? = null
 
     // Throttle periodic notification updates to avoid Android 13+ rate-limit (5/s).
     // stopLogging() calls updateNotificationText() directly and bypasses this.
@@ -296,6 +305,9 @@ class CanLoggingService : Service() {
             updateNotificationText("Log error: ${e.message?.take(40)}")
             return
         }
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CanLoggingService::logging")
+        wakeLock?.acquire()
         logJob = scope.launch {
             pipeline?.frames?.collect { frame ->
                 val writer = currentWriter ?: return@collect
@@ -321,6 +333,9 @@ class CanLoggingService : Service() {
         logJob = null
         currentWriter?.close()
         currentWriter = null
+        currentSegmentName = null
+        wakeLock?.release()
+        wakeLock = null
         val idleMsg = if (triggerMode == TRIGGER_POWER) "Waiting for power..." else "Waiting for screen on..."
         updateNotificationText(idleMsg)
     }
@@ -356,6 +371,7 @@ class CanLoggingService : Service() {
         )
         writer.open()
         currentWriter = writer
+        currentSegmentName = filename
         Log.i(TAG, "Logging to ${file.absolutePath}")
         updateNotificationText("Logging  |  ${sessionTimeDisplay()}  |  seg T$segmentIndex")
     }
@@ -401,7 +417,10 @@ class CanLoggingService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID, "CAN Logging", NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Background CAN bus logging" }
+            ).apply {
+                description = "Background CAN bus logging"
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -429,6 +448,7 @@ class CanLoggingService : Service() {
             .setContentText(text)
             .setSmallIcon(appIconRes())
             .setOngoing(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .apply { if (pendingIntent != null) setContentIntent(pendingIntent) }
             .build()
     }

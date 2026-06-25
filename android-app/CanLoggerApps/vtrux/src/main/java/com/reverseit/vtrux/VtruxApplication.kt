@@ -22,8 +22,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.core.content.ContextCompat
+import com.reverseit.cancore.BuildConfig
 import com.reverseit.cancore.CanLoggingService
 import com.reverseit.cancore.CanPipelineManager
+import com.reverseit.cancore.DisplayServer
 import com.reverseit.cancore.GsUsbDevice
 import java.io.File
 import java.io.IOException
@@ -43,6 +45,7 @@ import java.io.IOException
 class VtruxApplication : Application() {
 
     val pipeline = CanPipelineManager()
+    private var displayServer: DisplayServer? = null
 
     companion object {
         const val ACTION_USB_PERMISSION = "com.reverseit.vtrux.USB_PERMISSION"
@@ -137,10 +140,40 @@ class VtruxApplication : Application() {
             }
         }
 
+        // Pick up any already-connected Innomaker dongles. LiveDisplayActivity
+        // is the launcher and doesn't itself scan USB, so when the process
+        // (re)starts with dongles already attached we'd otherwise wait for an
+        // ATTACHED broadcast that never fires.
+        val usbManager = getSystemService(USB_SERVICE) as UsbManager
+        usbManager.deviceList.values
+            .filter { it.vendorId == GsUsbDevice.VENDOR_ID &&
+                      it.productId == GsUsbDevice.PRODUCT_ID }
+            .forEach { handleAttachedDevice(it) }
+
+        // Display Protocol WebSocket server -- companion connects to this.
+        // Started early (always-on) so a client can connect even before the
+        // truck powers on; the server emits status messages only until buses
+        // are identified and subscriptions match live traffic.
+        try {
+            val srv = DisplayServer(
+                port = DisplayServer.DEFAULT_PORT,
+                token = BuildConfig.SYNC_TOKEN,
+                rawFrames = pipeline.frames,
+                identities = VtruxConstants.BUS_IDENTITIES,
+            )
+            srv.start()
+            displayServer = srv
+            DebugLog.log("App", "DisplayServer started on port ${DisplayServer.DEFAULT_PORT}")
+        } catch (e: Exception) {
+            DebugLog.e("App", "DisplayServer failed to start: ${e.message}", e)
+        }
+
         DebugLog.log("App", "VtruxApplication.onCreate complete")
     }
 
     override fun onTerminate() {
+        try { displayServer?.stop(1_000) } catch (_: Exception) {}
+        displayServer = null
         pipeline.shutdown()
         super.onTerminate()
     }
@@ -235,6 +268,29 @@ class VtruxApplication : Application() {
         startLoggingService()
     }
 
+    /**
+     * Hand an already-attached Innomaker to the pipeline, first requesting USB
+     * permission if we don't hold it. Used by the onCreate scan and MainActivity,
+     * both of which run when dongles are plugged in before the app process starts:
+     * in that case no ATTACHED broadcast fires and permission has usually not been
+     * granted yet, so calling onDeviceReady directly would fail to open the device
+     * (pipeline.open() needs USB permission) and logging would never start.
+     */
+    fun handleAttachedDevice(device: UsbDevice) {
+        val usbManager = getSystemService(USB_SERVICE) as UsbManager
+        if (usbManager.hasPermission(device)) {
+            onDeviceReady(device)
+        } else {
+            val pi = PendingIntent.getBroadcast(
+                applicationContext, device.deviceId,
+                Intent(ACTION_USB_PERMISSION).setPackage(packageName),
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            usbManager.requestPermission(device, pi)
+            // Result arrives at receiver -> onDeviceReady once granted.
+        }
+    }
+
     // =====================================================================
     // USB rescan
     // =====================================================================
@@ -263,16 +319,7 @@ class VtruxApplication : Application() {
         if (innomakers.isNotEmpty()) {
             DebugLog.log("App", "USB rescan attempt $rescanAttempts: found ${innomakers.size} device(s)")
             for (device in innomakers) {
-                if (usbManager.hasPermission(device)) {
-                    onDeviceReady(device)
-                } else {
-                    val pi = PendingIntent.getBroadcast(
-                        applicationContext, device.deviceId,
-                        Intent(ACTION_USB_PERMISSION).setPackage(packageName),
-                        PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                    )
-                    usbManager.requestPermission(device, pi)
-                }
+                handleAttachedDevice(device)
             }
         } else if (rescanAttempts < USB_RESCAN_MAX_ATTEMPTS) {
             DebugLog.log("App", "USB rescan attempt $rescanAttempts: no devices yet")

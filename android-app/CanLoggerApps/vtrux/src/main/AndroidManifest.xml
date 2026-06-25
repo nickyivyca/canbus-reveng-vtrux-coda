@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!--
         CHANGE_NETWORK_STATE satisfies Android 14's "any of" requirement for
         FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE. It is a normal (install-time) permission so
@@ -14,12 +15,16 @@
         android:name=".VtruxApplication"
         android:label="Vtrux"
         android:icon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Black.NoTitleBar">
 
-        <!-- Launcher entry point — portrait, blank screen, handles already-connected dongles -->
+        <!-- Live Display is the launcher: tapping the app icon opens the
+             embedded live display. MainActivity (permissions / settings)
+             is reached via the cog button on the Live Display screen. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".LiveDisplayActivity"
             android:exported="true"
+            android:label="Vtrux"
             android:screenOrientation="portrait"
             android:launchMode="singleTask">
             <intent-filter>
@@ -27,6 +32,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- MainActivity: legacy entry point. Still handles permissions
+             (POST_NOTIFICATIONS, MANAGE_EXTERNAL_STORAGE) and any
+             already-attached dongles. Reachable from LiveDisplayActivity's
+             settings cog. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait" />
 
         <!--
             Invisible trampoline launched by Android when an Innomaker is plugged in.

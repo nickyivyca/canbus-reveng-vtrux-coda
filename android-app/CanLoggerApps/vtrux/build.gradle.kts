@@ -9,10 +9,21 @@ android {
 
     defaultConfig {
         applicationId = "com.reverseit.vtrux"
-        minSdk = 21
+        // 26 to match :display (Compose). Was 21 historically; the logger
+        // works on 21+ but the embedded live-display UI requires 26.
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -27,13 +38,26 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    buildFeatures {
+        compose = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+    }
 }
 
 dependencies {
     implementation(project(":cancore"))
+    implementation(project(":display"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.lifecycle.runtime.ktx)
-    // activity-compose is listed here because it transitively supplies androidx.activity:activity-ktx,
-    // which provides ComponentActivity.registerForActivityResult. No Compose UI is used.
+    implementation(libs.lifecycle.viewmodel.ktx)
+    implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.activity.compose)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.runtime)
 }

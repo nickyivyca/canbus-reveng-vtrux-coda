@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -24,6 +25,7 @@ class CanPipelineManager {
 
     companion object {
         private const val TAG = "CanCore"
+        private const val OPEN_DEBOUNCE_MS = 4_000L
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -49,6 +51,7 @@ class CanPipelineManager {
         val gsDevice = GsUsbDevice(usbManager, usbDevice, bitrateKbps)
 
         val job = scope.launch {
+            delay(OPEN_DEBOUNCE_MS)
             try {
                 gsDevice.open()
                 Log.i(TAG, "Bus $busIndex: device ${usbDevice.deviceId} (${usbDevice.productName}) open")

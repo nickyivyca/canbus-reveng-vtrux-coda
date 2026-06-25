@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
         usbManager.deviceList.values
             .filter { it.vendorId == com.reverseit.cancore.GsUsbDevice.VENDOR_ID &&
                       it.productId == com.reverseit.cancore.GsUsbDevice.PRODUCT_ID }
-            .forEach { (application as VtruxApplication).onDeviceReady(it) }
+            .forEach { (application as VtruxApplication).handleAttachedDevice(it) }
 
         // This activity has no UI — it exists only for first-run permission requests and
         // initial USB device scan. Finish immediately so it never appears as a blank screen.

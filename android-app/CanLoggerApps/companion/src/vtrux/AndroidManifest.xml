@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- vtrux flavor swaps the launcher: LiveDisplayActivity becomes the entry point,
+             MainActivity is demoted to a settings screen reached via the cog. -->
+        <activity
+            android:name=".MainActivity"
+            tools:node="merge">
+            <intent-filter tools:node="removeAll" />
+        </activity>
+
+        <activity
+            android:name=".LiveDisplayActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

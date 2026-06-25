@@ -3,6 +3,12 @@
 
     <uses-feature android:name="android.hardware.usb.host" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+        CHANGE_NETWORK_STATE satisfies Android 14's "any of" requirement for
+        FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE used by CanLoggingService.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <application
         android:name=".CodaApplication"
