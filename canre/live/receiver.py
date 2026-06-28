@@ -10,11 +10,47 @@ Public API:
 
 import can
 import logging
+import os
 import subprocess
 import threading
 import time
 
 logger = logging.getLogger(__name__)
+
+
+_gs_usb_libusb_ready = None
+
+
+def _ensure_gs_usb_libusb():
+    """Make a libusb-1.0 backend available to pyusb for the gs_usb interface.
+
+    The python-can gs_usb backend uses pyusb's default libusb backend. On
+    Windows pyusb cannot locate a libusb-1.0.dll unless it is on the DLL search
+    path, so we inject the copy bundled with the ``libusb-package`` wheel. The
+    Innomaker / candleLight device itself needs no vendor driver: Windows
+    auto-binds WinUSB to it via its WCID (MS OS) descriptors.
+
+    Returns True if a usable libusb backend is present (gs_usb can be used),
+    False otherwise (gs_usb detection is skipped). Result is cached.
+    """
+    global _gs_usb_libusb_ready
+    if _gs_usb_libusb_ready is not None:
+        return _gs_usb_libusb_ready
+    try:
+        import libusb_package
+        dlldir = os.path.dirname(libusb_package.get_library_path())
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(dlldir)
+        os.environ["PATH"] = dlldir + os.pathsep + os.environ.get("PATH", "")
+    except Exception as e:
+        logger.debug(f"libusb-package not available for gs_usb: {e}")
+    try:
+        import usb.backend.libusb1
+        _gs_usb_libusb_ready = usb.backend.libusb1.get_backend() is not None
+    except Exception as e:
+        logger.debug(f"gs_usb libusb backend unavailable: {e}")
+        _gs_usb_libusb_ready = False
+    return _gs_usb_libusb_ready
 
 # --- ixxat USB reset coordination ---
 # Multiple bus threads share one physical USB reset; use a lock + cooldown so
@@ -204,6 +240,29 @@ def detect_all_can_interfaces(bitrate, brands=None):
             logger.warning("ixxat interface not available")
         except Exception as e:
             logger.debug(f"ixxat enumeration failed: {e}")
+
+    # Detect gs_usb devices (Innomaker USB2CAN / candleLight firmware).
+    # These enumerate as VID 0x1D50 / PID 0x606F with WinUSB auto-bound.
+    if brands is None or 'gs_usb' in brands or (brands and 'innomaker' in brands):
+        if _ensure_gs_usb_libusb():
+            try:
+                from gs_usb.gs_usb import GsUsb
+                devs = GsUsb.scan()
+                count = len(devs)
+                # Release scan handles before opening so the per-device open
+                # (which re-scans internally) does not hit a busy interface.
+                del devs
+                for i in range(count):
+                    channel_spec = {'channel': 'can0', 'index': i}
+                    interfaces.append(('gs_usb', channel_spec, f'gs_usb (Innomaker) index {i}'))
+                    logger.info(f"Detected gs_usb (Innomaker) index {i}")
+            except ImportError:
+                logger.warning("gs_usb interface not available "
+                               "(pip install \"python-can[gs_usb]\" libusb-package)")
+            except Exception as e:
+                logger.debug(f"gs_usb enumeration failed: {e}")
+        else:
+            logger.debug("gs_usb: no libusb backend; skipping detection")
 
     # Try kvaser channels (filter out virtual devices)
     if brands is None or 'kvaser' in brands:

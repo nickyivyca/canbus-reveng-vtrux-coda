@@ -2,7 +2,7 @@
 """Multi-device CAN logger with BUSMASTER format output.
 
 Automatically detects and logs from all connected CAN interfaces simultaneously.
-Supports: ixxat, kvaser, pcan, socketcan
+Supports: ixxat, kvaser, pcan, socketcan, gs_usb (Innomaker USB2CAN)
 
 Usage:
     python tools/can_logger.py
