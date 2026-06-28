@@ -140,9 +140,70 @@ Value stuck at 800 throughout drive, then starts increasing from 800 to ~1200 ex
 the TC event ends (t=597.99s, coinciding with motor speed increasing past ~1580 rpm). May
 be a wheel speed channel with a minimum speed threshold, or an ESC counter. Not yet decoded.
 
-**What initiates the cut is unknown.** No D CAN message seen to change before 0x212 B5
-begins its ramp-down. Either the ESC sends the command on C CAN (not captured), or the
-DLCM detects slip internally.
+~~**What initiates the cut is unknown.**~~ **ANSWERED -- see Phase 2b (0x300) below.**
+0x300 is the ESC torque limits message; its B4:B5 pair begins ramping ~2.5s before 0x212
+responds, confirming ESC-initiated TC via D CAN, not DLCM self-detection.
+
+---
+
+## Phase 2b -- 0x300 ESC Torque Limits (2026-05-02)
+
+Analysis via `artifacts/dlcm_0x300_tc_analysis.py`. Context: DLCM spec §8.3.1 names
+0x0300 as the ESC torque limits message carrying MMIN_ESP, M_ESP, MMAX_ESP_REGEN_TQ_REQ,
+MPAR_ESP, and MTOG_ESP. This was confirmed against TC events in the defroster2 log.
+
+### Message structure
+
+0x300 runs at ~59 Hz and contains two interleaved frame types distinguished by B0:
+
+**Type 1 — B0=0x00, high-rate (~50 Hz):** The live signal frames. B4:B5 carry a
+continuously varying 16-bit value. B1 bit 7 alternates in a 0-0-1-1 pattern (MTOG_ESP
+candidate). B2-B3 are static throughout the log.
+
+**Type 2 — B0=non-zero (0x05, 0x0A, 0x0F, 0x14, 0x19, 0x1E, 0x23), ~6 Hz each:**
+Fixed-content sub-frames. B1-B5 are completely static — same byte values every time,
+regardless of vehicle state or TC. These likely carry calibration or configuration data.
+
+B7 has 256 unique values and high toggle rates — MPAR_ESP parity checksum candidate.
+
+### What changes during TC
+
+**B6 (all sub-frame types):** During normal driving B6 cycles slowly through
+`0x58, 0x5C, 0x60, 0x64, 0x68, 0x6C, 0x70, 0x74`. During TC it jumps to `0x8C` or
+`0x9C` — values that never appear outside TC windows. This is the clearest discrete TC
+flag in the message; MMIN_ESP flag candidate (bit 7 set = limit active).
+
+**B4:B5 in Type 1 (B0=0x00) frames:**
+- Baseline (non-TC): alternates between `0x080C` (2060) and `0x880C` (34828) — the same
+  underlying value with B1 bit 7 toggling as the MTOG parity field
+- TC lead-up (t=593.87s, ~2.5s before 0x212 begins cutting): B5 ramps up 0x0C → 0x7C,
+  B4 upper nibble increments (0x08 → 0x0C / 0x88 → 0x8C); pair reaches ~3196/35964
+- TC peak (~594.9s): stabilizes briefly at 3196/35964
+- Torque cut active (t=596.51s onward, when 0x212 B5 starts ramping): B4:B5 ramps back
+  down, oscillating in the ~2960 range as DLCM responds
+- Recovery: descends back toward 2344 as TC releases
+
+**Phase 4 correlation (full log): 0x300 B5 vs 0x212 B5 = r = +0.821.** Strong positive
+correlation confirms B4:B5 tracks motor torque demand in real time; M_ESP limit candidate.
+
+### Key finding: ESC acts 2.5s before DLCM responds
+
+0x300 B4:B5 begins its ramp at t=593.87s. 0x212 B5 does not begin cutting until
+t=596.51s (~2.5s later). The ESC is watching for slip and pre-loading its torque limit
+well before the DLCM acts on it. The DLCM is responding to the ESC command, not
+self-detecting slip.
+
+### Signal role hypotheses (unconfirmed)
+
+| Byte(s) | Candidate role | Basis |
+|---------|---------------|-------|
+| B6 | MMIN_ESP flag | Discrete jump to high values during TC only; present in all sub-frames |
+| B4:B5 (Type 1) | M_ESP torque limit | r=+0.82 vs motor torque; ramps before and during TC |
+| B1 bit 7 (Type 1) | MTOG_ESP toggle | 0-0-1-1 pattern in B0=0x00 frames |
+| B7 | MPAR_ESP parity | 256 unique values, high entropy |
+| B1-B5 (Type 2, non-zero B0) | Configuration / calibration constants | Completely static across all driving conditions |
+
+Scale and offset for M_ESP not yet determined. DBC entry pending scale confirmation.
 
 ---
 
@@ -308,16 +369,12 @@ higher speed to unlock).
 
 ---
 
-## Remaining Work (Phase 2 -- Not Yet Started)
+## Remaining Work
 
-### Survey all D CAN IDs during TC windows
+### Survey remaining D CAN IDs during TC windows
 
-Use `analyze_id.py` on each TC event window for all D CAN IDs to find any message that
-changes during TC but is stable outside it. Candidate IDs not yet examined:
-`0x080, 0x215, 0x241, 0x278, 0x418, 0x55C, 0x580` and any unlisted D CAN IDs in log.
-
-Specific check: does any unknown message appear/disappear or change value pattern in the
-~200ms before 0x212 B5 begins its ramp-down?
+0x300 confirmed as ESC torque limits message (see Phase 2b above). Remaining candidate
+IDs not yet examined: `0x080, 0x215, 0x241, 0x278, 0x418, 0x55C, 0x580`.
 
 ### Confirm brake-based vs torque-only TC
 
@@ -344,3 +401,7 @@ Also determine whether B4[0] is part of a 9-bit value spanning B4[0]:B5.
   confirmed.
 - `0x212`: add SG_ for B5 torque limit (role confirmed, scale unconfirmed), document
   B2 sub-frame mux and B4 Gray-code counter in CM_
+- `0x300`: add BO_ stub as ESC_TorqueLimits (per spec §8.3.1). No SG_ entries until signal
+  scale confirmed. CM_ should note two-frame-type structure (B0=0x00 live signals vs
+  non-zero B0 fixed config), B6 TC flag (0x58-0x74 normal / 0x8C-0x9C TC active), and
+  B4:B5 as M_ESP candidate (r=+0.82 vs motor torque, scale unconfirmed).

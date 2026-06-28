@@ -108,6 +108,8 @@ See `notes/charging-analysis.md` Goal 2. D CAN gateway rebroadcast behavior char
 |------|-----------------------|-------|
 | MCM  | Motor Control Module  | **UQM PowerPhase 100** — permanent magnet AC motor and inverter; controlled via DLCM |
 
+**Module part numbers & suppliers:** read over the diagnostic bus 2026-06-27 — see `notes/module-diagnostic-ids.md`. Key points: `AK` is Coda's internal VM part-number prefix (the supplier's own number is the separate `F192` field); DLCM = Continental (confirmed by `A2C` prefix + physical label); SRS/airbag is a pure KWP2000 module that exposes only Coda's `AK36030100` (supplier identity must be read from the physical ECU label).
+
 ---
 
 ## Known Signal Sources
@@ -202,7 +204,7 @@ See `notes/charging-analysis.md` for encoding and full decode.
 | ID (hex) | DBC Name | Module | Signals |
 |----------|----------|--------|---------|
 | 0x1C0 | MCM_Telemetry | DLCM | Torque, HV_Voltage, HV_Current, Motor_Speed |
-| 0x212 | DLCM_TorqueRequest | DLCM | BrakeSW confirmed (B2.bit0); TorqueRequest and KeepWakeNetworkDLCM per CODACAN, byte positions unconfirmed |
+| 0x212 | DLCM_TorqueRequest | DLCM | BrakeSW confirmed (B2.bit0); TorqueRequest: 12-bit nibble-split `(B4 & 0x0F) << 8 \| B5`, zero=2000 (0x7D0), scale ~0.244 Nm/count (scale unconfirmed; r=+0.999 vs 0x1C0 Torque across 4 drive logs); KeepWakeNetworkDLCM position unconfirmed |
 | 0x241 | MCM_Thermal | DLCM | Rotor temp, Stator temp, IGBT temp (role confirmed; DLC=8; per-byte assignment unconfirmed — see codacan-signal-decode-notes.md Section 6 item 6) |
 | 0x278 | DLCM_Keepalive | DLCM | KeepWakeNetworkDLCM, EngineStsRun |
 | 0x315 | DLCM_Status | DLCM | Brake_SW, rolling counter, Batt_Volt |
@@ -276,6 +278,8 @@ Scale to km/h not yet determined; requires LR km/h calibration (pending motor-rp
 
 CIntTempRadOutlet (0x276 B3, radiator outlet temp) shows 0x58 = -40°C in parts car — open-sensor sentinel value for HVAC DTC B111D (coolant temp sensor fault). Never seen below -7°C in normal operation. DTC B112D (airmix motor) has no observable CAN status because the airmix flap is downstream of the radiator sensor.
 
+**B3 OPAirTemp — unreliable as outside-air temp.** Decodes cleanly (T = raw − 128 °C) but is a damped/poorly-calibrated *estimate*, not a clean ambient thermistor: it reads ~+12 °F high vs ground-truth weather in all conditions (including parked at night) and stays stuck high even at highway speed, so it cannot be offset-calibrated. An "Outside: NN°F" display sourced from it was added then **dropped** (removed in `coda-debug (19).apk`, 2026-05-22). Full analysis — including why no other CAN sensor (FrontInletAirTemp 0x390 B0 reads pack temp after charge/hot-soak, EvapAirOffTemp 0x391 B5 is HVAC-coupled) is a reliable ambient source — in `notes/outside-air-temp-investigation.md`.
+
 ### 9. Diagnostic Tool Reverse Engineering (Confirmed, Diag CAN)
 
 `coda-diagnostics/` contains Python scripts reverse-engineered from the Omitec dealer scan tool.
@@ -295,6 +299,59 @@ Does **not** support:
 
 Also includes `coda_fake_car.py` — a playback tool that emulates vehicle CAN presence for
 testing the scan tool without a real car.
+
+---
+
+## ECU Firmware Extraction & Decompile
+
+Firmware extraction has been attempted on several Coda ECUs, mostly by capturing the Omitec scanner's UDS reflash session from a BUSMASTER log and reassembling the download blocks into a binary. Outcomes vary by module.
+
+### Gateway (GWM) — extracted, plaintext, documented
+
+ECU 0x718. 90,112-byte image, plaintext ARM (entropy 4.95). MCU is an NXP LPC2xxx (ARM7TDMI-S), confirmed by the ROM-API call at `0x7FFFFFF1`. Decompiled in Ghidra (123 functions). Recovered the UDS service dispatcher, the local DID dispatch table, and the 77-entry CAN routing/"firewall" table — including per-message bus-origin and SRAM signal-slot fields, which independently confirm the B CAN/D CAN module assignments and gateway rebroadcast behavior documented above. Limitation: VIN/serial strings and part of the per-byte signal-extraction logic live in the bootloader flash region (above the captured application image), which the UDS download did not include. See `notes/gateway/coda-gateway-decompile-notes.md`.
+
+### DLCM — extracted, plaintext, documented
+
+ECU 0x7E8, Continental EMS9180. Two plaintext images: PROG (1.83 MB) and CAL (114 KB); SH-4 core, analyzed in Ghidra. The work targets the §10.7 State-Dependent Torque Gradient Limiter calibration LUTs (to widen the rate limit through the lash zone for throttle feel). Firmware build `1CI527_D003`. See `notes/dlcm/coda-dlcm-decompile-notes.md`.
+
+### BMS — extracted but encrypted (blocked)
+
+The BMS application image (249,856 bytes) was downloaded via the same UDS method but is **encrypted**: ~7.9992-bit entropy (AES-class), no readable strings or instruction patterns, despite the UDS request declaring no encryption; size is an exact multiple of the AES block size. Decompilation is not meaningful until decrypted, and the firmware-encryption key is a separate secret from the SecurityAccess key (not recoverable from the captured session). Not pursued further.
+
+### Green-screen / telemetry box — code-protected (parked)
+
+The dashboard green-screen display box uses a Microchip **PIC32MX564F128L** (MIPS32). ICSP access was established (valid Device ID read), but the part is **code-protected** (DEVCFG0.CP fuse set) and there is no reflash protocol to capture, so flash readout is blocked. The only remaining path is voltage glitching, which is not being pursued for now. Extraction parked.
+
+### RCU (keyfob / immobilizer) — not yet extracted
+
+The RCU (Radio Control Unit, D CAN — TPMS, keyfob, immobilizer) firmware has **not been extracted**. The MCU is an HCS08-class part (MC9S08DZ60). A separate CAN-level investigation into keyfob-pairing door-unlock behavior exists, but the on-chip firmware itself has not been pulled.
+
+---
+
+## Documented Behavior
+
+Confirmed vehicle behaviors observed from CAN log analysis. Sources: `frombonnydoon.log` (33 min, B+C+D CAN) and `codadriveslowturnonwithdefroster2.log` (~12 min, B+C+D CAN). Signals: 0x1C0 (Torque, HV_Current, Motor_Speed), 0x210 (ThottlePedalPos), 0x275 (PackCurrent, PackVoltage, BattSentChargeLimit).
+
+### Torque Ramp on Full-Throttle Launch
+
+Torque does **not** reach peak instantly from standstill. On a full-throttle pull from rest, torque ramps from ~20–80 Nm up to ~290 Nm over approximately **0.5–0.8 seconds** (0–250 rpm), then holds flat. This is consistent across 8 events in both logs and is almost certainly a deliberate soft-start in DLCM or MCM firmware (not driver-induced — throttle is already at full during the ramp).
+
+After the ramp, torque is flat at ~290 Nm up to ~1300–1500 rpm, then tapers as expected in the constant-power region.
+
+Peak observed torque: ~300 Nm (UQM PowerPhase 100 rated peak: 310 Nm).
+
+### Peak Regenerative Braking vs Battery Charge Limit
+
+Peak regen is roughly **half the available charge current limit** — the BMS is not the bottleneck.
+
+| Log | Peak PackCurrent | Pack Voltage | Regen Power | ChargeLimit at that moment | % of Limit |
+|-----|-----------------|--------------|-------------|---------------------------|------------|
+| bonnydoon | 80.8 A | 348 V | 28.1 kW | 150 A (52 kW) | 54% |
+| defroster2 | 69.1 A | 343 V | 23.7 kW | 146 A (50 kW) | 47% |
+
+When the battery is warm and SoC is mid-range the BMS broadcasts ChargeLimit = 150 A (~52 kW at nominal pack voltage), which is the "open" condition. Peak observed regen current reaches ~81 A — well under the limit. The bottleneck is motor braking torque (~108 Nm peak at ~2900 rpm), not the battery.
+
+ChargeLimit in `defroster2` started at 128 A and climbed to 146 A over the drive, consistent with pack temperature rising as the pack heater ran during the early portion of the drive.
 
 ---
 
@@ -325,7 +382,7 @@ See `logs/README.md` for log file inventory.
 
 ### Medium Priority
 - [ ] RCU — TPMS keepalive frame unknown. 0x600 carries pressure data (1.37 kPa/count) but does not trigger TPMS indicator. **Capture task:** trip the immobilizer to force RCU to broadcast its keepalive ID.
-- [ ] **BMSmode (0x378 B2) unknown value range**: Normal car shows 0xD2 (210) driving, 0xA9 (169) charging. Jake's car and parts car both show 0xF2–0xF8 (242–248) — unknown whether this indicates a fault/degraded state or firmware variant. Step=1 sweep of 0x378 B2 needed to catalog all values against CODACAN display changes.
+- [ ] **BMSmode (0x378 B2) unknown value range**: Normal car shows 0xD2 (210) driving, 0xA9 (169) charging. the second reference car and parts car both show 0xF2–0xF8 (242–248) — unknown whether this indicates a fault/degraded state or firmware variant. Step=1 sweep of 0x378 B2 needed to catalog all values against CODACAN display changes.
 - [ ] Decode 0x215, 0x330 (and confirm 0x600) — see `notes/codacan-signal-decode-notes.md` Section 5c.
 - [ ] Identify weak cell #94 in C CAN individual cell data near EOC
 
@@ -387,9 +444,14 @@ projects/coda/
     chargepointcharge-analysis.md # Full charge to 100% at Chargepoint (OV confirmed)
     codacan-capture-notes.md      # codacan_capture.py development and tuning notes
     codacan-signal-decode-notes.md # CODACAN bench replay signal decode — all phases
+    gateway/                      # Gateway (GWM) firmware decompile (NXP LPC2xxx ARM) — CAN routing/firewall table recovered
+      coda-gateway-decompile-notes.md # Gateway decompile notes (folder also holds coda_gateway.bin firmware image)
+    dlcm/                         # DLCM firmware decompile (Continental EMS9180, SH-4) — torque LUT analysis
+      coda-dlcm-decompile-notes.md # DLCM decompile notes (folder also holds PROG/CAL .bin firmware images)
     driver-inputs.md              # Throttle, brake, PRND, body electronics, gateway rebroadcast
     driving-sequence-investigation.md  # Startup sequence, HVAC, AC compressor signals
     othercars-comparison.md       # Signal comparison with other Coda vehicles
+    outside-air-temp-investigation.md  # Outside-temp display dropped — no reliable ambient sensor on CAN
     thermal-behavior-investigation.md  # Pack heater / cold-start thermal behavior
     traction-control-analysis.md  # ESC 0x312 mux frame decode
     plans/                        # Analysis plan files (empty — all executed)
