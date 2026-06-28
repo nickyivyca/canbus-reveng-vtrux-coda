@@ -721,8 +721,9 @@ Both signals decoded via `FUN_00045af0(uint16, 0x10)` followed by `FixedToFP` an
   (`CONCAT11(pbVar15[7], pbVar15[6])` = (B5 << 8) | B4, i.e. B5 is high byte)
 
 **FUN_00045af0(value, 0x10)** = `(int32_t)(int16_t)value` (generic N-bit sign extension;
-reversed 2026-03-27). Both signals are **signed two's complement int16**, zero at raw 0x0000.
-Range: -327.68 to +327.67 kW. Positive = power discharged by battery / produced by motor.
+reversed 2026-03-27).
+
+**⚠ CORRECTED 2026-06-27 (log data):** the wire values are **offset-binary (excess-32768), zero at raw 0x8000** — NOT plain signed-int16-zero-at-0. A raw-value check of 0x598 B0-B1/B4-B5 (`artifacts/check_0598_signedness.py`) shows both channels sit at ~0x8000 at idle (zero power) and swing around 0x8000 under load, never near 0x0000/0xFFFF. Effective decode is `(raw_u16 − 32768) × 0.01 kW` (matches `powertrain-messages.md` and `Vtrux.md`). The plain `(int16_t)` reading here likely missed a preceding MSB-flip / −0x8000 offset. Range still ±327.68 kW; positive = power discharged by battery / produced by motor.
 
 #### 0x0592 -- HCU_Sensor
 
@@ -1373,9 +1374,7 @@ For `n = 0x10` (16, the only call site value): identical to `(int32_t)(int16_t)v
 
 Used at all 5 call sites with `n=16`; result fed to `FixedToFP` then multiplied by a DAT constant.
 
-Updated 0x0598 signal description: both ESS and Trac power signals are **signed int16**
-(two's complement, not offset binary), multiply by 0.01 kW. Zero = raw 0x0000.
-Range: -327.68 to +327.67 kW. Positive = power discharged/produced.
+Updated 0x0598 signal description: both ESS and Trac power signals are **offset-binary (excess-32768), zero at raw 0x8000** — corrected 2026-06-27 from an earlier "signed int16, zero at 0x0000" reading that the 0x598 raw-value check refuted (see above). Effective decode `(raw_u16 − 32768) × 0.01 kW`. Range: -327.68 to +327.67 kW. Positive = power discharged/produced.
 
 ### Extended ID signal decodings from ViaCANbusParser::parseEPRIMessage
 

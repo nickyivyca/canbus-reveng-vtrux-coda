@@ -491,7 +491,7 @@ Previously mapped to J1772 button press / charger stop / unplug. The rapid 4-way
 | 0x390 B2 | 13 | J1772 pilot negotiation burst (startup only) |
 | 0x390 B0 | 14 | System state flag: 0x8C=charging+conditioning, 0x8D=charging-only; burst = conditioning activation |
 | 0x410 B2 | 2 | Secondary charger mode flag (drops at startup, returns at ~42s) |
-| 0x382 B0 | 3 | Charge stage counter — value reflects SoC stage (0x87≈70%, 0x8B≈78%, 0x8E≈100%). Oscillation at log end = OBD removal noise on real values. 0x33 = charge-complete signal; 0x00 = standby. |
+| 0x382 B0 | 3 | ~~Charge stage counter~~ **CORRECTED: `Cell_T_avg` (avg pack cell temp, T = raw−128 °C)** — the rising values are pack warming during charge, not SoC stages. See `chargepointcharge-analysis.md`. |
 | 0x27B B1 | many | ⚠ UNRELIABLE in this log — goes haywire at t=570-576s due to OBD adapter removal, not EVSE pilot loss |
 
 ---
@@ -514,7 +514,7 @@ Previously mapped to J1772 button press / charger stop / unplug. The rapid 4-way
 
 ## Next Steps
 
-- **Update DBC:** Add all confirmed charger signals to `CODA-B-CAN.dbc`: 0x27D, 0x27B (AC input), 0x279, 0x27C (HV+LV DC output), 0x277, 0x27A (temperatures) — all at ÷32, BE uint16. Add 0x381 (cell min/max/avg mV, BE uint16), 0x383 B0-1 (SoC ÷10), 0x382 B0 (charge stage counter).
+- **Update DBC:** Add all confirmed charger signals to `CODA-B-CAN.dbc`: 0x27D, 0x27B (AC input), 0x279, 0x27C (HV+LV DC output), 0x277, 0x27A (temperatures) — all at ÷32, BE uint16. Add 0x381 (cell min/max/avg mV, BE uint16), 0x383 B0-1 (SoC ÷10), 0x382 B0 (Cell_T_avg, T=raw−128 °C — not a charge-stage counter).
 - **Identify the OV cell:** Extract 0x000–0x019 (C CAN) during the last ~60s before EOC in `chargepointcharge.log` to find which message/byte-pair encodes the cell that hits 3,750 mV. Prior CODACAN showed VmaxId=76 — start there.
 - **Decode 0x383 B4:** Inversely correlated with SoC (0x8A→0x66 in short session). In `chargepointcharge.log` the charger current stepped down at t≈5400s — extract 0x383 B4 to confirm it maps to BattSentChargeLimit and find the step.
 - **Identify BMS Drive Limits CAN IDs:** Determine which B CAN messages carry PackVoltage, PackCurrent, BattSentChargeLimit, etc. Candidates: 0x391, 0x392. Requires BMS_Recvd.vi analysis or targeted byte extraction.
@@ -558,7 +558,9 @@ Charging did not follow a simple CC→CV profile:
 
 BMS declared SoC = 100.0% at **t=4114s (68.6 min)**, when max cell was only ~3.41V. Charging continued for **21 more minutes** until the OV event. The 100% declaration is coulomb-counting-based and does not correspond to the cell voltage ceiling.
 
-### 0x382 B0 — Confirmed Charge Stage Counter
+### 0x382 B0 — ~~Confirmed Charge Stage Counter~~ → Cell_T_avg (CORRECTED)
+
+**SUPERSEDED:** 0x382 B0 is **average pack cell temperature** (`Cell_T_avg`, T = raw − 128 °C), not a charge-stage / SoC counter. The "monotonic sequence" below is the pack warming during the charge (0x8B=139 → 11 °C, 0x8E=142 → 14 °C); the 0x33/0x00 at the end are OBD-adapter-removal artifacts. See `chargepointcharge-analysis.md` and `coda.md`. The original (incorrect) charge-stage reading is retained below for history.
 
 Full monotonic sequence observed across 90-minute session:
 

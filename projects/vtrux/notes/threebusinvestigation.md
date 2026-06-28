@@ -17,8 +17,8 @@ For confirmed powertrain signals, see `powertrain-messages.md`. For generator ac
 Bus numbers change between sessions (dongles plugged in randomly), so always identify by message content.
 
 **Primary method — exclusive ID fingerprint (no scanner needed):**
-- OBD bus has **0x040–0x044** and **0x441–0x464** and does NOT have 0x1E5 or 0x500–0x530
-- Vehicle bus has **0x1E5, 0x500, 0x514, 0x52A–0x530, 0x778, 0x780, 0x785, 0x788** and does NOT have 0x040–0x044 or 0x441–0x464
+- OBD bus has **0x040–0x044** and does NOT have 0x1E5 or 0x500–0x530. (Do **not** use 0x441–0x464 as an OBD-exclusive anchor — part of that range is GMLAN that the VCM bridges to the Vehicle bus, e.g. 0x451, causing false OBD identification.)
+- Vehicle bus has **0x1E5, 0x500, 0x514, 0x52A–0x530, 0x778, 0x780, 0x785, 0x788** and does NOT have 0x040–0x044
 - Either exclusive set alone is sufficient; a quick `survey.py --bus N` and check for presence/absence of these IDs settles it
 
 **Secondary — ID count:** Vehicle bus has more unique IDs (~90–93) than OBD bus (~74–79). Useful as a quick sanity check but not conclusive on its own.
@@ -48,7 +48,7 @@ Bus numbers are coincidental — dongles are plugged in randomly each session.
 |----------|---------------------|-----------------|
 | **Powertrain** | 0x051 + extended IDs (0x18xxxxxx) | Via Motors EV control |
 | **Vehicle** | Real sensor data in GMLAN messages; exclusive 0x1E5, 0x500–0x530 | Direct ECU, unfiltered |
-| **OBD** | Masked sensor data; exclusive 0x040–0x044, 0x441–0x464; 0x7E0/0x7E8 when scanner active | Filtered; accessible via harness P1 connector only (NOT standard DLC) |
+| **OBD** | Masked sensor data; exclusive 0x040–0x044 (NOT 0x441–0x464 — partly GMLAN, VCM-bridged to Vehicle); 0x7E0/0x7E8 when scanner active | Filtered; accessible via harness P1 connector only (NOT standard DLC) |
 
 ### Powertrain Bus
 
@@ -162,7 +162,7 @@ Both Vehicle and OBD have these GMLAN messages (but with different data quality)
 - 0x1C3, 0x1C5, 0x1C6, 0x1C7 (engine/chassis torque)
 - 0x1F1, 0x1F5 (platform status)
 - 0x3E9 (vehicle speed)
-- 0x451 (engine torque status)
+- 0x451 (GMLAN, VCM-bridged to Vehicle; the earlier "engine torque status" label was a misidentification)
 - Plus ~50 more GMLAN standard messages
 
 ---
