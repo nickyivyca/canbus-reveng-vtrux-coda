@@ -282,7 +282,7 @@ See `../../vtrux.md` — "Parts-Truck-Only Messages" section.
 
 ## Charge Failure Root Cause
 
-Superseded by later analysis. See `my-trucks/before-battery-swap-failed-charge-analysis.md` and `my-trucks/after-battery-swap-charge-fail-analysis.md` for full charge failure analysis.
+Superseded by later analysis. See `specific-trucks/before-battery-swap-failed-charge-analysis.md` and `specific-trucks/after-battery-swap-charge-fail-analysis.md` for full charge failure analysis.
 
 ## Bit-Flip Cross-Reference: Interlock vs Charge Failures
 

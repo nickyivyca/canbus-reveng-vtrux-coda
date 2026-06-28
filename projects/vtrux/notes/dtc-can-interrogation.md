@@ -633,19 +633,92 @@ Items resolved this session:
 - PCAN driver: installed and confirmed working (Vehicle bus identified correctly)
 - 0x065B trigger: closed (section 6e)
 
+Items remaining: superseded by section 7f (2026-04-17).
+
+---
+
+## Part 7 -- Session 2026-04-17
+
+Tools: `projects/vtrux/tools/vtrux_hcu_probe.py` (new this session), `projects/vtrux/notes/artifacts/identify_obd_module.py`, `projects/vtrux/notes/artifacts/pt_bus_functional_broadcast.py`
+
+Dongles: ixxat on OBD bus (Via P1 pins 10/2), kvaser on PT bus (Via P2 pins 1/9), PCAN on Vehicle bus (DLC pins 6/14).
+
+**Power steering did not trigger this session.** In prior sessions diagnostic traffic caused EPS disable + 4WD warning. The root cause was never confirmed; this session ran the same traffic patterns (including functional broadcast on PT bus and DSC requests on Vehicle bus) without triggering it.
+
+### 7a. GM ECM confirmed at 0x7E0 -- not the Woodward HCU
+
+Prior sessions labelled the module at 0x7E0/0x7E8 as "VCM" without verifying which ECU it was. This session confirmed it is the **GM ECM (LV3 engine controller)**, not the Woodward HCU:
+
+- **Mode 09 ECU Name**: `ECM-EngineControl` (ASCII, 20 bytes)
+- **VIN**: `3GCUKPEH2EG488714` (standard GM VIN, first digit 3 = Mexico, G = GM)
+- **Calibration IDs** (8 entries, all GM-format part numbers):
+  `12663390`, `12660319`, `12660131`, `12625016`, `12642480`, `12656298`, `12643728`, `12659513`
+- **Mode 01 engine PIDs** all respond with live engine data:
+  - RPM = 0.0 (engine off, ignition on)
+  - Coolant = 22°C
+  - Throttle = 31.8%
+  - MAF = 0.0, intake air temp responding
+- **Mode 09 subfn 0x08** (In-Use Performance Tracking): responded -- a GM-specific legislated subfunction not implemented by Woodward MotoHawk
+- **Security Access** 0x27 levels 1 and 3: both return seed `0x462A`
+- **DSC extended** (0x10/03): accepted, returns subfn=0x00 (non-standard GM response format)
+- **UDS 0x19, RDBI F1xx, 0x85, 0x31, KWP 0x18**: all rejected
+
+The GM ECM bridges OBD and Vehicle buses -- identical responses at 0x7E8 on both. This explains why all prior UDS 0x19 attempts on 0x7E0 failed: we were querying the GM ECM, which is OBD-II only.
+
+### 7b. Woodward HCU diagnostic endpoint -- not found
+
+A new tool `vtrux_hcu_probe.py` was written to probe all Woodward ISO 15765 MotoHawk services (Mode 09, 0x10, 0x22, 0x19, 0x27, 0x85, 0x31, 0x28, 0x3E). The HCU was searched systematically:
+
+| Method | Buses covered | Result |
+|--------|--------------|--------|
+| Targeted probe at 0x7E0 | OBD, Vehicle, PT | OBD/Vehicle = GM ECM; PT = silent |
+| Targeted probe at 0x7E5, 0x7E7, 0x712 | PT | Same as prior sessions (see below); 0x712 silent |
+| Broad TesterPresent + DSC sweep 0x700-0x7DF | Vehicle | No real modules (two false positives from 0x772/0x785 periodic broadcasts) |
+| Functional broadcast 0x7DF with TP + DSC + DSC-ext | PT | Only 0x7ED (0x7E5) responded |
+
+**The Woodward HCU does not surface to any standard UDS/OBD discovery method on any bus.**
+
+Likely explanations (not yet resolved):
+1. The Woodward MotoHawk ISO 15765 blockset is deployed with TesterPresent disabled or responding with subFunctionNotSupported -- meaning sweep-based discovery won't find it even if it's alive.
+2. The HCU is reachable only through GM ECM gateway extended addressing (not yet attempted).
+3. Via configured the HCU with no interactive diagnostic endpoint; 0x065B broadcast is the only diagnostic output.
+
+### 7c. PT bus 0x7E5 -- unchanged
+
+KWP Continental subfn=0x00 still returns `58 01 C1 00 24` = U0100 (lost comm ECM) status=0x24.
+Security Access 0x27 level 1 seed: `0xCD3E`. All UDS services rejected.
+
+### 7d. PT bus 0x7E7 -- state-dependent, likely TRAC MCU
+
+DID scan confirmed 26 hits in 0x0100-0x01FF range, same DIDs as 2026-04-05 with slightly incremented counter values. Notable values:
+
+| DID | Value | Notes |
+|-----|-------|-------|
+| 0x0105 | `_rC_` (ASCII) | Build string fragment |
+| 0x0107 | `3_fr` (ASCII) | Build string fragment |
+| 0x0140 | 10,145,778 | Large counter (~2,818 hrs if seconds) |
+| 0x0141 | 952,988 | Matches April 5 value |
+| 0x0146 | 1,867,878 | Matches April 5 value |
+| 0x0134 | 8 | Small constant |
+| 0x0136 | 9 | Small constant |
+
+DSC default returned `serviceNotSupported` this run (previously returned `DSC OK`). State-dependent inconsistency persists -- module behaviour depends on vehicle operating state. Counter values suggest odometer/operating-time style data consistent with a drivetrain controller (TRAC MCU candidate).
+
+### 7e. PT bus 0x712 -- silent this session
+
+No response to any probe. Was responsive on 2026-03-30. Vehicle or drivetrain state dependency suspected.
+
+### 7f. Outstanding items (updated 2026-04-17)
+
+Items resolved this session:
+- GM ECM at 0x7E0 confirmed and characterised (section 7a)
+- Vehicle bus broad diagnostic sweep completed (section 7b)
+- PT bus functional broadcast 0x7DF attempted (section 7b)
+- Power steering trigger: did NOT fire this session -- root cause still unconfirmed but less reproducible than previously assumed
+
 Items remaining:
-1. **Identify modules 0x712, 0x716, 0x717** -- Serial `EE00001702` on 0x712 may be
-   searchable against drivetrain supplier documentation. 0x717 placeholder DTCs suggest
-   test/debug firmware or uninitialized table.
+1. **Woodward HCU diagnostic endpoint** -- not found. Next candidate: GM ECM gateway extended addressing (sub-address routing). Alternatively, accept that no interactive UDS endpoint exists.
 
-2. **Fix periodic broadcast false positives in dtc_interrogation decoder** -- 0x772 and
-   0x785 on Vehicle bus flagged as UNKNOWN SID because they fall in 0x700-0x7FF range.
-   Should only flag frames arriving after a Tx request to the corresponding address.
+2. **Identify modules 0x712, 0x716, 0x717** -- 0x712 silent this session. Serial `EE00001702` on 0x712 (when responsive) may be searchable. 0x717 placeholder DTCs suggest test/debug firmware.
 
-3. **Identify power steering / 4WD warning trigger** -- appeared during both PT and
-   Vehicle bus scans. Root cause not isolated.
-
-4. **Live logging during fault events** -- for actual fault diagnosis, running
-   vtrux_uds_probe.py immediately after a fault (while still keyed on) captures any new
-   pending codes. The three previously-cleared Bel charger faults (0xFBB6E4, 0xFC16F2,
-   0xF90000) are the best candidates to correlate against a known charge failure event.
+3. **Live logging during fault events** -- three previously-cleared Bel charger faults (0xFBB6E4, 0xFC16F2, 0xF90000) are candidates to correlate against a known charge failure event.
