@@ -1054,9 +1054,11 @@ drop on cooling) was found other than 0x06000002 B5/B6.
 Artifacts: `drivetrain_thermal_scan.py/txt`, `plot_drivetrain_thermal_candidates.py`,
 `drivetrain_thermal_candidates.png`.
 
-**Step 4 -- Scan GMLAN bus for radiator fan signal. (COMPLETE)**
+**Step 4 -- Scan GMLAN bus for radiator fan signal. (COMPLETE -- re-verified 2026-03-12)**
 
-No fan control signal found on GMLAN. The radiator fan observed running before the torque cutback is NOT visible on the GM buses. It is likely controlled via a direct VCM PWM/relay output (not a CAN message) or by the inverter directly. The fan on-ramp timestamp cannot be determined from the CAN log.
+No fan control signal found on GMLAN. The candidate fan/cooling broadcast IDs (0x3F1, 0x3F9, 0x451) were checked against `vtruxdrivetrainoverheattest.log`: none responded to the motor thermal stress (t=393-2253s). One carried an engine-coolant-fan value that peaked only during engine warm-up and dropped to 0 at t=1410s (well before the thermal event); another held an all-zero payload for the entire 2637s log; the third never issued a fan adjustment command.
+
+**Conclusion:** The radiator fan observed running before the torque cutback is NOT visible on GMLAN. It is likely controlled via a direct VCM PWM/relay output (not a CAN message) or by the inverter directly. The fan on-ramp timestamp cannot be determined from the CAN log.
 
 **Step 5 -- Find generator motor temperature signal. (IN PROGRESS -- overheat test scan 2026-03-12)**
 
@@ -1364,7 +1366,8 @@ for TRAC MCU thermal (derived by applying -0x020 to GENE 0x479), but the message
 simply has no frames -- the TRAC MCU never broadcasts at that ID.
 
 **OBD bus correlation scan:** A Pearson r sweep was run on the OBD bus (isolated using
-the 0x044 anchor ID to identify the correct channel), excluding known GMLAN IDs. Per-byte and LE/BE uint16 pair tests were run
+the 0x044 anchor ID to identify the correct channel), excluding all known GMLAN IDs from
+the GMLAN DBC (60 IDs total). Per-byte and LE/BE uint16 pair tests were run
 against the PT bus 0x06000002 10-bit signal as the reference. 642 candidates tested.
 
 **Top hit: 0x44A B2 at r=+1.000.** Exact structure:
@@ -1400,7 +1403,7 @@ EPRI mapped TRAC MCU OBD IDs as GENE MCU PT IDs minus a fixed offset. Confirmed 
 |-----------|----------------------|------------------|------------|--------------|--------|
 | 0x054 (rotation speed) | 0x044 | 0x044 | -0x010 | -0x010 | Correct |
 | 0x051 (torque cmd) | 0x041 | 0x041 | -0x010 | -0x010 | Correct |
-| 0x471 (torque feedback) | 0x451 | 0x442 | -0x020 | -0x02F | Wrong -- 0x451 is GMLAN Gateway_LS_General_Information |
+| 0x471 (torque feedback) | 0x451 | 0x442 | -0x020 | -0x02F | Wrong -- 0x451 is a GMLAN message (VCM-bridged to Vehicle), not the TRAC feedback |
 | 0x479 (thermal) | 0x459 | 0x44A | -0x020 | -0x02F | Wrong -- 0x459 has 0 frames |
 | 0x482 (HV bus) | 0x462 | 0x462 | -0x020 | -0x020 | Correct |
 

@@ -72,7 +72,7 @@ For voltage/current signal investigation methodology and correlation scan result
 | DLC | 2 |
 | Confidence | **MEDIUM** — bit assignments from single highway drive log (debuglog_M0.log, Aug 2025); patterns consistent across all observed transitions |
 
-**Observed state transitions (from `notes/deprecated/highway-drive-cycle.md`):**
+**Observed state transitions (from a highway drive-cycle log):**
 
 | Value (LE) | B0 | B1 | State |
 |------------|----|----|-------|
@@ -427,7 +427,7 @@ over the full log and are near-constant during the zero-throttle cruise window. 
 | B0 | Odd values only (bit 0 always 1). Range 1–109. Tracks throttle pedal (r=0.9998). | Command or status echo — see below |
 | B1 | 6 unique values, range 116–136. Slowly varying. | Possibly temperature or mode |
 | B2 | Always 0x39 | Constant — likely message type byte |
-| B3 | 4 unique values: 1=Park, 5=Reverse, 9=Neutral, 13=Drive | Gear state values |
+| B3 | 4 unique values | Tracks gear state (one value per gear; mapping observed empirically) |
 | B4 | 0=parked/off, 128=in motion | Motion flag |
 | B5 | Always 0 | |
 | B6 | 8 unique values (0–7) | Rolling counter or mode |
@@ -697,7 +697,7 @@ an independent thermometer. Sentinel 0xFE = invalid (same as voltage fields).
 ### 0x308 — BorgWarner TCM Park Pin State
 
 **Source: BorgWarner TCM (same unit as in the Coda EV). Confirmed 2026-03-05 by cross-vehicle
-ID/byte-structure match and correlated timeline analysis against the VCM gear position message in generator-on-then-off log.**
+ID/byte-structure match and correlated timeline analysis against the GMLAN gear-position broadcast in generator-on-then-off log.**
 
 | Bytes | Signal | Encoding | Confidence |
 |-------|--------|----------|------------|
@@ -708,9 +708,9 @@ ID/byte-structure match and correlated timeline analysis against the VCM gear po
 
 **Rate:** 100 Hz. **DLC:** 5.
 
-**Timing correlation with gear position message (generator-on-then-off log):**
-- Park exit: B0 = 0x40 at t=25.045; gear position message transitions at t=25.058 (13 ms lag — ~1 frame)
-- Park entry: gear position message declares Park at t=56.000; B0 = 0x20 at t=56.065 (65 ms after — pin physically
+**Timing correlation with the GMLAN gear-position broadcast (generator-on-then-off log):**
+- Park exit: B0 = 0x40 at t=25.045; GMLAN gear-position transitions out of Park at t=25.058 (13 ms lag — ~1 frame)
+- Park entry: GMLAN gear-position reaches Park at t=56.000; B0 = 0x20 at t=56.065 (65 ms after GMLAN — pin physically
   engages after position is declared, as expected for a solenoid-actuated mechanism)
 
 **Cross-vehicle match (Coda 0x308):** Identical ID, frequency, DLC, and B0 values (0x20/0x40). On the Coda,
