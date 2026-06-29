@@ -18,7 +18,7 @@ App binary is NOT encrypted (enterprise distribution, as anticipated).
 Device is iPhone 4S (not 5s -- see correction above). Jailbroken with **Carbon** WebKit
 exploit (http://carbon.sep.lol, served via GitHub Pages). Phone's DNS was hijacked by ISP;
 fixed by setting manual DNS 1.1.1.1 on the Wi-Fi connection. Carbon installed Cydia.
-OpenSSH installed via Cydia; accessed over Wi-Fi (10.0.0.134) using legacy key algorithms
+OpenSSH installed via Cydia; accessed over Wi-Fi (local Wi-Fi) using legacy key algorithms
 (`-o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa`), password `alpine`.
 
 ### App identity
@@ -258,7 +258,6 @@ output format for every Via signal. Full table:
 | EAC_CompHVInput | VDC | `%d` (integer) | A/C HV input voltage |
 | Engine_Speed (0x00C9) | rpm | `%.1f` | via GMLAN |
 | Engine_Torque_Actual (0x01C3) | Nm | `%.1f` | via GMLAN |
-| Throttle_Position (0x03D1) | % | `%.0f` | via GMLAN |
 | VehSpdAvgDrvn (0x03E9) | km/h | `%.3f` | via GMLAN |
 
 **BCM format strings also reveal additional boolean flags not individually listed in the
@@ -317,8 +316,8 @@ CM_ only. MajorVersion and MinorVersion are byte-aligned and have clean SG_ entr
 signal decoding (bit positions, scale factors).
 
 **Status:**
-- Ghidra 12.0.4 installed at `C:\Users\nicholas.ivy\Programs\ghidra_12.0.4_PUBLIC`
-- Java 25 (Eclipse Temurin) at `C:\Program Files\Eclipse Adoptium\jdk-25.0.2.10-hotspot`
+- Ghidra 12.0.4 (local install)
+- Java 25 (Eclipse Temurin JDK 25)
 - ARMv7 and ARM64 slices extracted to `notes/artifacts/CANbusLogger2_ARM` and `_ARM64`
 - Ghidra project: `notes/artifacts/ghidra-project/EPRILogger`
   (ARMv7 slice imported 2026-03-26; loaded as ARM:LE:32:v8, same instruction set)
@@ -969,7 +968,7 @@ PPEI encoding but the nibble assignment should be cross-checked against a GMLAN 
 
 Format string: `"Manifold absolute pressure: %.1f kPa"`
 
-**Note on plist label:** The EPRI plist used 'PPEI_Engine_Torque_Status_3' as the message name — correct per GM spec (confirmed against GMLAN DBC). The decompile reveals the EPRI app reads MAP from B6, one of several signals in the message.
+**Note on plist label:** The EPRI plist used 'PPEI_Engine_Torque_Status_3' as the message name — correct per GM spec (confirmed against the GMLAN DBC). The decompile reveals the EPRI app reads MAP from B6, one of several signals in the message.
 
 - **MAP**: CAN B6 single byte, signed int8 (`puVar20[8]`), × SIMDImm(0xF,0x60) = 0.5
   value = `int8(B6) * 0.5` kPa
@@ -980,7 +979,7 @@ Format string: `"Manifold absolute pressure: %.1f kPa"`
 
 Format string: `"ECM_InstFuelConsmpRate_volPt: %.3f ltrs/hr"`
 
-**Note on plist label:** The EPRI plist used 'PPEI_Engine_General_Status_2' as the message name — correct per GM spec (confirmed against GMLAN DBC). The decompile reveals the EPRI app reads fuel rate, one of several signals in the message.
+**Note on plist label:** The EPRI plist used 'PPEI_Engine_General_Status_2' as the message name — correct per GM spec (confirmed against the GMLAN DBC). The decompile reveals the EPRI app reads fuel rate, one of several signals in the message (which also contains throttle, cruise speed, and AC command).
 
 - **ECM_InstFuelConsmpRate_volPt**: 12-bit = `(B4 & 0xF) << 8 | B5`
   value = `raw * DAT_000447a0` = `raw * 0.025` L/hr
@@ -1007,28 +1006,35 @@ B4–B7 are not read.
 Format string: `"Engine coolant temp: %d degC  Engine air intake temp: %d degC  Outside air temp (Est.): %f degC"`
 
 Decompile (case 0x4c1, lines ~5294-5302 in ghidra-via-decompiled.txt):
-- `cVar31 = puVar20[4]` -- B4: engine coolant temp
-- `cVar3 = puVar20[5]` -- B5: air intake temp
-- `(uint)(byte)puVar20[6]` -- B6: outside air temp (zero-extended to uint)
+- `cVar31 = puVar20[4]` -- B2: engine coolant temp
+- `cVar3 = puVar20[5]` -- B3: air intake temp
+- `(uint)(byte)puVar20[6]` -- B4: outside air temp (zero-extended to uint)
 - Coolant/intake formula: `(int)(char)(raw - 0x28)` -- signed byte then subtract 40
 - Outside air formula: `FixedToFP(uint8) * 0.5 + DAT_000441b8`
   - DAT_000441b8 = -40.0 (double, confirmed at file offset 0x401b8)
-  - value = `uint8(B6) * 0.5 - 40.0` degC, resolution 0.5 degC
+  - value = `uint8(B4) * 0.5 - 40.0` degC, resolution 0.5 degC
+
+**puVar20 index offset note (corrected 2026-05-12):** `puVar20` follows the same 2-byte ID header layout as `pbVar15` (see buffer layout note above): `puVar20[0:1]` = CAN message ID, `puVar20[2]` = CAN B0. Therefore `puVar20[4]` = CAN B2, `puVar20[5]` = CAN B3, `puVar20[6]` = CAN B4. Earlier notes incorrectly labeled these as B4/B5/B6 (raw index without subtracting the 2-byte header). GMLAN DBC and independent hvac-investigation.md both confirm the corrected positions.
 
 Signal summary:
-- **ECM_EngineCoolantTemp**: B4, `uint8 - 40` degC (1 degC resolution, range -40 to +215 degC)
-- **ECM_EngineAirIntakeTemp**: B5, `uint8 - 40` degC (same formula)
-- **ECM_OutsideAirTemp**: B6, `uint8 * 0.5 - 40.0` degC (0.5 degC resolution, range -40 to +87.5 degC)
-- B0-B3 and B7 not read by EPRI app.
+- **ECM_EngineCoolantTemp**: B2, `uint8 - 40` degC (1 degC resolution, range -40 to +215 degC)
+- **ECM_EngineAirIntakeTemp**: B3, `uint8 - 40` degC (same formula)
+- **ECM_OutsideAirTemp**: B4, `uint8 * 0.5 - 40.0` degC (0.5 degC resolution, range -40 to +87.5 degC)
+- B0-B1, B5-B7 not read by EPRI app.
 
 Note: DAT_000441b8 is the same -40.0 offset used by the thermal investigation (standard GM temperature encoding). The int8 cast for coolant/intake is only relevant above raw 127 (>87 degC for a 1:1 scale); for normal engine operating range signed and unsigned give the same result.
 
 #### GMLAN DBC cross-check (2026-03-27)
 
-All EPRI-decoded signals confirmed consistent with GMLAN DBC encodings. Two exceptions:
+The EPRI OBD-bus decodings for 0x00C9, 0x01C3, 0x03D1, and 0x03E9 were cross-checked against
+the GMLAN DBC and match its byte extractions and scales exactly. Two findings are substantive:
 
-- **0x0120 odometer:** GMLAN DBC carries a placeholder signal (B0:B3, scale=1); EPRI reads B1:B4 × 0.015625 km, which is the actual Vtrux encoding. EPRI is authoritative here.
-- **0x02C3 MAP:** GMLAN DBC marks the signal unsigned (correct); EPRI uses signed, giving wrong values above 63.5 kPa (raw > 127, i.e. above sea-level atmospheric). Use unsigned.
+- **0x0120 — EPRI authoritative.** The GMLAN DBC carries only a placeholder odometer signal
+  (scale=1, no offset). The EPRI app reads B1:B4 × 0.015625 km — this is the actual Vtrux
+  encoding and supersedes the placeholder.
+- **0x02C3 — signed/unsigned caveat.** The EPRI app reads MAP (B6) as signed, which gives
+  wrong results above 63.5 kPa (raw > 127). The unsigned interpretation is correct
+  (sea-level MAP ≈ 101 kPa = raw 202).
 
 ---
 
@@ -1077,7 +1083,7 @@ or corrections to the standard encoding.
 | ~~0x02C3~~ | Manifold abs pressure (B6 int8 × 0.5 kPa) -- plist label was wrong | O | DONE 2026-03-27 |
 | ~~0x03D1~~ | Inst. fuel consumption rate (12-bit × 0.025 L/hr) -- plist label was wrong | O | DONE 2026-03-27 |
 | ~~0x03E9~~ | Distance (13-bit × 0.125 km) + speed (15-bit × 0.015625 km/h) | O | DONE 2026-03-27 |
-| ~~0x04C1~~ | Engine coolant temp (B4), air intake temp (B5), outside air temp (B6) | O | DONE 2026-03-28 -- was missing from this table; decoded from decompile case 0x4c1 |
+| ~~0x04C1~~ | Engine coolant temp (B2), air intake temp (B3), outside air temp (B4) | O | DONE 2026-03-28; byte labels corrected 2026-05-12 (puVar20 index offset error) |
 
 #### Passive monitor IDs (in ViaCANData.txt, not in plists)
 
