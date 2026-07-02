@@ -7,7 +7,7 @@ receives.
 **Approach:** Implement the gs_usb protocol in userspace using Android's `android.hardware.usb`
 host API (no root, no kernel driver required).
 
-**Phone IP:** 10.0.0.45
+**Phone IP:** <lan-ip>
 
 **ADB command:** always use full path `<ANDROID_SDK_DIR>/platform-tools/adb.exe`
 -- the PATH `adb` resolves to an old 1.0.32 install and does not support `adb pair`.
@@ -30,8 +30,8 @@ host API (no root, no kernel driver required).
 ### ADB Wireless
 
 - Phone uses Android 11+ wireless debugging (not the legacy `adb tcpip 5555` method).
-- Paired via `adb pair 10.0.0.45:39289 <code>` -- guid `adb-16e7d2b3-RSkDoo`.
-- Connected via `adb connect 10.0.0.45:42879` -- device shows as `10.0.0.45:42879 device`.
+- Paired via `adb pair <lan-ip>:39289 <code>` -- guid `adb-<device-guid>`.
+- Connected via `adb connect <lan-ip>:42879` -- device shows as `<lan-ip>:42879 device`.
 - `adb logcat` streams successfully. Wireless ADB is the primary workflow going forward.
 - Note: the wireless debugging port (42879) is assigned dynamically by Android; if it changes
   after a reboot, re-pair or just reconnect to the new port shown on the Wireless Debugging screen.
@@ -48,12 +48,12 @@ host API (no root, no kernel driver required).
 - Gradle wrapper bootstrapped using the Gradle 8.4 binary cached in
   `~/.gradle/wrapper/dists/gradle-8.4-bin/`
 - JDK used: Android Studio's bundled JBR at
-  `C:\Program Files\Android\Android Studio1\jbr` (OpenJDK 17.0.9)
+  `<ANDROID_STUDIO_JBR>` (OpenJDK 17.0.9)
 - `gradle.properties` requires `android.useAndroidX=true` -- Gradle will refuse to build
   without it when AndroidX deps are present.
 - Build commands always need explicit env vars (no system-wide JAVA_HOME or ANDROID_HOME):
   ```
-  JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"
+  JAVA_HOME="<ANDROID_STUDIO_JBR>"
   ANDROID_HOME="<ANDROID_SDK_DIR>"
   CanReaderApp/gradlew.bat assembleDebug --project-dir CanReaderApp/
   ```
@@ -174,7 +174,7 @@ instead -- single-quote the shell command string in PowerShell to prevent expans
 ### PEAK transmit test (2026-03-21)
 
 - Transmitted 10 frames from PEAK PCAN_USBBUS1 at 500 kbps using `python-can` 4.4.2 (py -3.11).
-- Script: `android-app/notes/artifacts/peak_tx_test.py`
+- Script: `android-app/notes/artifacts/peak_tx_test.py` (working helper, not in public repo)
 - All 10 frames received correctly in logcat:
   ```
   I CanReader: CAN RX: id=0x123 dlc=8 data=[01 02 03 00 AA BB CC DD]

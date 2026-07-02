@@ -112,9 +112,9 @@ Extracted the ring/circle graphic from `android-app/Coda_Logo.svg.png` (top ~65%
 ### Build Environment (Desktop)
 
 - `local.properties` must exist at `android-app/CanLoggerApps/local.properties` with `sdk.dir=<ANDROID_SDK_DIR>`
-- JAVA_HOME must be set to `C:\Program Files\Android\Android Studio1\jbr` (JDK 17) — the system default java is 1.8 and will fail
+- JAVA_HOME must be set to `<ANDROID_STUDIO_JBR>` (JDK 17) — the system default java is 1.8 and will fail
 - Gradlew must be invoked via PowerShell with explicit env var: `[System.Environment]::SetEnvironmentVariable('JAVA_HOME', ..., 'Process')`
-- ADB device connects over TCP: `10.0.0.45:39271` (port changes each wireless debug session)
+- ADB device connects over TCP: `<lan-ip>:39271` (port changes each wireless debug session)
 
 See `android-app/notes/canlogger-build-notes.md` for full build infrastructure notes.
 
@@ -131,7 +131,7 @@ Device: **A007 generic Chinese Android head unit** running Zlink (Android Auto /
 | Property | Value |
 |----------|-------|
 | Model | A007 (A007_C55_HA4_U464-12-EN-D) |
-| IP address | 10.0.0.121 |
+| IP address | <lan-ip> |
 | Android version (Settings) | 12 |
 | `Build.VERSION.SDK_INT` reported to apps | **29** (spoofed — see below) |
 | Build number | A007-userdebug 12 SP1A.210812.016 2023042611123 release-keys |
@@ -144,7 +144,7 @@ Device: **A007 generic Chinese Android head unit** running Zlink (Android Auto /
 
 **SDK spoofing:** The device reports `Build.VERSION.SDK_INT = 29` to all apps despite running Android 12 (`SP1A.210812.016`). This is a known ROM-level compatibility hack on some generic Chinese head units. Any code that gates behaviour on `Build.VERSION.SDK_INT >= Build.VERSION_CODES.R` (30) will silently skip on this device even though Android 12 APIs are present. See `android-app/notes/canlogger-build-notes.md` for the workaround pattern.
 
-**Debug logging:** App embeds a TCP log server on port 9876 (started in `CodaApplication.onCreate()`). Connect from PC: `py -3.11 -c "import socket,time; s=socket.create_connection(('10.0.0.121',9876),5); s.settimeout(0.5); [...]"`. Crash logs from the previous run are replayed on next startup via `cache/last_crash.txt`.
+**Debug logging:** App embeds a TCP log server on port 9876 (started in `CodaApplication.onCreate()`). Connect from PC: `py -3.11 -c "import socket,time; s=socket.create_connection(('<lan-ip>',9876),5); s.settimeout(0.5); [...]"`. Crash logs from the previous run are replayed on next startup via `cache/last_crash.txt`.
 
 ### Outcome
 
@@ -239,3 +239,58 @@ Not scoped. A future phase could use Diag CAN (second Innomaker dongle) to issue
 
 - Host a simple HTTP server on the phone's WiFi IP for charging status monitoring.
 - Expose a Home Assistant sensor interface when connected to home WiFi.
+
+---
+
+## Phase 4 — LogFileServer (Complete, 2026-05-07)
+
+**Goal:** Expose completed log files over local WiFi so a companion app on a regular phone can pull them, bypassing the slow head-unit SeaDrive upload.
+
+### What was built (Phase 1 of the sync plan)
+
+Server lives in `:cancore` as `LogFileServer.kt` (NanoHTTPD held by composition, not extended — keeps consumer modules from needing NanoHTTPD on their classpath). `CodaApplication.onCreate()` instantiates and starts it alongside `DebugLog.start()`; `VtruxApplication` doesn't touch it, so the server is Coda-only for now even though the class is in cancore.
+
+| Property | Value |
+|----------|-------|
+| Port | `9877` |
+| Bearer token | `BuildConfig.SYNC_TOKEN`, sourced from `local.properties` `sync.token` |
+| Served directory | `getExternalFilesDir(null)/CodaLogs/` (same as `CanLoggingService` default for Coda) |
+| Active-segment guard | `(name) -> name == CanLoggingService.currentSegmentName`. The companion property is `@Volatile`, set in `openNewSegment()`, cleared in `stopLogging()`. |
+
+Endpoints (all require `Authorization: Bearer <token>`):
+- `GET /health` → `{vehicle, freeBytes, totalBytes, fileCount, version}`
+- `GET /files` → JSON array of `{name, size, mtime, complete}`
+- `GET /files/<name>` → file stream; 409 if active; 404 if missing/unsafe-name
+- `DELETE /files/<name>` → 204; 409 if active; 404 if missing/unsafe-name
+
+Filenames are constrained to `[A-Za-z0-9_.-]+\.log` to prevent path traversal.
+
+### Discovery from a phone or laptop on the Coda hotspot
+
+The head unit's hotspot AP IP is the WiFi default gateway from any client's perspective. Verified value when on Coda hotspot: gateway `192.168.43.8`, SSID `Coda`. When the head unit is on home LAN instead, it's reachable at `<lan-ip>:9877` directly. The companion app does not hardcode either — it reads the gateway at sync time.
+
+### Boot trace (visible in DebugLog stream on port 9876)
+
+```
+D/App: LogFileServer started on 9877, dir=/storage/emulated/0/Android/data/com.reverseit.coda/files/CodaLogs
+D/App: CodaApplication.onCreate complete
+```
+
+### Side-effects captured during this phase
+
+- **Project-shared debug keystore** at `CanLoggerApps/debug.keystore` (SeaDrive-synced). Both `:coda` and `:vtrux` configured to sign debug builds with it via `signingConfigs.debug`. Prevents `INSTALL_FAILED_UPDATE_INCOMPATIBLE` when the same APK lineage is built across machines. Documented in `android-tools-reference.md`.
+- **Coda manifest gained `WAKE_LOCK` and `CHANGE_NETWORK_STATE`** to match Vtrux. The wakelock acquire in `CanLoggingService.startLogging` had been added to cancore some time ago; Vtrux's manifest was updated then but Coda's wasn't. The first Coda build to hit `startLogging` (this phase's test build) crashed with `SecurityException: WAKE_LOCK`. Fixed.
+- **APK dropoff naming**: increment every build, never overwrite. Documented in `android-tools-reference.md`. Reason: SeaDrive may not have finished pulling the previous file when a new one is dropped, and reused names give no way to tell.
+
+### How to verify after a new build
+
+A PowerShell test runner (`notes/artifacts/test_log_file_server.ps1`, a working helper not included in the public repo) exercised the endpoints. It ran with the phone or laptop on the Coda hotspot (or anywhere with line-of-sight to the head unit IP):
+
+```powershell
+.\android-app\notes\artifacts\test_log_file_server.ps1                         # auto-discover gateway
+.\android-app\notes\artifacts\test_log_file_server.ps1 -ServerHost <lan-ip>  # over LAN
+.\android-app\notes\artifacts\test_log_file_server.ps1 -TestDownload           # also pull smallest file
+.\android-app\notes\artifacts\test_log_file_server.ps1 -TestDelete             # destructive
+```
+
+Output mirrors to `test_output.txt` next to the script.
