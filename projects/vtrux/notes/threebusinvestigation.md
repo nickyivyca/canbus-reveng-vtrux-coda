@@ -162,7 +162,7 @@ Both Vehicle and OBD have these GMLAN messages (but with different data quality)
 - 0x1C3, 0x1C5, 0x1C6, 0x1C7 (engine/chassis torque)
 - 0x1F1, 0x1F5 (platform status)
 - 0x3E9 (vehicle speed)
-- 0x451 (GMLAN, VCM-bridged to Vehicle; the earlier "engine torque status" label was a misidentification)
+- 0x451 (a GMLAN message, VCM-bridged to Vehicle; the earlier "engine torque status" label was a misidentification)
 - Plus ~50 more GMLAN standard messages
 
 ---

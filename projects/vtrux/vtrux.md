@@ -50,7 +50,7 @@ The Vtrux has three CAN buses. **Bus channel numbers in log files are arbitrary*
 
 **Quick check:** If a bus has 0x051, it's Powertrain. If it has 0x1E5 and 0x500, it's Vehicle. If it has 0x040–0x044, it's OBD. **Secondary check (ID count):** Vehicle has more unique IDs (~90–93) than OBD (~74–79).
 
-**Note:** Do not use 0x441–0x464 as OBD anchors — this range includes GMLAN IDs (e.g. 0x451 = `Gateway_LS_General_Information`) that the VCM bridges to the Vehicle bus, causing false OBD identification on some logs.
+**Note:** Do not use 0x441–0x464 as OBD anchors — this range includes GMLAN IDs (e.g. 0x451 is a GMLAN message, VCM-bridged to the Vehicle bus) that the VCM bridges to the Vehicle bus, causing false OBD identification on some logs.
 
 ### DBC Files
 
@@ -63,33 +63,32 @@ All canonical DBC files are at this directory level.
 | `vtrux-powertrain-experimental.dbc` | Powertrain bus — signals confirmed through our own log analysis, correlation tests, and interlock/disconnect experiments. **Only add signals here that are NOT already decoded in an EPRI DBC.** See rule below. | In progress |
 | `vtrux-obd-experimental.dbc` | OBD bus — signals confirmed through our own log analysis that are NOT in `epri-obd-bus.dbc`. Same rules as the PT counterpart (see above). | In progress |
 | `BelInverter-v2.dbc` | Bel charger/inverter — merged from previous DBC + EPRI Ghidra decompile. Fixes: extended ID bit-31, `overallTemperaturePercent` 8-bit, voltage signedness in `hvBatteryAndCharger`. See `notes/belinverter-dbc-merge.md`. | Current |
-| `GMW8762_PPEI_GMLAN.dbc` | GM PPEI GMLAN standard — 51 messages, 586 signals extracted from spec PDF | Complete; use for decoding both GM buses |
 
 
 **When to add a signal to `vtrux-*-experimental.dbc`:** A signal belongs here only if it was confirmed through our own reverse engineering (log correlation, interlock/disconnect tests, physical measurement) AND is not already present in the corresponding `epri-*-bus.dbc` or `epri-obd-bus.dbc`. Do NOT copy EPRI-confirmed signals into the experimental DBC — they already live in the authoritative EPRI files and duplicating them creates a maintenance conflict. If you confirm the scale or encoding of an EPRI signal experimentally, update the `CM_` comment in the relevant EPRI DBC file rather than adding an entry to the experimental one. Note that `epri-obd-bus.dbc` contains some misidentified entries (e.g. 0x451 is GMLAN, not TRAC MCU); signals that were absent from or wrongly attributed in the EPRI DBC belong in the experimental dbcs once confirmed.
 
-Working/source copies of DBC files also exist in `Bel-Inverter/` (DBC and docs only — logs moved to `logs/`) and `gmlan-info/` subdirectories (see File Layout below).
+Working/source copies of DBC files also exist in `Bel-Inverter/` (DBC and docs only — logs moved to `logs/`).
 
 ### Bus Definition
 
 | Bus | DLC Pin access | Relevant DBCs | What is confirmed |
 |-----|---------|-|---------|
 | **Powertrain** | CAN-H: 1 <br> CAN-L: 9 <br> P2 on Via harness  | `epri-pt-bus.dbc` <br> `vtrux-powertrain-experimental.dbc` <br> `BelInverter-v2.dbc`| Via EV control bus: generator inverter (GENE MCU) commands and feedback, BMS, Bel charger/DCDC, driver inputs. Note: traction inverter was originally assumed to be here but is on the OBD bus. |
-| **Vehicle** | standard OBD-II <br> CAN-H: 6 <br> CAN_L: 14 | `GMW8762_PPEI_GMLAN.dbc` | Native bus for EBCM and other chassis modules. Wheel speeds and gear state are real here. ECM engine messages (0x0C9, 0x1C3, etc.) are VCM-generated synthetic values on this bus, not real ECM data.  A normal scan tool on the stock DLC sees only this bus; the VCM acts as diagnostic gateway and controls what is visible. OBD PID 0x0D returns real vehicle speed because the VCM answers at 0x7E8 from its own Vehicle bus wheel speed data — it does not bridge the request to the ECM. |
-| **OBD** | CAN-H: 10 <br> CAN-L: 2 <br> Via harness P1 connector | `epri-obd-bus.dbc` <br> `vtrux-obd-experimental.dbc` <br> `GMW8762_PPEI_GMLAN.dbc`| Native bus for the ECM and the traction inverter (TRAC MCU). Real engine RPM lives here. Wheel speed (0x0C1/0x0C5) masked to all zeros → ECM computes zero vehicle speed → 0x3E9 broadcast also zero (cascade effect, not direct substitution).  |
+| **Vehicle** | standard OBD-II <br> CAN-H: 6 <br> CAN_L: 14 | (GMLAN) | Native bus for EBCM and other chassis modules. Wheel speeds and gear state are real here. ECM engine messages (0x0C9, 0x1C3, etc.) are VCM-generated synthetic values on this bus, not real ECM data.  A normal scan tool on the stock DLC sees only this bus; the VCM acts as diagnostic gateway and controls what is visible. OBD PID 0x0D returns real vehicle speed because the VCM answers at 0x7E8 from its own Vehicle bus wheel speed data — it does not bridge the request to the ECM. |
+| **OBD** | CAN-H: 10 <br> CAN-L: 2 <br> Via harness P1 connector | `epri-obd-bus.dbc` <br> `vtrux-obd-experimental.dbc` <br> (GMLAN)| Native bus for the ECM and the traction inverter (TRAC MCU). Real engine RPM lives here. Wheel speed (0x0C1/0x0C5) masked to all zeros → ECM computes zero vehicle speed → 0x3E9 broadcast also zero (cascade effect, not direct substitution).  |
 
 ### Module Topology
 
 | Module | Native Bus | Relevant DBCs | Evidence and Notes |
 |--------|---------| --|----------|
 | VCM (Via Motors Vehicle Control Module) | **All**; gateway for all buses | All| Bridges GM messages selectively; modifies ECM engine data when forwarding to Vehicle bus |
-| ECM (Engine Control Module) | **OBD** | `GMW8762_PPEI_GMLAN.dbc`| Real engine RPM on OBD bus (0 off, real when running); ~800 RPM synthetic on Vehicle bus = VCM substitute |
-| EBCM (Electronic Brake Control Module) | **Vehicle** | `GMW8762_PPEI_GMLAN.dbc` | 0x17D present only on Vehicle bus (0 frames on OBD); other EBCM messages bridged to OBD |
+| ECM (Engine Control Module) | **OBD** | (GMLAN)| Real engine RPM on OBD bus (0 off, real when running); ~800 RPM synthetic on Vehicle bus = VCM substitute |
+| EBCM (Electronic Brake Control Module) | **Vehicle** | (GMLAN) | 0x17D present only on Vehicle bus (0 frames on OBD); other EBCM messages bridged to OBD |
 | GENE MCU (Generator Inverter) | **PT bus** | `epri-pt-bus.dbc` | Dana TM4 CO150 (J1939-native hardware). |
-| TRAC MCU (Traction Inverter) | **OBD** | `epri-obd-bus.dbc` <br> `vtrux-obd-experimental.dbc` | Dana TM4 CO150 (J1939-native hardware). Not visible on PT bus. EPRI decompile incorrectly attributed 0x0451 to TRAC MCU (GMLAN Gateway_LS_General_Information) and incorrectly placed TRAC thermal at 0x0459 (zero frames; actual is 0x044A). Both errors documented in `epri-obd-bus.dbc`. |
+| TRAC MCU (Traction Inverter) | **OBD** | `epri-obd-bus.dbc` <br> `vtrux-obd-experimental.dbc` | Dana TM4 CO150 (J1939-native hardware). Not visible on PT bus. EPRI decompile incorrectly attributed 0x0451 to TRAC MCU (it is a GMLAN message, VCM-bridged to the Vehicle bus) and incorrectly placed TRAC thermal at 0x0459 (zero frames; actual is 0x044A). Both errors documented in `epri-obd-bus.dbc`. |
 | BorgWarner 32-01 eGearDrive + park-pin controller | **PT bus** | `epri-pt-bus.dbc` <br> `vtrux-obd-experimental.dbc` | BorgWarner 32-01 eGearDrive single-speed longitudinal transmission. Rated input torque: 350 Nm peak (`notes/borgwarner-transmissions.pdf`). Same eGearDrive family as the Coda EV (which uses the transverse 31-03 variant). VCM bridges park state to GMLAN. See Known Signals. |
 | Via shift position sense box | **None** (hypothesis: direct non-CAN link to VCM) | — | Translates the non-standard Via shifter position into a signal for the VCM. Hypothesis: connects to the VCM via direct analog or digital wire rather than CAN — no CAN messages are directly attributed to this box. VCM generates GMLAN gear/lever position output from this input; when box is disconnected, VCM defaults to reporting Neutral. "Manual" (0x09) = generator mode. See `notes/shifting-transfer-case-investigation.md`, `notes/can-disconnect.md`. |
-| TCCM (Transfer Case Control Module) / TCCM_RDCM | **OBD + Vehicle buses** (bridged) | `GMW8762_PPEI_GMLAN.dbc` | Manual TC. 0x1CF (`Secondary_Axle_General_Information`, GMLAN decimal 463) confirmed active on both GM buses — mode=2 when front axle engaged (4H or 4L), mode=0 in 2WD or Neutral. Cannot distinguish 4H from 4L on any logged signal. Source (residual TCCM_RDCM vs VCM-synthesized) not yet confirmed. See `notes/shifting-transfer-case-investigation.md`. |
+| TCCM (Transfer Case Control Module) / TCCM_RDCM | **OBD + Vehicle buses** (bridged) | (GMLAN) | Manual TC. 0x1CF (a GMLAN message, decimal 463) confirmed active on both GM buses — mode=2 when front axle engaged (4H or 4L), mode=0 in 2WD or Neutral. Cannot distinguish 4H from 4L on any logged signal. Source (residual TCCM_RDCM vs VCM-synthesized) not yet confirmed. See `notes/shifting-transfer-case-investigation.md`. |
 | A123 BMS (Battery Management System) | **PT bus** | `epri-pt-bus.dbc` + `vtrux-powertrain-experimental.dbc` (0x0411 only) | A123 lithium iron phosphate battery pack. Broadcasts directly on PT bus in the 0x370–0x507 ID range (requires HV battery LV connector). 0x596 (integer SoC) is a VCM rebroadcast, not BMS-direct. See `notes/powertrain-messages.md` BMS section and `notes/isolation-fault-analysis.md`. |
 | Bel Fuse Bidirectional Charger/Inverter | **PT bus** | `BelInverter-v2.dbc` + `epri-pt-bus.dbc` | On-board AC charger and V2G inverter. J1939 extended-frame IDs (SA=0xB3). EPRI PT bus table includes charger status signals (current, voltage, fault state). See `notes/charge-investigation.md` and `BelInverter-v2.dbc` for decoded signals. |
 | Bel Fuse DCDC Converter | **PT bus** | `epri-pt-bus.dbc` | HV-to-12V DC-DC converter. J1939 extended-frame IDs (SA=0xB3 family). Broadcasts HV bus voltage reference (0x18FFD6B3 B4-B5) used as cross-validation for 0x470 and 0x482 voltage signals. See `notes/context-voltage-current.md`. |
@@ -100,7 +99,7 @@ Working/source copies of DBC files also exist in `Bel-Inverter/` (DBC and docs o
 
 ### VCM Gateway
 
-**Normal operation:** The VCM bridges most GMLAN messages between both GM buses but modifies content in both directions. See `notes/gmlan-signals-investigation.md` for the full per-message table.
+**Normal operation:** The VCM modifies content on both GM buses and bridges a subset of messages between them. Many GMLAN messages appear on both buses without VCM involvement -- T3 shows 33 IDs surviving on both buses with 0ms inter-bus delta, ruling out bridging. The source module(s) for this dual-bus presence are unconfirmed: candidates include stock C5500 chassis modules (EBCM, BCM, IPC) that are natively wired to both GM buses, and/or the GM ECM secondary CAN pins (confirmed to physically exist, no confirmed functionality in Vtrux install). The ECM is **not** uniformly dual-bus -- `0x0C9` on the Vehicle bus is VCM-synthesized (drops in T3), confirming the ECM's primary CAN is the OBD bus and it does not natively transmit all messages on Vehicle bus. See `notes/can-disconnect.md` T3 section for the evidence.
 
 | Bus | VCM action | Key IDs |
 |-----|-----------|---------|
@@ -109,11 +108,15 @@ Working/source copies of DBC files also exist in `Bel-Inverter/` (DBC and docs o
 | **OBD** | Freezes transmission position at Park | 0x1F5 |
 | **OBD** | Replaces with canned/frozen frames | 0x1E9 (chassis status), 0x1C7 (EBCM torque requests), 0x3E9 (vehicle speed) |
 | **OBD** | Stubs with invalid-fill bytes | 0x0F9 (TCM) |
-| **Both** | Bridged faithfully | 0x3C1, 0x3F9, 0x3FB, 0x4D1, 0x772, 0x4C9 |
+| **OBD->Vehicle** | Bridged faithfully (absent from Vehicle in T3) | 0x772 |
+| **OBD->Vehicle** | Bridged faithfully (absent from Vehicle in T3; engine-off confound -- may also be engine-running-only) | 0x0AA, 0x0BE, 0x0D3, 0x3D1, 0x3E9, 0x4F1, 0x4F3 |
+| **Both buses, dual-native** | Survive T3 on BOTH buses with 0ms delta -- NOT VCM-bridged; source has native dual-bus connections | 0x3C1, 0x3F9, 0x3FB, 0x4D1, 0x4C9 and ~28 other chassis IDs |
 
-The 0x3E9 entry is a **cascade effect** — VCM masks wheel speed inputs to ECM, so ECM naturally computes and broadcasts zero vehicle speed; VCM does not need to modify 0x3E9 directly.
+**T3 correction (2026-04-14):** The prior "Bridged faithfully -- Both buses" row listed 0x3C1, 0x3F9, 0x3FB, 0x4D1, 0x772, 0x4C9. T3 (VCM B-connector disconnect) showed all of these except 0x772 survive on both buses without VCM, and with 0ms inter-bus timestamp delta. They are NOT VCM-bridged. 0x772 is the only confirmed VCM bridge from that list (drops from Vehicle bus in T3).
 
-**Graphing / analysis note — GMLAN messages appear on both GM buses:** Because the VCM bridges most GMLAN messages between buses, any given GMLAN ID will produce frames on both the OBD bus and the Vehicle bus in a multi-bus capture. The two copies often contain different content (real ECM value on OBD bus vs. VCM-substituted value on Vehicle bus, or vice versa — see table above). When extracting a GMLAN signal for analysis or plotting, always filter to the bus where that signal is documented as valid. Never rely on channel numbers to do this — use the anchor IDs from the Bus Identification table above to identify the correct channel at runtime.
+The 0x3E9 entry is a **cascade effect** -- VCM masks wheel speed inputs to ECM, so ECM naturally computes and broadcasts zero vehicle speed; VCM does not need to modify 0x3E9 directly.
+
+**Graphing / analysis note -- GMLAN messages appear on both GM buses:** Many GMLAN IDs produce frames on both the OBD bus and the Vehicle bus in a multi-bus capture. This is partly due to VCM bridging, but also because the GM ECM and other modules have native connections to both buses (33 IDs confirmed dual-native without VCM in T3, with 0ms inter-bus delta). The two copies often contain different content (real ECM value on OBD bus vs. VCM-substituted value on Vehicle bus -- see table above). When extracting a GMLAN signal for analysis or plotting, always filter to the bus where that signal is documented as valid. Never rely on channel numbers -- use the anchor IDs from the Bus Identification table above to identify the correct channel at runtime.
 
 **Diagnostics:** The VCM acts as a diagnostic gateway on the standard DLC (Vehicle bus). For OBD-II services (Mode 01 PIDs, Mode 03/07/0A DTC reads), the VCM forwards requests to the ECM on the OBD bus and relays the response. Exception: PID 0x0D (vehicle speed) is intercepted and answered from the VCM's own wheel speed data, because the ECM would return zero due to its masked wheel speed inputs. UDS ReadDTCInformation (0x19) and KWP2000 (0x18) are rejected with NRC `serviceNotSupported`. A standard scan tool on the stock DLC cannot directly reach the ECM or TRAC MCU; the OBD bus is only accessible via the Via harness P1 connector.
 
@@ -122,10 +125,10 @@ The 0x3E9 entry is a **cascade effect** — VCM masks wheel speed inputs to ECM,
 **Known ECM DTC — P0621:** P0621 (Generator Lamp "L" Control Circuit) is permanently stored in the ECM because the alternator L-terminal was removed during the EV conversion. Classified as a non-emission enhanced diagnostic — not OBD-reportable, no MIL. Standard Mode 03/07/0A returns 0 DTCs even via direct ECM access on the OBD bus. ECM continuously broadcasts P0621 on `0x772` at ~1 Hz (bridged to Vehicle bus ~50ms later). Full DTC record accessible via GM proprietary service 0xA9 (`0x7E0` request, `0x5E8` response). See `notes/threebusinvestigation.md`.
 
 **No APP (accelerator pedal position) magnitude on GMLAN.** The VCM commands engine throttle via
-analog wire to the ECM's APP input pins — this is not on CAN. The GMLAN DBC contains only validity
-flags (`Accelerator_Actual_Position_Validity` in 0x0C9; `Accelerator_Effective_Position_Validity`
+analog wire to the ECM's APP input pins — this is not on CAN. The GMLAN broadcast contains only validity
+flags (an accelerator-position-validity flag in 0x0C9; an effective-position-validity flag
 in 0x1C3) with no percentage value. The best available proxy for VCM engine throttle command is
-**TPS** (`Throttle_Position` in `0x3D1` `Engine_General_Status_2`, B1, scale=0.392157%, OBD bus).
+**TPS** (a throttle-position byte in `0x3D1` `Engine_General_Status_2`, B1, scale=0.392157%, OBD bus).
 TPS is not driver-controlled — the driver's foot is `0x592 B2-B3` on the PT bus. TPS reflects
 the VCM's commanded engine throttle regardless of driver input.
 
@@ -182,9 +185,9 @@ Byte layouts confirmed from Ghidra decompile; scales confirmed from ARM binary D
 | 0x0120 | Vehicle odometer | VehicleOdometer (uint32 BE, x0.015625 km) | Actual DLC=5; EPRI DBC had 8 (over-declared). B0 unused; signal in B1–B4. |
 | 0x01C3 | PPEI engine torque | 2 torque signals (12-bit Motorola, x0.5 Nm, -848 Nm offset) | |
 | 0x02C3 | PPEI MAP | ECM_MAP (B6 x0.5 kPa) | Plist label "Engine_Torque_Status_3" was incorrect |
-| 0x03D1 | PPEI instantaneous fuel rate | ECM_InstFuelConsmpRate_volPt (12-bit Motorola, x0.025 L/hr) | Plist label "Engine_General_Status_2" was incorrect |
+| 0x03D1 | PPEI Engine_General_Status_2 (multi-signal) | ECM_InstFuelConsmpRate_volPt (12-bit Motorola B4-B5, x0.025 L/hr); a throttle-position byte (B1, x0.392157%); a fuel-cut-off flag (B2 bit6) | Multi-signal message — do NOT summarize the whole ID as "fuel rate". Message name "Engine_General_Status_2" is correct per GM spec (the EPRI plist label was right). Fuel rate (B4-B5) and throttle (B1) are different bytes. Throttle B1 is the VCM engine-throttle command proxy — see `notes/vtrux-smog-pass.md`. |
 | 0x03E9 | PPEI vehicle speed + distance | ECM_VehSpdAvgDrvn_linspd (15-bit Motorola, x1/64 km/h), ECM_DistRollCntAvgDrvn_dist (13-bit Motorola, x0.125 km) | |
-| 0x0451 | ~~TRAC MCU motor torque~~ **MISIDENTIFIED** | ~~TRAC_Mot_Trq~~ | EPRI decompile incorrectly attributed this to TRAC MCU. Log data shows it is GMLAN `Gateway_LS_General_Information`: B0-B3 = airbag severity flags (all 0x00), B4 = fan speed (uint8, x0.392157%). SG_ entries removed from `epri-obd-bus.dbc`. See `traction-inverter-control.md` Phase 1. |
+| 0x0451 | ~~TRAC MCU motor torque~~ **MISIDENTIFIED** | ~~TRAC_Mot_Trq~~ | EPRI decompile incorrectly attributed this to TRAC MCU. Log data shows it is a GMLAN message (VCM-bridged to the Vehicle bus): B0-B3 = airbag severity flags (all 0x00), B4 = fan speed (uint8, x0.392157%). SG_ entries removed from `epri-obd-bus.dbc`. See `traction-inverter-control.md` Phase 1. |
 | ~~0x0459~~ | ~~TRAC MCU thermal~~ **WRONG ID** | — | EPRI plist listed this ID for TRAC MCU thermal; zero frames at 0x459 in all logs. Message exists but at 0x044A (EPRI offset was -0x020; actual is -0x02F). |
 | 0x0462 | TRAC MCU HV bus | TRAC_HighPwr_Curr (14-bit LE, -2048 A), TRAC_HighPwr_Volt (11-bit LE, 1 V/count) | Symmetric to GENE 0x0482. Actual DLC=6; B5 uncharacterized. |
 | 0x04C1 | PPEI engine temperatures | ECM_EngineCoolantTemp, ECM_EngineAirIntakeTemp (uint8, x1 degC, -40 offset); ECM_OutsideAirTemp (uint8, x0.5 degC, -40 offset) | Outside air temp has different scale (0.5°C/count) from the other two (1°C/count) |
@@ -226,10 +229,10 @@ For full encoding details, confidence rationale, and source evidence, see **`not
 | 0x598 | HCU_Power_0598 | gen_power (B2-B3, LE uint16, centered at 32768, 0.01 kW/count, positive=generating) | ~1 Hz, DLC=8. VCM/HCU-sourced. gen_power scale CONFIRMED 2026-03-29. B0-B1 (DBL_ESSPwrAvg) and B4-B5 (DBL_TracPwrAvg) confirmed in `epri-pt-bus.dbc`. B6-B7 = static bias, not power data. |
 | 0x5A2 | VCM_TractMotor_05A2 | trac_rpm (B2-B3, LE uint16, centered at 32768, 1 rpm/count assumed), trac_torque_fbk (B4-B5, LE uint16, centered at 32768, Nm/count unconfirmed) | ~100 Hz, DLC=8. VCU-sourced re-broadcast. trac_rpm: r=0.9976 vs proxy; 64.3 RPM/km/h ratio confirmed; scale assumed 1 rpm/count by symmetry with GENE/TRAC RotSpd. trac_torque_fbk: r=0.9998 vs TRAC_TrqFbk (0x442, OBD bus); positive=motoring, regen=negative; scale to Nm UNCONFIRMED. B0-B1 and B6-B7 uncharacterized. |
 | 0x644 | VCM_CruiseDiag_0644 | cruise_mode (B2[7:4], 4-bit: 0x8=idle_standby, 0x9=throttle_override, 0xA=active), cruise_speed_setpoint (B2[3:0]:B3, 12-bit Motorola, 0.125 km/h/count) | 100 Hz. VCM-sourced. Diagnostic — reflects VCM internal cruise state, not a command to TRAC MCU. Confirmed across two cruise logs. See `notes/cruise-control-analysis.md`. |
-| 0x649 | VCM_EvapControl_0649 | vcm_evap_active (B0 bit 7, 1=evap in progress, 0=not active) | ~20 Hz. VCM-sourced. Clears ~6.1s before VCM commands generator stop. Holds through involuntary stalls — tracks VCM intent, not engine state. Lower 7 bits of B0 unresolved. Message content differs between drive and charge modes — do not interpret from charge logs. See `notes/evap-cycle-analysis.md`. |
+| 0x649 | VCM_EvapControl_0649 | vcm_evap_active (B0 bit 7, 1=evap in progress, 0=not active); evap_counter (B2[3:0]:B3, 12-bit Motorola, counts up while engine on during active evap cycle) | ~20 Hz. VCM-sourced. B0: NVM policy byte pre-set at key-on; clears ~6.1s before VCM commands generator stop; holds through involuntary stalls. evap_counter: B2 lower nibble = MSB (increments per B3 wrap at 0xFF->0x00), B3 = LSB; counts only when B0 bit7=1 (evap active); frozen when engine is off or evap not active; count rate variable 0.1-1.0 c/s (ramps up then down, tracks purge flow). B2 upper nibble = free-running clock (independent of evap state). B4 = real-time evap-active CAN flag (0x83=active, 0x03=inactive); leads B0 by ~8-10ms at completion. Lower 7 bits of B0 and full B1 role unresolved. Message content differs between drive and charge modes — do not interpret from charge logs. See `notes/evap-cycle-analysis.md`. |
 | 0x06000002 | VCU_TracThermal_06000002 | trac_therm_ind_pct (B5/B6, 10-bit LE startbit=46, 1%/count) | VCU-sourced extended frame (29-bit). Re-broadcasts traction motor thermal load indicator from OBD bus (0x44A B2). r=+1.000 vs 0x44A B2 TRAC_ThermInd_pct. Scale 1%/count (raw integer percent). Traction derate onset ~78-79%. B5[1:0] are ADC jitter; B0 multiples of 4 (r≈0.9998 vs throttle), B1[7:6] rolling sub-counter, B3 slow 5-value field, B4 role unknown. See `notes/thermal-investigation.md`. |
 | 0x18FF0320 | EMP_PumpStatus_18FF0320 | (no decoded signals — stub) | J1939 extended ID (SA=0x20). EMP WP29 C20 PE glycol coolant pump. ~1 Hz. No signals decoded. Confirmed source: only ID that drops when PE pump CAN connector is physically unplugged. See `notes/can-disconnect.md`. |
-| 0x0870A047 | EAC_STATUS2 | eac_hv_input (B2, uint8, 4 V/count) | J1939 extended ID, SA=0x47 (Sanden MI-EV36-BNKx HV AC compressor). DLC=4, 10 Hz. HV bus voltage at compressor. B2=0 before HV contactors close. CONFIRMED across 3 logs/conditions (on, off, charging); mean error 1.3 V vs 0x0482. Both EAC IDs broadcast at 10 Hz regardless of compressor state. Paired with 0x0868A047 (EPRI PT bus table). See `notes/hvac-investigation.md`. |
+| 0x0870A047 | EAC_STATUS2 | eac_hv_input (B2, uint8, 4 V/count) | J1939 extended ID, SA=0x47 (Sanden MI-EV36-BNKx HV AC compressor). DLC=4, 10 Hz. HV bus voltage at compressor. B2=0 before HV contactors close. CONFIRMED across 3 logs/conditions (on, off, charging); mean error 1.3 V vs 0x0482. Both EAC IDs broadcast at 10 Hz regardless of compressor state. Steady-state only — filtered + 10 Hz, lags `bcm_vbus_pos` by ~50–100 ms during fast transients (see Documented Behavior: HV Bus Voltage Measurement Sources). Paired with 0x0868A047 (EPRI PT bus table). See `notes/hvac-investigation.md`. |
 
 **OBD bus (`vtrux-obd-experimental.dbc`):**
 
@@ -245,7 +248,7 @@ For full encoding details, confidence rationale, and source evidence, see **`not
 
 **Internal reduction ratio:** **2.68:1** per VIA's own technician training document (VIA VTruck Component Course: "Gearbox: 2.68:1 single-speed reduction"). This is also a listed ratio in the BorgWarner 32-01 eGearDrive catalog (2.12, 2.68, 3.05, 4.05). CAN log data (2026-03-29) gives a motor RPM/speed ratio of ~63–68 rpm/(km/h) across three logs; the spread reflects speed-reference calibration uncertainty. With 2.68:1 gearbox and 3.73:1 rear axle the expected value is 66.1 rpm/(km/h), which falls within the measured range.
 
-**Rear axle ratio note:** The RPO sticker on both trucks shows GU6 (3.42:1) — the GM factory axle. The most consistent interpretation of all evidence is that VIA swapped the ring-and-pinion to GT4 (3.73:1) during the conversion, yielding a clean ~10.0:1 total ratio (2.68 x 3.73 = 9.996). The RPO sticker documents GM factory build, not VIA's post-conversion drivetrain. **Open item:** physical inspection of axle tag or ring-and-pinion to confirm 3.42 vs 3.73. See `notes/rpo/rpo.md` for full derivation.
+**Rear axle ratio note:** The build sticker on both trucks shows the GM factory 3.42:1 axle code. The most consistent interpretation of all evidence is that VIA swapped the ring-and-pinion to 3.73:1 during the conversion, yielding a clean ~10.0:1 total ratio (2.68 x 3.73 = 9.996). The build sticker documents GM factory build, not VIA's post-conversion drivetrain. **Open item:** physical inspection of axle tag or ring-and-pinion to confirm 3.42 vs 3.73.
 
 Both 0x308 and 0x55C are BorgWarner TCM messages in `epri-pt-bus.dbc` (Ghidra-confirmed, not in original EPRI plist). 0x308 carries the park pin state (B0) and a 16-bit LE input shaft speed signal (B1-B2, `RPM = (value - 32128) * 0.5`, r=0.9999 vs traction motor RPM) — added to `vtrux-powertrain-experimental.dbc` as `InputShaftSpeed`. 0x55C carries park lock state and park/drive sensors. The original 0x55C decompile entry had a transcription error (signals recorded at B2 instead of CAN B0); corrected 2026-04-07 — see `notes/epri-decompile.md` for buffer layout. See `notes/borgwarner.md` for full cross-vehicle signal detail and investigation history.
 
@@ -300,7 +303,7 @@ Evidence summary across four log conditions (2026-04-11 analysis):
 
 The Vtrux project has two trucks: the main truck (actively used) and the parts truck (donor vehicle). Two methods exist depending on which buses are captured.
 
-**Parts truck vs main truck differences:** The parts truck is WT1 trim; the main truck is WT2 (see `notes/rpo/rpo.md`). The parts truck does not have the APP GEN MOD (see `notes/app-gen-mod-investigation.md`). The PE water pump is present on the parts truck but not hooked up to CAN. The parts truck's HV battery was removed but is being reinstalled.
+**Parts truck vs main truck differences:** The parts truck is WT1 trim; the main truck is WT2. The parts truck does not have the APP GEN MOD (see `notes/app-gen-mod-investigation.md`). The PE water pump is present on the parts truck but not hooked up to CAN. The parts truck's HV battery was removed but is being reinstalled.
 
 **Parts truck hardware status (as of Apr 2026):** Both trucks have the same drivetrain architecture including the generator. The only hardware difference is the PE water pump — present on the parts truck but not hooked up to CAN. The parts truck's HV battery was removed but is being reinstalled. HCU software version: Both trucks: **v3.23** across every log. No version differences.
 
@@ -379,7 +382,7 @@ Many powertrain signals use **unsigned 16-bit centered at 32768** (offset binary
 
 **Note:** EPRI-confirmed encodings in the section above take precedence where signals overlap (0x00C9, 0x01C3, 0x03D1, 0x03E9, 0x04C1).
 
-Use `GMW8762_PPEI_GMLAN.dbc` to decode. Key messages:
+The GM buses carry standard GMLAN broadcast traffic. Key messages:
 
 ### Traction Inverter Commands (OBD bus — `vtrux-obd-experimental.dbc`)
 
@@ -390,7 +393,7 @@ Confirmed 2026-03-29. See `notes/traction-inverter-control.md` for full investig
 | 0x041 | B1-B2 | TRAC_TrqCmd — VCM-to-TRAC torque command | LE uint16, centered at 32768 (neutral=0 Nm); >32768=motoring, <32768=regen. 100 Hz, DLC=6. Scale 0.125 Nm/count (UNCONFIRMED — inferred from GENE symmetry). | B0=status nibble (8-11 observed). B3=0xFF, B4=0x7F constants. B5=rolling counter nibble 0x0-0xF. r=0.9994 vs feedback (full log). Bidirectional: max +380 Nm motoring, −287 Nm regen (climit log); max −42.6 Nm during cruise downhill. |
 | 0x442 | B0-B1 | TRAC_TrqFbk — TRAC MCU torque feedback | LE uint16, centered at 32768. ~98 Hz, DLC=7. Scale 0.125 Nm/count (UNCONFIRMED — inferred from GENE symmetry). | r=0.9998 vs 0x5A2 B4-B5 (VCM rebroadcast). B3, B5=low-entropy status bytes. B6=rolling counter nibble (0x00/0x10/0x20/... steps). Structurally symmetric to 0x471 (GENE feedback, PT bus). Scale plausibility: at 0.125 Nm/count, peak observed motoring torque is +3040 counts = +380 Nm (climit log, hard acceleration). BorgWarner 32-01 eGearDrive longitudinal transmission (Vtrux) is rated 350 Nm peak input torque (`notes/borgwarner-transmissions.pdf`); the ~9% overshoot is consistent with a transient peak above continuous rating. |
 
-### Brake-Related Signals (OEM-Specific — Not in GMLAN Standard DBC)
+### Brake-Related Signals (OEM-Specific — Not in GMLAN Standard)
 
 Investigation 2026-03-08 using `movingaroundindriveway.log` and `vtruxanotherevaplogpart1.log`.
 Event-based scan (press consistency + recovery score) + Pearson vs pedal and EBCM reference (0x2F9 B5).
@@ -404,12 +407,12 @@ Event-based scan (press consistency + recovery score) + Pearson vs pedal and EBC
 
 | CAN ID | Message | OBD Bus | Vehicle Bus |
 |--------|---------|-----------|----------------|
-| 0x0C1 | Driven_Wheel_Rotational_Status | **Masked to zeros** | **Real** wheel distance pulse counter |
+| 0x0C1 | wheel rotational status | **Masked to zeros** | **Real** wheel distance pulse counter |
 | 0x0C9 | Engine_General_Status_1 | **Real** engine RPM (`(B1<<8|B2)*0.25`) | **VCM synthetic ~800 RPM** (motor idle; ignore) |
 | 0x1C3 | Engine_Torque_Status_2 | **Real** engine torque (wide range when engine on) | **VCM modified** (motor torque substituted) |
-| 0x1F5 | Transmission_General_Status_2 | **Frozen at Park** — all 8 bytes constant (B0=B1=0x0F, B3=0x01); never shows Drive, Reverse, or Manual even when truck is moving. Neutral briefly leaks through (~15 frames) during shift transients. VCM-generated (no real TCM). | **Real** — B3 bits 3–0 = lever position (Park/Rev/Neu/Drive/Manual); Manual (9) confirmed in generator log at 22% of frames during generator operation. VCM-generated from Via custom shift position sensor. |
+| 0x1F5 | transmission status | **Frozen at Park** — all 8 bytes constant (B0=B1=0x0F, B3=0x01); never shows Drive, Reverse, or Manual even when truck is moving. Neutral briefly leaks through (~15 frames) during shift transients. VCM-generated (no real TCM). | **Real** — B3 bits 3–0 = lever position (Park/Rev/Neu/Drive/Manual); Manual (9) confirmed in generator log at 22% of frames during generator operation. VCM-generated from Via custom shift position sensor. |
 | 0x3E9 | Vehicle_Speed_and_Distance | **Broadcast frozen at zero** (cascade: ECM receives masked-zero wheel speeds → computes zero → broadcasts zero). | Real on Vehicle bus (VCM-generated from real wheel data). OBD PID 0x0D via standard DLC returns real speed — VCM answers at 0x7E8 on the Vehicle bus from its own wheel speed data. |
-| 0x1E1 | Cruise_Control_Switch_Status | Present on both GM buses at 33 Hz, DLC=7 (standard says 8 — byte 7 absent). B0 button bits always 0x00 (VCU suppresses button events). B5 is a non-standard VCU extension encoding cruise state as brief pulses (tiers 16–28 baseline, 48–60 setpoint-decrement, 80–92 engagement/cancel). See Cruise Control section below. | Same content on both buses |
+| 0x1E1 | cruise switch status | Present on both GM buses at 33 Hz, DLC=7 (standard says 8 — byte 7 absent). B0 button bits always 0x00 (VCU suppresses button events). B5 is a non-standard VCU extension encoding cruise state as brief pulses (tiers 16–28 baseline, 48–60 setpoint-decrement, 80–92 engagement/cancel). See Cruise Control section below. | Same content on both buses |
 
 ---
 
@@ -423,7 +426,7 @@ See `notes/peak-operating-points.md`.
 
 ### Cruise Control
 
-VCU-implemented; operates in both EV-only and hybrid modes. The VCM closes the speed loop via a continuously-varying traction torque command on 0x041 B1-B2 (OBD bus) — not throttle simulation. Speed setpoint is in 0x644 B2[3:0]:B3 (0.125 km/h/count). 0x1E1 B5 is a non-standard VCU extension encoding cruise state transitions as brief tier pulses (not in GMLAN DBC).
+VCU-implemented; operates in both EV-only and hybrid modes. The VCM closes the speed loop via a continuously-varying traction torque command on 0x041 B1-B2 (OBD bus) — not throttle simulation. Speed setpoint is in 0x644 B2[3:0]:B3 (0.125 km/h/count). 0x1E1 B5 is a non-standard VCU extension encoding cruise state transitions as brief tier pulses (not standard GMLAN).
 
 See `notes/cruise-control-analysis.md` and `notes/traction-inverter-control.md`.
 
@@ -449,10 +452,17 @@ January 2026 post-swap audit (4 sessions): another_M0 (Jan 23, 548 min, 9-hour b
 
 See `notes/balancing-investigation.md`.
 
+### BMS Log Startup Artifacts
+
+Two artifacts appear at the start of every log session (both laptop USB dongle and Android logger) that must not be mistaken for real data:
+
+**1. Stale SoC at startup (all loggers):** The A123 BMS broadcasts exactly one 0x430 frame with max-value sentinel cell voltages as the very first message after power-on (caught by the DBC `max=3.8V` range on `bcm_cell_vmax`/`bcm_cell_vmin`). The 0x411 SoC broadcast paired with that sentinel frame reflects the BMS's last stored Coulomb count from non-volatile memory — the SoC at previous power-down — not the current state. The stale value falls within the normal SoC range and will not be caught by any range check. The BMS transitions to its freshly computed SoC within seconds to ~60s after the sentinel. Treat the first 0x411 SoC reading in a session as suspect until cell voltages have stabilized. The stale and real values can differ by 10-20% or more depending on how much charge/discharge occurred since the last session. Confirmed across all logger types: S1 laptop stale=40.28%, S2 laptop stale=59.08%, S3 Android stale=76.5%.
+
+**2. Bus number churn in Android T0 (Android logger only):** If the Android CAN adapter reconnects during session startup, each reconnect is assigned a new bus number by the logger. T0 of an Android session may contain frames on 10-20+ different bus numbers, with the PT bus accumulating gradually to become dominant. Use the anchor ID (0x051) to identify the bus with sustained high frame counts; discard buses with only a handful of frames. T1 onward is typically stable on a single bus number. Confirmed in 171127_T0 which had 22 distinct bus numbers; T1 and T2 were clean on bus 21.
+
 ### Engine Stall Behavior
 
 Involuntary stalls observed during normal driving during evap purge (no fault codes). The VCM's generator wind-down logic holds the engine at minimum throttle longer than the ECM's DFCO threshold tolerates — ECM cuts fuel, VCM responds ~100ms too late, RPM free-falls to 0. Engine auto-restarts after ~7s. Hypothesis: control loop timing gap, not a hardware failure.
-
 
 ### HV Operation and Fault Response
 
@@ -497,6 +507,24 @@ HV contactors are managed by the A123 BMS. The `hsc_bcm_*` bits (0x0400 B0) refl
 **Fault latch behavior:** All fault types latch `0x410 B1 bit6` (0xCF final state). Self-clear does not occur — 12V battery cycle (disconnect/reconnect) is required to clear the latch. Fault state persists through key-off.
 
 See `notes/isolation-fault-analysis.md`, `notes/interlock-bitfields-analysis.md`, `notes/before-battery-swap-failed-charge-analysis.md`, `notes/after-battery-swap-charge-fail-analysis.md`.
+
+---
+
+### HV Bus Voltage Measurement Sources
+
+Three independent HV bus voltage measurements are visible on the PT bus, each from a different module:
+
+| Source | ID / field | Scale | Rate | Character |
+|--------|-----------|-------|------|-----------|
+| BMS internal sense | `0x0440 bcm_vbus_pos` | 12-bit Motorola, 0.25 V/count | BMS frame rate | Lowest lag; tracks the bus in near-real-time |
+| Sanden EAC compressor | `0x0870A047 B2` (`eac_hv_input`) | 4 V/count | 10 Hz | Filtered + low rate; lags during fast transients |
+| GENE inverter | `0x0482 GENE_HighPwr_Volt` | 11-bit LE, 1 V/count | — | Only present when GENE MCU is awake (boots ~1s into precharge) |
+
+**Steady state:** all three agree within ~±4 V (one EAC count). Confirmed across driving, idle, and charging in `notes/hvac-investigation.md`.
+
+**Fast transients (precharge, contactor open/shutdown):** the EAC reading lags the BMS `bcm_vbus_pos` by ~50–100 ms. The EAC source broadcasts at only 10 Hz and is internally filtered (~one cycle behind), so during a rapidly changing bus its samples report the bus state from up to ~100 ms earlier. This can make EAC appear to *rise after* a contactor-open/shutdown event — an artifact of the lag reporting the still-rising pre-shutdown bus, not a real post-shutdown rise. Example (failed precharge, `debuglog_M4_T20.log`): at the ALL_OPEN_SHUTDOWN instant the BMS read 367 V while EAC still read 336 V; the matching 368 V did not appear on EAC until ~100 ms later, after which EAC began its true decay.
+
+**Guidance:** for timing-sensitive analysis during fast transients, use BMS `bcm_vbus_pos` (0x0440). The EAC reading is suitable for steady-state HV monitoring only — its 4 V quantization and 10 Hz filtered lag make it unreliable for sub-100 ms timing. See `notes/hvac-investigation.md`.
 
 ---
 
@@ -585,6 +613,57 @@ Partial pinout for the HV battery LV connector (entries with `?` are unconfirmed
 | —              | ?               |
 | —              | HVIL IN         |
 
+### Woodward ECM-5554 Connector A (Black) — Signal Names
+
+MotoTron P/N: CONFEML051 | Molex P/N: 98944-2001-32 | Woodward P/N: 1635-1768 | 32 pins
+
+| Pin | Signal | Pin | Signal | Pin | Signal | Pin | Signal |
+|-----|--------|-----|--------|-----|--------|-----|--------|
+| A-A1 | EST 4 | A-A2 | EST 3 | A-A3 | EST 2 | A-A4 | EST 1 |
+| A-B1 | EST 8 | A-B2 | EST 7 | A-B3 | EST 6 | A-B4 | EST 5 |
+| A-C1 | TACH | A-C2 | RS485- | A-C3 | RS485+ | A-C4 | DRVG 3 |
+| A-D1 | LSO13 | A-D2 | FUELPR | A-D3 | MPRD | A-D4 | XDRG 2 |
+| A-E1 | LSO2 | A-E2 | LSO8 | A-E3 | LSO9 | A-E4 | LSO10 |
+| A-F1 | LSO3 | A-F2 | LSO1 | A-F3 | FUEL/INJ 7 | A-F4 | FUEL/INJ 8 |
+| A-G1 | FUEL/INJ 5 | A-G2 | FUEL/INJ 6 | A-G3 | FUEL/INJ 3 | A-G4 | FUEL/INJ 4 |
+| A-H1 | FUEL/INJ 1 | A-H2 | FUEL/INJ 2 | A-H3 | LSO12 | A-H4 | LSO11 |
+
+### Woodward ECM-5554 Connector B (Brown) — Signal Names
+
+MotoTron P/N: CONFEML052 | Molex P/N: 98950-2003-48 | Woodward P/N: 1635-1769 | 48 pins
+
+| Pin | Signal | Pin | Signal | Pin | Signal | Pin | Signal |
+|-----|--------|-----|--------|-----|--------|-----|--------|
+| B-A1 | Powertrain CAN1+ | B-A2 | Powertrain CAN1- | B-A3 | BATT 2 | B-A4 | AN16M |
+| B-B1 | Vehicle CAN3- | B-B2 | Vehicle CAN3+ | B-B3 | CANSHIELD3 | B-B4 | AN21M |
+| B-C1 | OBD CAN2+ | B-C2 | OBD CAN2- | B-C3 | CASEGND | B-C4 | AN18M |
+| B-D1 | KNK1+ | B-D2 | KNK1- | B-D3 | XDRG 1 | B-D4 | AN19M |
+| B-E1 | KNK2- | B-E2 | KNK2+ | B-E3 | AN1M | B-E4 | AN28M |
+| B-F1 | AN2M | B-F2 | AN3M | B-F3 | AN14M | B-F4 | AN26M |
+| B-G1 | CAM (DG) | B-G2 | SPEED 1 (DG) | B-G3 | AN27M | B-G4 | ECUP |
+| B-H1 | SPEED 3 (DG) | B-H2 | SPEED 2 (DG) | B-H3 | STOP | B-H4 | CNK (DG) |
+| B-J1 | CNK- (VR) | B-J2 | CNK+ (VR) | B-J3 | O2C- | B-J4 | O2D- |
+| B-K1 | O2A+ | B-K2 | O2B+ | B-K3 | O2C+ | B-K4 | O2D+ |
+| B-L1 | O2A- | B-L2 | O2B- | B-L3 | AN20M | B-L4 | EST RTN |
+| B-M1 | LSO6 | B-M2 | LSO7 | B-M3 | LSO4 | B-M4 | LSO5 |
+
+### Woodward ECM-5554 Connector C (Grey) — Pinout
+
+MotoTron P/N: CONFEML054 | Molex P/N: 98944-3002-32 | Woodward P/N: 1635-1771 | 32 pins. Harness-side mating connector is P24 (VIA Motors part 64319-3218). **Bold** = confirmed from VIA Motors HVIL-debug.pdf (P24 pinout); unconfirmed entries show Woodward ECM signal name only.
+
+| Pin | Signal | Pin | Signal | Pin | Signal | Pin | Signal |
+|-----|--------|-----|--------|-----|--------|-----|--------|
+| C-A1 | **PTC_OUTLET_TEMP** | C-A2 | AN6M | C-A3 | **VAC_PRES_SIG** | C-A4 | AN8M |
+| C-B1 | **GBLP_A** | C-B2 | **GBLP_B** | C-B3 | **GBLP_C** | C-B4 | **GBLP_P** |
+| C-C1 | **GBLP_PNP** | C-C2 | AN29M | C-C3 | AN4M | C-C4 | **APP1_PEDAL** |
+| C-D1 | **APP2_PEDAL** | C-D2 | AN32M | C-D3 | **MIL_ECM** | C-D4 | **5V_REF_A** |
+| C-E1 | AN31M | C-E2 | **HVAC_REQ** | C-E3 | **HVAC_TEMP_SEL** | C-E4 | **5V_REF_B** |
+| C-F1 | AN25M | C-F2 | AN7M | C-F3 | AN30M | C-F4 | **HCU_VBAT1** |
+| C-G1 | **CHASSIS_GND_HCU** | C-G2 | **CHASSIS_GND_HCU** | C-G3 | **HCU_DRVP1** | C-G4 | HBRIDGE1A [H1+] |
+| C-H1 | **GEN_F_TERM_PWM** | C-H2 | HBRIDGE2A [H2+] | C-H3 | **HCU_DRVP2** | C-H4 | **ESS_HVIL_DRV** |
+
+*C-H4 (ESS_HVIL_DRV) is the HV battery HVIL signal. Continuity from C-H4 to MDS HVIL pin should be <5 ohms.*
+
 ---
 
 ## File Layout
@@ -598,7 +677,6 @@ projects/vtrux/
     vtrux-powertrain.dbc          # Superseded — signals migrating to vtrux-powertrain-experimental.dbc
   BelInverter-v2.dbc              # Bel charger/inverter DBC — current (EPRI-merged)
   Bel-Inverter/BelInverter.dbc   # Previous Bel DBC — source reference, superseded
-  GMW8762_PPEI_GMLAN.dbc          # GM PPEI GMLAN standard DBC (51 messages, complete)
   gm bus messages.txt             # Early GM bus message notes
   notes/                          # Research notes & signal findings (see notes/README.md)
     README.md                     # Index of all notes files
@@ -625,17 +703,12 @@ projects/vtrux/
       *.csv                       # Timeseries extracts
       *.txt                       # Status event outputs
       ratios.png                  # Drivetrain gear ratio reference
-      Torque-command-identification.pdf  # Original ChatGPT session printout
     plans/                        # Investigation and implementation plans
       plan-status-codes.md        # Status code byte investigation plan
       documentation-cleanup.md    # Documentation reorganization plan
   logs/                           # All CAN capture log files (see logs/README.md)
     README.md                     # Log inventory and session descriptions
     after fix charge/             # Post-repair charging captures
-  gmlan-info/                     # GM PPEI GMLAN spec and extracted DBC (see README.md)
-    README.md                     # Directory overview
-    GMW8762_PPEI_GMLAN.dbc        # Working copy (canonical copy at project root)
-    EXTRACTION_COMPLETE.md        # Extraction summary and verification status
   Bel-Inverter/                   # Bel charger documentation and working DBCs (see README.md; logs moved to logs/)
     README.md                     # Directory overview
     BelInverter.dbc               # Source reference — superseded by BelInverter-v2.dbc at project root
