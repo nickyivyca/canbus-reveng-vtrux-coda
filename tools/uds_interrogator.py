@@ -26,9 +26,10 @@ from pathlib import Path
 
 # Make sure the project root is on the path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "can-tools"))
 
 import can
-from canre.live.receiver import detect_all_can_interfaces
+from canbench.live.receiver import detect_all_can_interfaces
 from canre.uds.scanner import UDSScanner
 
 logging.basicConfig(

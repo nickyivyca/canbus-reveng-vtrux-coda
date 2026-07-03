@@ -392,131 +392,18 @@ SavvyCAN may use a different bit-addressing convention — hand-edit the `.gdf` 
 
 ---
 
-## can_monitor.py
-*Source last modified: 2026-03-09*
+## CAN runtime tools -- moved to the `can-tools` submodule
 
-Live CAN monitor with vehicle-aware GUI. Auto-detects dongles, sniffs for 5 s to identify which
-physical channel is which logical bus (anchor detection), then opens a PyQt5 window showing decoded
-signals for the active vehicle mode. Simultaneously writes a BUSMASTER log if `--output` is given.
+`can_logger.py`, `can_replayer.py`, and the live `can_monitor.py` GUI, together
+with the hardware layer (`canbench/live/`, formerly `canre/live/`) and the GUI
+framework (`canbench/gui/`, formerly `canre/gui/`), now live in the standalone
+**can-tools** repository, included here as a git submodule at `can-tools/`. See
+`can-tools/README.md` and `can-tools/tools/README-can_logger.md`.
 
-**Usage:**
-```
-py -3.12 tools/can_monitor.py --vehicle coda [options]
-
-  --vehicle, -v   Vehicle name: coda | vtrux  [required]
-  --bitrate, -b   CAN bitrate in bps (default: 500000)
-  --brands        Comma-separated brands to capture from (e.g. ixxat,kvaser)
-  --output, -o    Optional BUSMASTER log file for simultaneous capture
-  --output-dir,-d Directory for auto-named log file
-  --debug         Verbose logging
-```
-
-**Vehicle profiles:** `projects/<vehicle>/gui_profile.py` — each exports a `PROFILE` instance
-(subclass of `canre.gui.base_profile.VehicleProfile`).
-
-**Mode detection:** `ModeRule` objects declare conditions (ID presence or signal value predicate).
-A mode is active if ANY of its rules evaluates True. Modes are evaluated in priority order; the
-last mode is the fallback default. Mode switches automatically on every 50 ms tick.
-
-**Coda modes (charging GUI implemented 2026-03-09):**
-
-| Mode | Trigger signals |
-|------|----------------|
-| charging | HVPowermode=5 OR Chargemode=3 OR HVBattCharging=1 OR CMS messages present (0x27B) |
-| idle | B CAN alive (0x383 present) |
-
-**Charging layout signals (all B CAN):**
-- Battery Pack: SoC (0x383), PackVoltage/PackCurrent/BattSentChargeLimit (0x275)
-- Cell Voltages: min/avg/max mV, spread, cell IDs (0x381 BMSVminVmax) — spread alert > 50 mV
-- Pack Temperature: avg/max/min degC (0x382 BMSThermal)
-- Charger Input CMS: AC voltage/current/power (0x27B CMSInputValues)
-- Charger Output CMS: HV out V/I/P (calc), LV out V/I (0x27C CMSOutputValues)
-- Charger Temps CMS: case/PFC/HV1/HV2 degC (0x27A CMSTempStatus)
-- BMS Charger Command: current cmd, max voltage (0x050 BMSChargerCmd)
-- System Status: HVPowermode, Chargemode, BMSmode, fault severity/code, fault lamp, cable/full flags
-- HVAC/Thermal: PTC power, battery fan PWM, radiator fan PWM (0x276), DCDC 14V (0x1D5)
-
-**Dependencies:** `PyQt5`, `cantools`, `python-can` (all already project deps)
-
-**Architecture:** `canre/live/receiver.py` (hardware), `canre/live/vehicle_configs.py` (anchor data),
-`canre/gui/` (framework: `base_profile`, `bus_decoder`, `widgets`, `main_window`).
-
----
-
-## can_logger.py
-*Source last modified: 2026-03-09*
-
-Multi-device CAN logger. Auto-detects all connected dongles and logs traffic from all of them simultaneously to a single BUSMASTER-format `.log` file.
-
-**Refactored 2026-03-09:** CAN hardware plumbing (`CANBusLogger`, `detect_all_can_interfaces`, USB reset) moved to `canre/live/receiver.py`. Queue 4-tuple format changed from 3-tuple to `(timestamp, bus_id, msg, direction)` where direction is `"Rx"`. Behavior and CLI interface unchanged.
-
-**Usage:**
-```
-tools\can_logger_admin.bat [options]        <- preferred (auto-elevates for ixxat recovery)
-py -3.11 tools/can_logger.py [options]     <- direct (must be in admin prompt for ixxat recovery)
-
-  --output, -o    Output log file. Bare filename (no directory) is placed in --output-dir.
-                  Default: auto-generated canlog_YYYYMMDD_HHMMSS.log in --output-dir.
-  --output-dir,-d Directory for output log files. Default: project root (parent of tools/).
-  --bitrate, -b   CAN bitrate in bps (default: 500000)
-  --brands        Comma-separated brands to capture from, e.g. kvaser or ixxat,kvaser
-                  Default: auto-detect all brands
-  --debug         Verbose logging
-```
-
-**Supported hardware:** ixxat, kvaser, pcan, socketcan
-
-**Output format:** BUSMASTER (`.log`), compatible with all `canre` parsers.
-
-**Notes:**
-- Use `--brands` to restrict capture to specific dongles. Required for loopback testing so the logger doesn't also capture from the dongle that's transmitting.
-- Each detected dongle becomes a separate channel (1-indexed) in the log file.
-- **Administrator privileges required** when ixxat dongles are connected. Use `can_logger_admin.bat` (self-elevating via UAC) rather than opening an admin cmd manually. Without admin, ixxat overflow recovery silently fails.
-- **ixxat overflow recovery:** if a dongle latches in hardware overflow, the logger auto-resets it via PowerShell `Disable-PnpDevice` / `Enable-PnpDevice` targeting the specific dongle by `unique_hardware_id` (`USB\VID_08D8&PID_0008\HWxxxxxx`). Other connected ixxat dongles are unaffected. Full details in `tools/README-can_logger.md`.
-
----
-
-## can_replayer.py
-*Source last modified: 2026-02-18 21:48:56*
-
-Plays back a captured log file through connected CAN hardware at the original timing. Complementary to `can_logger.py`.
-
-**Usage:**
-```
-py -3.11 tools/can_replayer.py <logfile> [options]
-
-  logfile        Path to log file (auto-detects format)
-  --bitrate, -b  CAN bitrate in bps (default: 500000)
-  --brands       Comma-separated brands to transmit on, e.g. ixxat
-                 Default: auto-detect all brands
-  --bus BUS_ID   Only replay frames from this log bus/channel ID.
-                 Default: replay all buses.
-  --speed, -s    Replay speed multiplier (default: 1.0). Use 0 for no delay.
-  --loop, -l           Loop replay indefinitely (Ctrl+C to stop)
-  --skip-confirmation  Skip the "Press Enter to start" prompt (use for non-interactive/scripted runs)
-  --debug              Verbose logging
-```
-
-**Supported input formats:** BUSMASTER, candump, SavvyCAN, PEAK TRC (auto-detected)
-
-**Channel mapping:**
-- If the log has the same number of channels as connected dongles, log channel N is sent through dongle N (1:1).
-- Otherwise all frames go through the first dongle.
-
-**Notes:**
-- Prints a startup summary with the channel mapping and waits for Enter before transmitting (skip with `--skip-confirmation`).
-- Timing uses `time.perf_counter()` for sub-millisecond accuracy.
-- On Ctrl+C, finishes the current frame then shuts down cleanly.
-
-**Loopback test (Ixxat TX → Kvaser RX):**
-```
-# Terminal A — capture on Kvaser only
-py -3.11 tools/can_logger.py --brands kvaser --output verify.log
-
-# Terminal B — replay through Ixxat only
-py -3.11 tools/can_replayer.py <capture.log> --brands ixxat
-```
-Start the logger first, then the replayer. Frame counts should match to within a handful of frames.
+The default capture format is candump / SocketCAN `.log` (python-can native;
+absolute epoch timestamps; bus id in the `canN` interface field). Analysis tools
+in this repo that need live hardware (e.g. `uds_interrogator.py`) import
+`canbench.live` from the submodule.
 
 ---
 

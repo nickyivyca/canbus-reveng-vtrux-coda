@@ -50,7 +50,8 @@ import can
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
-from canre.live.receiver import CANBusLogger, detect_all_can_interfaces
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "can-tools"))
+from canbench.live.receiver import CANBusLogger, detect_all_can_interfaces
 
 # ---------------------------------------------------------------------------
 # Logging setup

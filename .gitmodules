@@ -1,3 +1,6 @@
 [submodule "projects/coda/coda-diagnostics"]
 	path = projects/coda/coda-diagnostics
 	url = https://github.com/nickyivyca/coda-diagnostics.git
+[submodule "can-tools"]
+	path = can-tools
+	url = https://github.com/nickyivyca/can-tools.git

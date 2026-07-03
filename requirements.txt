@@ -7,7 +7,7 @@ python-can>=4.6.1
 # gs_usb / candleLight dongles (Innomaker USB2CAN). On Windows the device
 # needs no vendor driver (WinUSB auto-binds via its WCID descriptors); these
 # two packages provide the gs_usb backend and a bundled libusb-1.0.dll that
-# canre.live.receiver injects onto the DLL search path.
+# canbench.live.receiver (can-tools submodule) injects onto the DLL search path.
 gs_usb>=0.3.1
 pyusb>=1.3.1
 libusb-package>=1.0.26.4
