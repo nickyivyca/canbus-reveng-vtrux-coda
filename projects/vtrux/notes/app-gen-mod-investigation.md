@@ -13,7 +13,7 @@
 
 From `Vtrux.md` (confirmed architecture):
 
-> The VCM commands engine throttle via analog wire to the ECM's APP input pins — this is not on CAN. The GMLAN messages contain only APP validity flags with no percentage value.
+> The VCM commands engine throttle via analog wire to the ECM's APP input pins — this is not on CAN. The GMLAN DBC contains only validity flags (`Accelerator_Actual_Position_Validity` in 0x0C9; `Accelerator_Effective_Position_Validity` in 0x1C3) with no percentage value.
 
 The GM ECM uses a two-sensor **Accelerator Pedal Position (APP)** input system — standard GM redundant safety design. Both APP sensor circuits must agree within tolerance; if either drops to zero (circuit low), the ECM sets fault codes and the MIL illuminates.
 

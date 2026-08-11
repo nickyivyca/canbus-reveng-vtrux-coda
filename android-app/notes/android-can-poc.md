@@ -30,7 +30,7 @@ host API (no root, no kernel driver required).
 ### ADB Wireless
 
 - Phone uses Android 11+ wireless debugging (not the legacy `adb tcpip 5555` method).
-- Paired via `adb pair <lan-ip>:39289 <code>` -- guid `adb-<device-guid>`.
+- Paired via `adb pair <lan-ip>:39289 <code>` -- guid `adb-16e7d2b3-RSkDoo`.
 - Connected via `adb connect <lan-ip>:42879` -- device shows as `<lan-ip>:42879 device`.
 - `adb logcat` streams successfully. Wireless ADB is the primary workflow going forward.
 - Note: the wireless debugging port (42879) is assigned dynamically by Android; if it changes
@@ -53,7 +53,7 @@ host API (no root, no kernel driver required).
   without it when AndroidX deps are present.
 - Build commands always need explicit env vars (no system-wide JAVA_HOME or ANDROID_HOME):
   ```
-  JAVA_HOME="<ANDROID_STUDIO_JBR>"
+  JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"
   ANDROID_HOME="<ANDROID_SDK_DIR>"
   CanReaderApp/gradlew.bat assembleDebug --project-dir CanReaderApp/
   ```
@@ -174,7 +174,7 @@ instead -- single-quote the shell command string in PowerShell to prevent expans
 ### PEAK transmit test (2026-03-21)
 
 - Transmitted 10 frames from PEAK PCAN_USBBUS1 at 500 kbps using `python-can` 4.4.2 (py -3.11).
-- Script: `android-app/notes/artifacts/peak_tx_test.py` (working helper, not in public repo)
+- Script: `android-app/notes/artifacts/peak_tx_test.py`
 - All 10 frames received correctly in logcat:
   ```
   I CanReader: CAN RX: id=0x123 dlc=8 data=[01 02 03 00 AA BB CC DD]

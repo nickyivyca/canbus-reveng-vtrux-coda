@@ -6,6 +6,14 @@
 **Total frames:** 4,195,013
 **Analyzed:** 2026-02-19
 
+> **⚠ Cell numbering updated 2026-07-22.** The C CAN DBC (`CODA-C-CAN-cells.dbc`) is now
+> **1-based** (`Cell1…Cell104`), matching the BMS's own `VmaxId`/`VminId` directly
+> (VmaxId 82 = Cell82). It was previously **0-based** (`Cell0…Cell103`). Cell numbers in this
+> file have been updated to 1-based; **any older artifact, CSV, plot, or export is still
+> 0-based — add 1 to reconcile** (old `#94` = current `Cell95`). `VmaxId`/`VminId`/"BMS index"
+> values were always 1-based and are unchanged. `MinTempId`/`MaxTempId` are a separate index,
+> unaffected. See `cell-index-mapping.md`.
+
 ---
 
 ## Channel Identification
@@ -238,7 +246,7 @@ The skeleton DBC labels **0x381 as `BMSDriveLimits`** (with `BattSentChargeLimit
 
 ## Next Steps
 
-1. **Identify which cell** is the weakest: extract 0x000–0x019 from C CAN near EOC (t=5410–5442s) to find which message/byte pair tracks the highest cell. VmaxId from CODACAN was 76 in the prior session — start with that cell index.
+1. ~~**Identify which cell is the OV cell**~~ — **RESOLVED 2026-07-22.** Settled by the full-charge log `coda_20260722_173203_*` (75.7% -> 100% SoC, C+B+D CAN), not this session: the OV cell is **Cell82** (VmaxId 82, 0x014 B2-B3), peaking at 3778 mV — ~400 mV clear of every other cell at EOC and 86.7% of the charge-session argmax. Same failed-balance cell as `battery-degradation.md`. The earlier candidate `VmaxId 76` = `Cell76` (0x012 B6-B7) peaks only 3348 mV, and the bonnydoon high-under-load cell `Cell84` (0x014 B6-B7) never enters the charge argmax top-6 — the high-under-load and OV cells are different. See `cell-index-mapping.md`.
 
 2. ~~**Confirm 0x382 B0 interpretations**~~ — **CORRECTED (2026-03-25)**: 0x382 B0 is `Cell_T_avg` temperature (T=raw-128 °C). The 0x8B→0x8E progression was pack temperature rising 11→14°C during charging, not charge stages. 0x33 and 0x00 are invalid sentinels. No action needed in `charging-analysis.md` — see correction note in this file's 0x382 section above.
 

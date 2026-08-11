@@ -29,6 +29,7 @@ DEFAULT_DBCS = [
     "projects/vtrux/epri-pt-bus.dbc",
     "projects/vtrux/epri-obd-bus.dbc",
     "projects/vtrux/BelInverter-v2.dbc",
+    "projects/vtrux/GMW8762_PPEI_GMLAN.dbc",
 ]
 DEFAULT_OUT_DIR = Path(
     "android-app/CanLoggerApps/cancore/src/test/resources"

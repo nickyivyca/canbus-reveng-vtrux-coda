@@ -139,6 +139,13 @@ Scale: **1 mV/bit** (confirmed). Raw value = millivolts directly.
 LFP range: 2500–3650 raw (2.5–3.65V). Typical mid-charge: ~3250 mV.
 104 cells total (26 frames × 4 cells).
 
+**Cell numbering (1-based since 2026-07-22):** the DBC signals are `Cell1..Cell104`,
+matching the BMS's own 0x381 `VmaxId`/`VminId` **directly** (VmaxId 82 = Cell82). The DBC
+was previously 0-based (`Cell0..Cell103`); older artifacts/exports are 0-based, so **add 1**
+to reconcile them. Confirmed across three sessions (100% at the charge session) — see
+`notes/cell-index-mapping.md`. `MinTempId`/`MaxTempId` (0x382) index temperature sensors, a
+separate axis, unaffected.
+
 **Pack voltage cross-check:** `sum(104 raw cell values) / 1000` = pack voltage in V (~338V typical).
 Use this to anchor/validate any pack voltage signal found on B CAN.
 
@@ -169,30 +176,31 @@ errors on Windows. Use `--quiet --output FILE` when running `labview_xml_extract
 
 | ID (hex) | DBC Name | Module | Signals |
 |----------|----------|--------|---------|
-| 0x050 | BMSChargerCmd | BMS | HVCurrentCmd, MaxVoltage |
-| 0x270 | BMS_FaultStatus | BMS | BMSFaultStatus |
-| 0x275 | BMSDriveLimits | BMS | DischargeLimit (alias: MotorDriveLimit), ChargeLimit, PackCurrent, PackVoltage, HVACLimit |
-| 0x2C1 | BMSDrivingRange | BMS | DrivingRange_Exp, DrivingRange_Max, DrivingRange_Min — scale unconfirmed |
+| 0x050 | BMSChargerCmd | BMS | HVCurrentCmd, MaxVoltage, **EVSEMaxCurrent** (B5-B6 BE, 0.1 A/bit — J1772 advertised station current, full/unsplit, same in idle and charging). **This is the canonical EVSE-advertised-current signal for the Coda** — prefer it over the per-module copies in 0x054/0x61A. Not CODACAN-derived: confirmed 2026-07-23 by log analysis across three known station ratings. Sender is the BMS (transmitter-clock fingerprint: 0x050 = -31.7 ppm vs BMS cluster -31.8, GWM +22.1) — the path is BMS -> chargers directly, no gateway hop. See `notes/charging-analysis.md` |
+| 0x270 | BMS_FaultStatus | BMS | **B0[7:4] = BMSFaultSeverity (0-6 enum)** (located by CODACAN inject 2026-07-26; natural data only reaches 0-1); **B0 bit1 = BMSRedLampReq** (relayed to 0x271); B0 bit0 = key-on lamp test. B6/B7 active, unknown. |
+| 0x275 | BMSDriveLimits | BMS | B0 DischargeLimit (alias MotorDriveLimit), B1 ChargeLimit, B2-B3 PackCurrent, B4-B5 PackVoltage, B6 HVACLimit, **B7 dead byte (0xDD, inert)** |
+| 0x2C1 | BMSDrivingRange | BMS | DrivingRange_Exp (B1), Max (B3), Min (B5) — **raw × 0.62 mi, offset 0** (miles; green-screen/Android confirmed; DBC's old 1.17 mi was 2× too high, and CODACAN's km readout is a mis-scale) |
 | 0x378 | BattPowermode | BMS | HVPowermode, Chargemode, KeepWakeNetworkBMS, rolling counter, BMSmode |
-| 0x381 | BMSVminVmax | BMS | Min cell mV, max cell mV, avg cell mV, VminId, VmaxId. VminId/VmaxId use BMS-internal cell numbering, not C CAN frame/byte position. |
+| 0x381 | BMSVminVmax | BMS | B0-B1=avg cell mV, B2-B3=max cell mV, B4-B5=min cell mV, B6=VmaxId, B7=VminId (all BE, 1 mV/bit). **Byte order corrected 2026-07-15** — DBC/decode-notes previously swapped Min<->Avg and VminId<->VmaxId (matches LabVIEW BMS_Recvd cluster order Vavg,Vmax,Vmin,VmaxId,VminId; avg lies between min/max in 99% of samples). **Index mapping resolved 2026-07-21** — VmaxId/VminId are the **C CAN cell number directly** (`VmaxId 82 = Cell82`), both 1-based since the 2026-07-22 DBC renumber (historically DBC was 0-based and reported id = old Cell + 1). Range 1-104. See `notes/cell-index-mapping.md`. |
 | 0x382 | BMSThermal | BMS | Cell_T_avg, Cell_T_max, Cell_T_min, MaxTempId, MinTempId |
 | 0x383 | BMSBattStatus | BMS | SoC, HVBattCharging, ChrgPortOpen, ChargeCableConnected |
 | 0x390 | BMS_HVBattTemp1 | BMS | FrontInletAirTemp, RearInletAirTemp, ReturnAirTempPsg, ReturnAirTempDrv, AllowedCellTempMax, AllowedCellTempMin, AllowedCellTempDiff, AllowedHumidity |
-| 0x271 | GWM_VehFaults | GWM | VehFaultSeverity, VehicleFaultLampReq (OFF/YELLOW/RED), key-on lamp-test flag, VehicleFault |
-| 0x276 | HVACStatus | HVAC | PTC_PowerConsumption, ACCM_PowerConsumption, HVACHVDisableStatus (enum, bit layout provisional), CIntTempRadOutlet, CIntTempPTCOutlet, PTCHeaterPWM, RadiatorFanPWM, BattFanPWM |
+| 0x271 | GWM_VehFaults | GWM | VehicleFaultLampReq (B0[1:0]: OFF/YELLOW/RED/INVALID), B0 bit2 flag. **VehFaultSeverity/VehicleFault removed** — B1-B4 = 0x00 in every captured car, so no fault code is on the bus |
+| 0x276 | HVACStatus | HVAC | PTC_PowerConsumption, ACCM_PowerConsumption, HVACHVDisableStatus (**B2[1:0]** enum: 0 Invalid/1 not-disabled/2 disabled/3 -), CIntTempRadOutlet, CIntTempPTCOutlet, PTCHeaterPWM, RadiatorFanPWM, BattFanPWM |
 | 0x391 | HVACAirState | HVAC | UnderHoodHumidity, UnderHoodTemp, OpAirHumidity, OPAirTemp, ReturnAirTemp, EvapAirOffTemp |
 | 0x274 | ChrgrSysFaultsTemp | CMM | Fault status, Chrgr1Temp, Chrgr2Temp |
 | 0x277 | CMMTempStatus | CMM | CaseTemp confirmed; PFCTemp, HV1/HV2 inconclusive |
 | 0x279 | CMMOutputValues | CMM | HVOutVoltage, HVOutCurrent, LVOutVoltage, LVOutCurrent (all confirmed; HVOutVoltage cross-checks with C CAN pack voltage) |
 | 0x27A | CMSTempStatus | CMS | PFCTemp, HV1Temp, HV2Temp, CaseTemp (all confirmed) |
-| 0x27B | CMSInputValues | CMS | ACInVoltage, ACInCurrent, ACInPower (all confirmed) |
+| 0x27B | CMSInputValues | CMS | ACInVoltage, ACInCurrent (16-bit ÷32), ACInPower (**32-bit ÷64 over bytes 4–7**, = charger-computed V×I) — all confirmed |
 | 0x27C | CMSOutputValues | CMS | HVOutVoltage, HVOutCurrent, LVOutVoltage, LVOutCurrent (all confirmed) |
-| 0x27D | CMMInputValues | CMM | ACInVoltage, ACInCurrent, ACInPower |
-| 0x615 | ChrgrSysLimits | CMM | Limit and enable flag signals |
-| 0x616 | ChrgrSysCtrlEcho | CMM | Echo of charger control commands |
-| 0x617 | ChrgrSysSts | CMM | Charger system status |
-| 0x61A | CMSHVCmd | CMS | HV Cmd Voltage, HV Cmd Current, AC Max Current Avail, HV Cmd Enabled |
-| 0x491 | IPK_Status | IPK | IPK_FaultLamps (key-on latch; set once at key-on, does not update mid-drive) |
+| 0x27D | CMMInputValues | CMM | ACInVoltage, ACInCurrent (16-bit ÷32), ACInPower (**32-bit ÷64 over bytes 4–7**, = charger-computed V×I) — all confirmed |
+| 0x615 | ChrgrSysLimits | CMM | **Despite the message name, B5 is a measurement, not a limit** — it tracks total AC current, matching the 0x27B+0x27D sum within +/-0.44 A across all 12 charge sessions (2026-07-23). B0 = status/capability byte. Remaining bytes uncharacterised. Do **not** use this message for an EVSE limit — see 0x050 EVSEMaxCurrent |
+| 0x616 | ChrgrSysCtrlEcho | CMM | CMM echo of the BMS command 0x050, byte-for-byte identical at 8.3 Hz. Same signals and scaling: HVCurrentCmd, MaxVoltage, EVSEMaxCurrent |
+| 0x617 | ChrgrSysSts | CMM | Charger system status. **No confirmed SG_** — ChrgrSysBusVoltage/Current removed (CODACAN shows no field; log values don't match div32). BO_ stub. |
+| 0x61A | CMSHVCmd | CMS | HVCmdVoltage, HVCmdCurrent, ACMaxCurrentAvail, HVCmdEnabled (all BE uint16 /32). **Per-module values**: ACMaxCurrentAvail is half the station current while charging (HVCmdEnabled=0x02) and the full station value when idle. 0x054 is the CMM counterpart with identical content. Both are charger-sourced, not GWM echoes (clock fingerprint places both in the charger cluster, +7 ppm) |
+| 0x491 | IPK_Cluster | IPK | **Primary_ODO (B0:B1:B2, 24-bit BE, 0.1 km/count)** + headlight bits (B3: bit4 side/parking, bit5 low beam, bit6 high beam). Odometer verified across 3 Codas vs known mileage (this car ~34.0k mi, parts car ~62.1k mi, another Coda ~61.3k mi). **The former "IPK_FaultLamps" reading was wrong** — those bytes are mileage, not fault lamps (an othercars inference; see `notes/artifacts/cowork-results/promotion-staged-diff.md`). CODACAN's own "Primary ODO" GUI field is a mis-scaled partial decode — don't use it. |
+| 0x492 | IPK_Cluster_Mirror | IPK | Redundant broadcast mirroring 0x491 B0:B1:B2 (same odometer); B3+ zero. All-zeros on a car = that IPK-mirror module silent (not fault-related) |
 
 **Charger note:** CMM and CMS each report their own individual measurements (not totals).
 Charger IDs are only present during active charging sessions. CODACAN CH M/S tab displays
@@ -204,8 +212,8 @@ See `notes/charging-analysis.md` for encoding and full decode.
 | ID (hex) | DBC Name | Module | Signals |
 |----------|----------|--------|---------|
 | 0x1C0 | MCM_Telemetry | DLCM | Torque, HV_Voltage, HV_Current, Motor_Speed |
-| 0x212 | DLCM_TorqueRequest | DLCM | BrakeSW confirmed (B2.bit0); TorqueRequest: 12-bit nibble-split `(B4 & 0x0F) << 8 \| B5`, zero=2000 (0x7D0), scale ~0.244 Nm/count (scale unconfirmed; r=+0.999 vs 0x1C0 Torque across 4 drive logs); KeepWakeNetworkDLCM position unconfirmed |
-| 0x241 | MCM_Thermal | DLCM | Rotor temp, Stator temp, IGBT temp (role confirmed; DLC=8; per-byte assignment unconfirmed — see codacan-signal-decode-notes.md Section 6 item 6) |
+| 0x212 | DLCM_TorqueRequest | DLCM | BrakeSW confirmed (B2.bit0); TorqueRequest: 12-bit nibble-split `(B4 & 0x0F) << 8 \| B5`, zero=2000 (0x7D0), scale **0.244 Nm/count, offset 0 — CONFIRMED** (log fit vs 0x1C0 Torque, r=0.999, peak 293 Nm vs ~300 anchor); KeepWakeNetworkDLCM position unconfirmed |
+| 0x241 | MCM_Thermal | DLCM | **B1=IGBT, B2=Rotor, B3=Stator** temp — per-byte assignment confirmed by CODACAN sweep (matches DLCM_glb cluster order); offset -40°C unconfirmed; B0/B4-B7 = no temp; firmware implies a 4th "Inverter" temp not accounted for |
 | 0x278 | DLCM_Keepalive | DLCM | KeepWakeNetworkDLCM, EngineStsRun |
 | 0x315 | DLCM_Status | DLCM | Brake_SW, rolling counter, Batt_Volt |
 | 0x418 | DLCM_Globals | DLCM | PRND, gear status |
@@ -226,8 +234,8 @@ are assigned to D CAN (RCU, TCM, ESC are D CAN modules), but most are also rebro
 B CAN by the GWM gateway. See `notes/driver-inputs.md` for the full gateway rebroadcast
 inventory.
 
-**Open items:** BMSmode shows different values on other vehicles — meaning unknown. 0x2C1
-range scale unconfirmed (single calibration point). 0x410 boolean bit positions unresolved.
+**Open items:** BMSmode (0x378 B2) shows different values on other vehicles — meaning unknown
+(CODACAN echoes the raw byte, so not resolvable there). 0x410 boolean bit positions unresolved.
 
 ### 10. Parts Car Investigation Signals (2026-03-05)
 
@@ -314,6 +322,12 @@ ECU 0x718. 90,112-byte image, plaintext ARM (entropy 4.95). MCU is an NXP LPC2xx
 
 ECU 0x7E8, Continental EMS9180. Two plaintext images: PROG (1.83 MB) and CAL (114 KB); SH-4 core, analyzed in Ghidra. The work targets the §10.7 State-Dependent Torque Gradient Limiter calibration LUTs (to widen the rate limit through the lash zone for throttle feel). Firmware build `1CI527_D003`. See `notes/dlcm/coda-dlcm-decompile-notes.md`.
 
+> **Vehicle-state change — real DLCM reflashed with a modified CAL (two flashes).** The near-zero gradient-limiter V-curve floor was raised via the MITM proxy (`notes/dlcm/dlcm_flash_proxy.py`), PROG left byte-exact, no DTCs both times:
+> - **2026-07-21 (`vcurve-lash-5`):** idx5 `0xA0021532`/`0xA0021B6E` `1 -> 5`.
+> - **2026-07-22 (`vcurve-floor-20`, CURRENT on-car state):** idx2-5 on both copies (`0xA002152C..32`, `0xA0021B68..6E`) all raised to `20`, making the true curve minimum 20.
+>
+> **All Coda driveline logs after 2026-07-21 reflect a modified calibration** (floor 5 for logs on 07-21, floor 20 for logs on/after 07-22) and are not directly comparable to earlier logs for torque-gradient/lash behavior. **Finding: the floor change saturated** — floor 5 and floor 20 produce identical near-zero rate behavior (a fixed ~8 cts/update clamp binds below the floor), so the floor is not the effective driveability lever beyond ~5. Full analysis: `notes/dlcm/dlcm-torque-limiter-code-trace.md`. Procedure/verification: `notes/dlcm/flash_sim/README.md` roadmap step 6; logs `notes/dlcm/artifacts/proxy_real_flash_20260721.log`.
+
 ### BMS — extracted but encrypted (blocked)
 
 The BMS application image (249,856 bytes) was downloaded via the same UDS method but is **encrypted**: ~7.9992-bit entropy (AES-class), no readable strings or instruction patterns, despite the UDS request declaring no encryption; size is an exact multiple of the AES block size. Decompilation is not meaningful until decrypted, and the firmware-encryption key is a separate secret from the SecurityAccess key (not recoverable from the captured session). Not pursued further.
@@ -361,7 +375,7 @@ ChargeLimit in `defroster2` started at 128 A and climbed to 146 A over the drive
 |------|----------|--------|
 | `CODA-B-CAN.dbc` | B CAN messages (BMS, DCDC, charger, ACCM, HVAC, SRS, IPK, GWM) | 35 messages. Confirmed signals documented in signal table above. Unconfirmed bytes use `Packet_N` placeholders; 0x410 B0 bit positions still unresolved. |
 | `CODA-D-CAN.dbc` | D CAN messages (ESC, DLCM, EPS, misc, GWM) | 22 messages. Confirmed signals documented in signal table above. 0x312 excluded — mux frame partially understood, see `notes/traction-control-analysis.md`. Unconfirmed bytes use `Packet_N` placeholders. |
-| `CODA-C-CAN-cells.dbc` | Cell voltage/temp frames on C CAN | Cell voltage portion confirmed and complete — 26 frames, 104 cells. Additional non-cell IDs visible on C CAN (0x0FF, 0x200–0x203, 0x300–0x304, 0x621–0x627) not yet characterized; not in DBC. |
+| `CODA-C-CAN-cells.dbc` | Cell voltage/temp frames on C CAN | Cell voltage portion confirmed and complete — 26 frames, 104 cells. Additional non-cell IDs visible on C CAN (0x0FF, 0x200–0x203, 0x300–0x304, 0x621–0x627) not yet characterized; not in DBC. `CellN` = B CAN 0x381 VminId/VmaxId value N directly (1-based since 2026-07-22 renumber; was 0-based) — see `notes/cell-index-mapping.md`. |
 
 All multi-byte signals use Motorola byte order (@0+, big-endian). Unconfirmed bytes use
 `Packet_N` placeholders. Placeholder IDs (sentinels ≥ 8191) from LabVIEW clusters removed —
@@ -378,13 +392,13 @@ See `logs/README.md` for log file inventory.
 ## Open Questions & Investigation Areas
 
 ### High Priority
-- [ ] **CODACAN signal decode — Phase 5 in progress.** Most signals confirmed; partial/open items tracked in `notes/codacan-signal-decode-notes.md` (Sections 5b, 5c, 6, 7). Key remaining: IPK ODO/lighting byte positions (0x491/0x273), IPK gauge feeds (SoC%/speed source unknown), 0x410 B0 boolean bit positions, 0x270 B0 fault sub-field split, 0x2C1 scale, 0x050 B4-B7 characterization.
+- [ ] **CODACAN signal decode — Phase 5 in progress.** Most signals confirmed; partial/open items tracked in `notes/codacan-signal-decode-notes.md` (Sections 5b, 5c, 6, 7). Key remaining: IPK gauge feeds (SoC%/speed source unknown), 0x410 B0 boolean bit positions, 0x050 B4-B7 characterization. (Resolved via Runs 1-3 + log verification — 0x491 ODO, 0x270 severity, 0x276 disable, 0x2C1 scale, 0x241 temps, 0x212 torque: see `notes/codacan-replay-verification-queue.md` and `notes/artifacts/cowork-results/promotion-staged-diff.md`.)
 
 ### Medium Priority
 - [ ] RCU — TPMS keepalive frame unknown. 0x600 carries pressure data (1.37 kPa/count) but does not trigger TPMS indicator. **Capture task:** trip the immobilizer to force RCU to broadcast its keepalive ID.
-- [ ] **BMSmode (0x378 B2) unknown value range**: Normal car shows 0xD2 (210) driving, 0xA9 (169) charging. the second reference car and parts car both show 0xF2–0xF8 (242–248) — unknown whether this indicates a fault/degraded state or firmware variant. Step=1 sweep of 0x378 B2 needed to catalog all values against CODACAN display changes.
+- [ ] **BMSmode (0x378 B2) unknown value range**: Normal car shows 0xD2 (210) driving, 0xA9 (169) charging. Another Coda and the parts car both show 0xF2–0xF8 (242–248) — unknown whether this indicates a fault/degraded state or firmware variant. **CODACAN echoes the raw B2 value (no semantic decode), so it cannot resolve the meaning** — needs firmware or cross-car log correlation.
 - [ ] Decode 0x215, 0x330 (and confirm 0x600) — see `notes/codacan-signal-decode-notes.md` Section 5c.
-- [ ] Identify weak cell #94 in C CAN individual cell data near EOC
+- [x] **Identify the bad cells (DONE 2026-07-22).** Weak/low cell = **Cell95** (UV/limp trigger, `frombonnydoon.log`). Failed-balance/OV cell = **Cell82** (VmaxId 82, hits 3778 mV at EOC in `coda_20260722_173203_*`). Highest-under-load cell = **Cell84** — distinct from both. See `notes/cell-index-mapping.md`, `notes/charging-analysis.md`, `notes/battery-degradation.md`.
 
 ### Lower Priority
 - [ ] Re-run `labview_xml_extract.py --batch` on full CODACAN/ directory for any missed cluster IDs
@@ -439,7 +453,8 @@ projects/coda/
   notes/                          # Analysis session write-ups (see README.md)
     README.md                     # Index of analysis notes
     android-coda-app-notes.md     # Android app CAN overlay development notes
-    bonnydoon-limp-analysis.md    # Drive with BMS limp mode — weak cell #94 identified
+    bonnydoon-limp-analysis.md    # Drive with BMS limp mode — weak cell (Cell95) identified
+    battery-degradation.md        # Longitudinal pack fade & imbalance (2026-02→07); usable ~16 kWh, weak cell dominates loss; 0x381 Min/Avg byte-order corrected
     charging-analysis.md          # L2 home charging session (codacharging.log)
     chargepointcharge-analysis.md # Full charge to 100% at Chargepoint (OV confirmed)
     codacan-capture-notes.md      # codacan_capture.py development and tuning notes
@@ -448,6 +463,9 @@ projects/coda/
       coda-gateway-decompile-notes.md # Gateway decompile notes (folder also holds coda_gateway.bin firmware image)
     dlcm/                         # DLCM firmware decompile (Continental EMS9180, SH-4) — torque LUT analysis
       coda-dlcm-decompile-notes.md # DLCM decompile notes (folder also holds PROG/CAL .bin firmware images)
+      dlcm-torque-flow.md         # §10.7 gradient-limiter Simulink block diagram (re-transcription of the flow-chart PNG)
+      dlcm-torque-limiter-code-trace.md # Modern §10.7 vs old-scheme trace: behavioral verdict (speed-dependent limiter = §10.7) + code caveats (2026-07-08)
+      dlcm-second-pass-hypotheses.md # Second-pass investigation angles for the CAL gradient-LUT hunt
     driver-inputs.md              # Throttle, brake, PRND, body electronics, gateway rebroadcast
     driving-sequence-investigation.md  # Startup sequence, HVAC, AC compressor signals
     othercars-comparison.md       # Signal comparison with other Coda vehicles

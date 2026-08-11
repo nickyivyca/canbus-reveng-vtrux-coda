@@ -18,7 +18,7 @@ App binary is NOT encrypted (enterprise distribution, as anticipated).
 Device is iPhone 4S (not 5s -- see correction above). Jailbroken with **Carbon** WebKit
 exploit (http://carbon.sep.lol, served via GitHub Pages). Phone's DNS was hijacked by ISP;
 fixed by setting manual DNS 1.1.1.1 on the Wi-Fi connection. Carbon installed Cydia.
-OpenSSH installed via Cydia; accessed over Wi-Fi (local Wi-Fi) using legacy key algorithms
+OpenSSH installed via Cydia; accessed over Wi-Fi (<lan-ip>) using legacy key algorithms
 (`-o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedKeyTypes=ssh-rsa`), password `alpine`.
 
 ### App identity
@@ -258,6 +258,7 @@ output format for every Via signal. Full table:
 | EAC_CompHVInput | VDC | `%d` (integer) | A/C HV input voltage |
 | Engine_Speed (0x00C9) | rpm | `%.1f` | via GMLAN |
 | Engine_Torque_Actual (0x01C3) | Nm | `%.1f` | via GMLAN |
+| Throttle_Position (0x03D1) | % | `%.0f` | via GMLAN |
 | VehSpdAvgDrvn (0x03E9) | km/h | `%.3f` | via GMLAN |
 
 **BCM format strings also reveal additional boolean flags not individually listed in the
@@ -316,8 +317,8 @@ CM_ only. MajorVersion and MinorVersion are byte-aligned and have clean SG_ entr
 signal decoding (bit positions, scale factors).
 
 **Status:**
-- Ghidra 12.0.4 (local install)
-- Java 25 (Eclipse Temurin JDK 25)
+- Ghidra 12.0.4 installed at `<home>\Programs\ghidra_12.0.4_PUBLIC`
+- Java 25 (Eclipse Temurin) at `C:\Program Files\Eclipse Adoptium\jdk-25.0.2.10-hotspot`
 - ARMv7 and ARM64 slices extracted to `notes/artifacts/CANbusLogger2_ARM` and `_ARM64`
 - Ghidra project: `notes/artifacts/ghidra-project/EPRILogger`
   (ARMv7 slice imported 2026-03-26; loaded as ARM:LE:32:v8, same instruction set)
@@ -722,7 +723,18 @@ Both signals decoded via `FUN_00045af0(uint16, 0x10)` followed by `FixedToFP` an
 **FUN_00045af0(value, 0x10)** = `(int32_t)(int16_t)value` (generic N-bit sign extension;
 reversed 2026-03-27).
 
-**⚠ CORRECTED 2026-06-27 (log data):** the wire values are **offset-binary (excess-32768), zero at raw 0x8000** — NOT plain signed-int16-zero-at-0. A raw-value check of 0x598 B0-B1/B4-B5 (`artifacts/check_0598_signedness.py`) shows both channels sit at ~0x8000 at idle (zero power) and swing around 0x8000 under load, never near 0x0000/0xFFFF. Effective decode is `(raw_u16 − 32768) × 0.01 kW` (matches `powertrain-messages.md` and `Vtrux.md`). The plain `(int16_t)` reading here likely missed a preceding MSB-flip / −0x8000 offset. Range still ±327.68 kW; positive = power discharged by battery / produced by motor.
+**⚠ CORRECTED 2026-06-27 (log data):** the wire values are **offset-binary (excess-32768), zero at raw 0x8000** — NOT plain signed-int16-zero-at-0. A raw-value check of 0x598 B0-B1/B4-B5 (`artifacts/check_0598_signedness.py`) shows both channels sit at ~0x8000 at idle (zero power) and swing around 0x8000 under load, never near 0x0000/0xFFFF. Effective decode is `(raw_u16 − 32768) × 0.01 kW` (matches `powertrain-messages.md` and `Vtrux.md`). Range still ±327.68 kW; positive = power discharged by battery / produced by motor.
+
+**⚠ CAUSE ESTABLISHED 2026-08-02 (Ghidra):** the 2026-06-27 note above speculated that the decompile "likely missed a preceding MSB-flip / −0x8000 offset." **It did not — there is no such operation, and the app itself is defective.** The decompile read here was correct all along; only the explanation for the mismatch was wrong.
+
+- `FUN_00045af0(v, 0x10)` was emulated against all 65536 inputs and is **exactly** `(int16_t)v`. It carries no bias.
+- The `eor`/`sub` pair against 0x8000 inside the helper is the branchless sign-extend idiom `(x ^ m) − m` with `m = 1<<(N−1)`; the two operations cancel. **This is what makes the bias hypothesis look plausible on a skim — a 0x8000 XOR is present but is not an offset-binary conversion.**
+- Scanning the whole of `parseEPRIMessage` (ARMv7) for 0x8000-family constants returns **zero**. The 0x598 arm calls the helper on B0:B1 and B5:B4, multiplies by `DAT_0002d1a8` (0.01), and formats — no bias anywhere.
+- Cross-checked on the independently compiled **ARM64** slice: its own helper `FUN_100047778` is the same idiom instruction-for-instruction, its 0x598 arm is structurally identical, and all 9 `parseEPRIMessage` implementations contain zero 0x8000-family constants. A Ghidra lifting artifact could not survive both processor modules.
+
+Consequence: at idle (raw 0x8000, zero power) the EPRI app displayed **−327.68 kW** for both fields, and jumped 655 kW across the 0x8000 boundary. `epri-pt-bus.dbc` reproduced this defect faithfully because it was derived mechanically from the app. Both signals are now `BO_`-stubbed there and the corrected `ess_power` / `trac_power` live in `vtrux-powertrain-experimental.dbc`.
+
+Scripts: `artifacts/Epri0598Decode.java`, `Epri0598Caller.java`, `Epri0598Arch.java`, `EpriDumpFn.java`; log-side discriminator `artifacts/check_0598_balance.py`.
 
 #### 0x0592 -- HCU_Sensor
 
@@ -968,7 +980,7 @@ PPEI encoding but the nibble assignment should be cross-checked against a GMLAN 
 
 Format string: `"Manifold absolute pressure: %.1f kPa"`
 
-**Note on plist label:** The EPRI plist used 'PPEI_Engine_Torque_Status_3' as the message name — correct per GM spec (confirmed against the GMLAN DBC). The decompile reveals the EPRI app reads MAP from B6, one of several signals in the message.
+**Note on plist label:** The EPRI plist used 'PPEI_Engine_Torque_Status_3' as the message name — correct per GM spec (confirmed against GMW8762 PPEI DBC). The decompile reveals the EPRI app reads MAP from B6, one of several signals in the message.
 
 - **MAP**: CAN B6 single byte, signed int8 (`puVar20[8]`), × SIMDImm(0xF,0x60) = 0.5
   value = `int8(B6) * 0.5` kPa
@@ -979,7 +991,7 @@ Format string: `"Manifold absolute pressure: %.1f kPa"`
 
 Format string: `"ECM_InstFuelConsmpRate_volPt: %.3f ltrs/hr"`
 
-**Note on plist label:** The EPRI plist used 'PPEI_Engine_General_Status_2' as the message name — correct per GM spec (confirmed against the GMLAN DBC). The decompile reveals the EPRI app reads fuel rate, one of several signals in the message (which also contains throttle, cruise speed, and AC command).
+**Note on plist label:** The EPRI plist used 'PPEI_Engine_General_Status_2' as the message name — correct per GM spec (confirmed against GMW8762 PPEI DBC). The decompile reveals the EPRI app reads fuel rate, one of several signals in the message (which also contains throttle, cruise speed, and AC command).
 
 - **ECM_InstFuelConsmpRate_volPt**: 12-bit = `(B4 & 0xF) << 8 | B5`
   value = `raw * DAT_000447a0` = `raw * 0.025` L/hr
@@ -1024,17 +1036,20 @@ Signal summary:
 
 Note: DAT_000441b8 is the same -40.0 offset used by the thermal investigation (standard GM temperature encoding). The int8 cast for coolant/intake is only relevant above raw 127 (>87 degC for a 1:1 scale); for normal engine operating range signed and unsigned give the same result.
 
-#### GMLAN DBC cross-check (2026-03-27)
+#### GMLAN DBC cross-check (GMW8762_PPEI_GMLAN.dbc, 2026-03-27)
 
-The EPRI OBD-bus decodings for 0x00C9, 0x01C3, 0x03D1, and 0x03E9 were cross-checked against
-the GMLAN DBC and match its byte extractions and scales exactly. Two findings are substantive:
+| ID | Result | Notes |
+|----|--------|-------|
+| 0x00C9 | **Exact match** | DBC: Engine_Speed start=15 len=16 BE scale=0.25 → B1:B2 BE × 0.25 rpm |
+| 0x0120 | **EPRI authoritative** | DBC signal "Reserved_for_Platform_Vehicle_Odometer" is a placeholder (scale=1, no offset, covers B0:B3). EPRI reads B1:B4 × 0.015625 km — this is the actual Vtrux encoding. |
+| 0x01C3 | **Exact match** | DBC: Torque_Actual start=3 len=12 BE = (B0[3:0]<<8)\|B1; Torque_Requested start=19 len=12 = (B2[3:0]<<8)\|B3; both scale=0.5 offset=−848. All match. |
+| 0x02C3 | **Match with caveat** | DBC: Engine_Manifold_Absolute_Pressure start=55 len=8 BE scale=0.5 offset=0 = B6 × 0.5 kPa, **unsigned**. EPRI uses signed flag — gives wrong results for MAP > 63.5 kPa (raw > 127). DBC unsigned interpretation is correct (sea-level MAP ≈ 101 kPa = raw 202). |
+| 0x03D1 | **Exact match** | DBC: Instantaneous_Fuel_Consumption_Rate — same signal, encoding agrees. |
+| 0x03E9 | **Exact match** | DBC: Distance start=20 len=13 BE scale=0.125; Speed start=6 len=15 BE scale=0.0156. Byte extractions identical; DBC speed scale 0.0156 is truncated from 0.015625 (= 1/64). |
 
-- **0x0120 — EPRI authoritative.** The GMLAN DBC carries only a placeholder odometer signal
-  (scale=1, no offset). The EPRI app reads B1:B4 × 0.015625 km — this is the actual Vtrux
-  encoding and supersedes the placeholder.
-- **0x02C3 — signed/unsigned caveat.** The EPRI app reads MAP (B6) as signed, which gives
-  wrong results above 63.5 kPa (raw > 127). The unsigned interpretation is correct
-  (sea-level MAP ≈ 101 kPa = raw 202).
+The `Throttle_Position` signal in 0x03D1 is present in the DBC but not
+extracted by the EPRI app. The three torque signals in 0x02C3 (Engine_Torque_Max/Min) are also
+in the DBC but ignored by the EPRI app — it only pulls MAP from that message.
 
 ---
 
@@ -1380,7 +1395,9 @@ For `n = 0x10` (16, the only call site value): identical to `(int32_t)(int16_t)v
 
 Used at all 5 call sites with `n=16`; result fed to `FixedToFP` then multiplied by a DAT constant.
 
-Updated 0x0598 signal description: both ESS and Trac power signals are **offset-binary (excess-32768), zero at raw 0x8000** — corrected 2026-06-27 from an earlier "signed int16, zero at 0x0000" reading that the 0x598 raw-value check refuted (see above). Effective decode `(raw_u16 − 32768) × 0.01 kW`. Range: -327.68 to +327.67 kW. Positive = power discharged/produced.
+Updated 0x0598 signal description: the wire format for both ESS and Trac power signals is **offset-binary (excess-32768), zero at raw 0x8000** — corrected 2026-06-27 from an earlier "signed int16, zero at 0x0000" reading that the 0x598 raw-value check refuted (see above). Effective decode `(raw_u16 − 32768) × 0.01 kW`. Range: -327.68 to +327.67 kW. Positive = power discharged/produced.
+
+Note that the **app** does not do this. `FUN_00045af0(v, 0x10)` is plain `(int16_t)v` with no bias — verified exhaustively over all 65536 inputs and confirmed on both the ARMv7 and ARM64 slices (2026-08-02). The offset-binary format is what the vehicle transmits; the signed decode is an EPRI app defect. See the 0x0598 section above.
 
 ### Extended ID signal decodings from ViaCANbusParser::parseEPRIMessage
 

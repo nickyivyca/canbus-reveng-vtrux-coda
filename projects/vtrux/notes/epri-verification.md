@@ -7,7 +7,7 @@
 > - Ghidra ARMv7 decompile (`ghidra-via-decompiled.txt`, `ghidra-gopoint-decompiled.txt`)
 > - Pre-EPRI experimental work in `deprecated/vtrux-powertrain.dbc` and `vtrux-powertrain-experimental.dbc`
 > - Log-based behavioral tests and correlation results documented in notes files
-> - Cross-validation against the GMLAN DBC and `BelInverter-v2.dbc`
+> - Cross-validation against `GMW8762_PPEI_GMLAN.dbc` and `BelInverter-v2.dbc`
 
 ## Confirmation Tiers
 
@@ -189,6 +189,10 @@
 
 Note: B2-B3 is the generator power channel (not in EPRI DBC, added to `vtrux-powertrain-experimental.dbc`). Role and scale both confirmed 2026-03-29 (scale 0.01 kW/count, peak ~73.7 kW uphill, ~44 kW during evap purge). See powertrain-messages.md.
 
+**⚠ 2026-08-02 — both signals moved out of the EPRI DBC (app defect, not an extraction error).** Ghidra analysis established that the EPRI app genuinely decodes B0-B1 and B4-B5 as plain signed int16: `FUN_00045af0(v, 0x10)` is exactly `(int16_t)v` (verified over all 65536 inputs), and `parseEPRIMessage` contains zero 0x8000-family constants on both the ARMv7 and ARM64 slices. The earlier guess that the decompile had missed an MSB-flip was wrong — there is no bias in the app. At idle the app therefore displayed −327.68 kW for both fields.
+
+Per the bugged-decode convention (as with 0x0451 and 0x0459), `BO_ 1432` in `epri-pt-bus.dbc` is now a **stub with SG_ entries removed**, and the corrected signals live in `vtrux-powertrain-experimental.dbc` as `ess_power` (B0-B1), `gen_power` (B2-B3), and `trac_power` (B4-B5), all `(0.01, -327.68)` unsigned LE. The tiers above remain CONFIRMED — they describe the **wire format**, which is unchanged; only the DBC home changed.
+
 ---
 
 ### 0x0599 -- EPRI_HCU_VIRTSENS_5_Pressures_0599
@@ -290,7 +294,7 @@ These IDs in the EPRI plist are GoPoint BT1 internal message type IDs wrapping J
 
 | Signal | Tier | Evidence |
 |--------|------|----------|
-| Engine_Speed (B1:B2 BE uint16 × 0.25 rpm) | **CONFIRMED** | EPRI-attributed (`epri-obd-bus.dbc`); encoding confirmed from EPRI decompile. |
+| Engine_Speed (B1:B2 BE uint16 × 0.25 rpm) | **CONFIRMED** | Exact match with GMW8762_PPEI_GMLAN.dbc. |
 
 ---
 
@@ -306,7 +310,7 @@ These IDs in the EPRI plist are GoPoint BT1 internal message type IDs wrapping J
 
 | Signal | Tier | Evidence |
 |--------|------|----------|
-| EngineTorqueActual (12-bit × 0.5 - 848 Nm) | **CONFIRMED** | EPRI-attributed (`epri-obd-bus.dbc`); encoding confirmed from EPRI decompile. |
+| EngineTorqueActual (12-bit × 0.5 - 848 Nm) | **CONFIRMED** | Exact match with GMW8762_PPEI_GMLAN.dbc. |
 | EngineTorqueRequested (12-bit × 0.5 - 848 Nm) | **CONFIRMED** | Same. |
 
 ---
@@ -315,7 +319,7 @@ These IDs in the EPRI plist are GoPoint BT1 internal message type IDs wrapping J
 
 | Signal | Tier | Evidence / Caveat |
 |--------|------|-------------------|
-| MAP (B6 × 0.5 kPa) | **CONFIRMED** | EPRI-attributed (`epri-obd-bus.dbc`, unsigned). Caveat: EPRI app uses signed int8 — wrong above 63.5 kPa. DBC uses unsigned (correct). Plist label "PPEI_Engine_Torque_Status_3" was wrong; decompile reveals actual signal is MAP. |
+| MAP (B6 × 0.5 kPa) | **CONFIRMED** | GMLAN DBC match (unsigned). Caveat: EPRI app uses signed int8 — wrong above 63.5 kPa. DBC uses unsigned (correct). Plist label "PPEI_Engine_Torque_Status_3" was wrong; decompile reveals actual signal is MAP. |
 
 ---
 
@@ -323,7 +327,7 @@ These IDs in the EPRI plist are GoPoint BT1 internal message type IDs wrapping J
 
 | Signal | Tier | Evidence |
 |--------|------|----------|
-| ECM_InstFuelConsmpRate_volPt (12-bit × 0.025 L/hr) | **CONFIRMED** | EPRI-attributed (`epri-obd-bus.dbc`); encoding confirmed from EPRI decompile. Plist label wrong; decompile reveals fuel rate, not TPS. |
+| ECM_InstFuelConsmpRate_volPt (12-bit × 0.025 L/hr) | **CONFIRMED** | Exact match with GMW8762_PPEI_GMLAN.dbc. Plist label wrong; decompile reveals fuel rate, not TPS. |
 
 ---
 
@@ -331,8 +335,8 @@ These IDs in the EPRI plist are GoPoint BT1 internal message type IDs wrapping J
 
 | Signal | Tier | Evidence |
 |--------|------|----------|
-| ECM_VehSpdAvgDrvn_linspd (15-bit × 0.015625 km/h) | **CONFIRMED** | EPRI-attributed (`epri-obd-bus.dbc`); encoding confirmed from EPRI decompile. |
-| ECM_DistRollCntAvgDrvn_dist (13-bit × 0.125 km) | **CONFIRMED** | Same. |
+| ECM_VehSpdAvgDrvn_linspd (15-bit × 0.015625 km/h) | **CONFIRMED** | Exact match with GMLAN DBC. |
+| ECM_DistRollCntAvgDrvn_dist (13-bit × 0.125 km) | **CONFIRMED** | Exact match with GMLAN DBC. |
 
 ---
 
@@ -350,7 +354,7 @@ EPRI plist listed 0x0459 (wrong ID, zero frames in all logs). Stub at BO_ 1113 h
 
 ### 0x0451 -- Stub only (SG_ removed)
 
-EPRI attributed this to TRAC_Mot_Trq. Log data identifies it as a GMLAN message (VCM-bridged to Vehicle). SG_ removed per policy. See traction-inverter-control.md.
+EPRI attributed this to TRAC_Mot_Trq. Log data identifies it as `Gateway_LS_General_Information` (GMLAN). SG_ removed per policy. See traction-inverter-control.md.
 
 ---
 
@@ -367,9 +371,9 @@ EPRI attributed this to TRAC_Mot_Trq. Log data identifies it as a GMLAN message 
 
 | Signal | Tier | Evidence |
 |--------|------|----------|
-| ECM_EngineCoolantTemp (B2, uint8 - 40 degC) | **CONFIRMED** | EPRI-attributed (`epri-obd-bus.dbc`, start_bit=23 @0+) + independent raw-data validation in hvac-investigation.md (cold start->operating temperature arc). Decompile: `puVar20[4]` = CAN B2 (corrected 2026-05-12; earlier notes mislabeled as B4 by not subtracting puVar20's 2-byte ID header). |
-| ECM_EngineAirIntakeTemp (B3, uint8 - 40 degC) | **CONFIRMED** | EPRI-attributed (start_bit=31 @0+). Decompile: `puVar20[5]` = CAN B3 (same index-offset correction). |
-| ECM_OutsideAirTemp (B4, uint8 × 0.5 - 40 degC) | **CONFIRMED** | EPRI-attributed (start_bit=39 @0+). Decompile: `puVar20[6]` = CAN B4. hvac-investigation.md confirms B4 reads 9-12 degC (ambient), not ECT values. |
+| ECM_EngineCoolantTemp (B2, uint8 - 40 degC) | **CONFIRMED** | GMLAN DBC (start_bit=23 @0+) + independent raw-data validation in hvac-investigation.md (cold start->operating temperature arc). Decompile: `puVar20[4]` = CAN B2 (corrected 2026-05-12; earlier notes mislabeled as B4 by not subtracting puVar20's 2-byte ID header). |
+| ECM_EngineAirIntakeTemp (B3, uint8 - 40 degC) | **CONFIRMED** | GMLAN DBC (start_bit=31 @0+). Decompile: `puVar20[5]` = CAN B3 (same index-offset correction). |
+| ECM_OutsideAirTemp (B4, uint8 × 0.5 - 40 degC) | **CONFIRMED** | GMLAN DBC (start_bit=39 @0+). Decompile: `puVar20[6]` = CAN B4. hvac-investigation.md confirms B4 reads 9-12 degC (ambient), not ECT values. |
 
 ---
 

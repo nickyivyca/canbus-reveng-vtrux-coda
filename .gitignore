@@ -1,0 +1,12 @@
+# Publish staging tree. Built by the maintainer's publish tooling, which copies
+# the source folder here with scrubs applied before anything is committed.
+# Regenerated from scratch on every run -- never commit it.
+_publish-staging/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db

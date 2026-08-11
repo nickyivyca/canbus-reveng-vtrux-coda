@@ -2,7 +2,7 @@
 
 **Reference (my Coda):** `projects/coda/logs/codadriveslowturnonwithdefroster2.log` (708 s, 1,919,708 frames, 174 IDs)
 
-This file documents CAN analysis of other Coda vehicles (parts car and a second reference car) compared
+This file documents CAN analysis of other Coda vehicles (parts car and Car 2's car) compared
 to the reference capture from my Coda.
 
 ---
@@ -66,35 +66,33 @@ All IDs below are on B CAN (Bus 3) unless noted.
 |----------|-----------------|----------------|-------------------|----------------|
 | 0x270 B0 | BMS fault status | 0x00-0x12 | **0x00-0x02** | Narrower; P1811 is stored not active during capture |
 | 0x271 B0 | VehicleFaultLampReq | 0x00-0x06 | 0x00-0x06 | Same range; need analyze_id for steady-state value |
-| **0x491 B0** | IPK (warning lamps) | **0x08 (fixed)** | **0x0F (fixed)** | Different -- 3 extra bits set in parts car |
-| **0x491 B1** | IPK (warning lamps) | **0x5B (fixed)** | **0x41 (fixed)** | Different -- 3 bits cleared in parts car |
-| **0x492 B0** | Unknown (IPK echo?) | **0x08 (fixed)** | **0x00 (fixed)** | All-zero in parts car -- module offline or silent |
+| **0x491 B0** | Odometer high byte (B0:B1:B2 = 24-bit BE, 0.1 km) | **0x08 (fixed)** | **0x0F (fixed)** | Odometer high byte -- differs by mileage, not a fault |
+| **0x491 B1** | Odometer mid byte | **0x5B (fixed)** | **0x41 (fixed)** | Odometer mid byte -- differs by mileage, not a fault |
+| **0x492 B0** | Second odometer broadcast (mirrors 0x491 B0:B1:B2) | **0x08 (fixed)** | **0x00 (fixed)** | All-zero in parts car -- that module silent, not fault-related |
 | 0x3A0 B0 | SRS/seatbelt area | 0x20-0xAA | **0xA0-0xAA** | Lower bound raised; bits 5+7 forced HIGH in parts car |
 | 0x382 B0-B2 | BMSThermal | 0x8A-0x99 (~10-25 degC) | **0x8D/8E/8D (fixed)** | Stuck at 13-14 degC; short cold capture, likely not a fault |
 | 0x390 B0-B3 | HVAC thermal limits | 0x80-0x8A | **0x8E (fixed)** | Stuck; may relate to HVAC B111D temp sensor fault |
 | 0x2C1 B1 | BMSDrivingRange | 0x00-0x63 | **0xAA-0xAC** | 0xAA may be invalid/sentinel value |
 | 0x439 B1-B2 | ACCM status | 0x00-0x1E, 0x00-0x09 | 0x00, 0x00 | AC compressor not running (expected for parts car) |
 
-### IPK 0x491 -- bit-level diff
+### IPK 0x491 -- odometer bytes (B0:B1:B2)
 
-Fixed values throughout each entire capture:
+Fixed values of the two high bytes throughout each entire capture:
 
 ```
            B0             B1
 Normal:  0x08 = 0000_1000   0x5B = 0101_1011
 Parts:   0x0F = 0000_1111   0x41 = 0100_0001
-XOR:     0x07 = 0000_0111   0x1A = 0001_1010
 ```
 
-Bits SET in parts car vs normal (candidates for fault lamp indicators):
-- B0 bits 0, 1, 2 -- all HIGH in parts car, LOW in normal
+**B0:B1:B2 is a 24-bit big-endian odometer, 0.1 km/count.** The cross-car byte
+differences are *mileage*, not fault bits. Decoded against known mileage:
+reference car 0x085B57 = 547671 -> ~34.0k mi; parts car 0x0F41EA = 999914 -> ~62.1k mi.
+A per-bit XOR is meaningless here -- these bytes count up with distance travelled.
 
-Bits CLEAR in parts car vs normal (candidates for "all-OK" status bits):
-- B1 bits 1, 3, 4 -- HIGH in normal, LOW in parts car
-
-**0x492** mirrors 0x491 exactly in normal Coda (B0=0x08, B1=0x5B), but is all zeros in
-parts car. Likely a GWM rebroadcast or second IPK channel. Its silence in the parts car
-is unexplained -- Phase 5 will investigate further.
+**0x492** mirrors 0x491 B0:B1:B2 exactly in the normal Coda (a second odometer /
+IPK-cluster broadcast), but is all zeros in the parts car. The all-zeros = that module
+was silent in the parts car configuration, not a fault-related state.
 
 ### SRS 0x3A0 -- fault state flag
 
@@ -343,58 +341,55 @@ subsequence of the normal Coda VIN, confirming the VINs are completely disjoint.
 
 Artifacts: `analyze_491_normal.txt`, `analyze_491_partscar.txt`, `analyze_492_normal.txt`.
 
-### 0x491 B0/B1 -- IPK fault state, latched at key-on
+### 0x491 B0:B1:B2 -- odometer (24-bit BE, 0.1 km/count)
 
 ```
          B0             B1
 Normal:  0x08 = 0000_1000   0x5B = 0101_1011
 Parts:   0x0F = 0000_1111   0x41 = 0100_0001
-XOR:           0000_0111          0001_1010
-               bits 2,1,0         bits 4,3,1
-               added (parts)      removed (parts)
 ```
 
 B0 and B1 are **completely fixed throughout each capture**, including the normal Coda
-lamp test window (t=9-38s). The IPK lamp test commanded by 0x271 does NOT change B0/B1.
-The normal Coda RED fault lamp event at t=136s also does not change B0/B1.
+lamp test window (t=9-38s). The IPK lamp test commanded by 0x271 does NOT change them,
+and the normal Coda RED fault lamp event at t=136s also does not change them.
 
-This confirms B0/B1 are **latched at key-on initialisation**. The parts car has active
-faults at key-on, so the IPK captures them into B0/B1 permanently. A fault appearing
-mid-drive in the normal log does not update these bytes.
+They are fixed because **B0:B1:B2 is a 24-bit big-endian odometer at 0.1 km/count** --
+odometer mileage does not change measurably over a short capture, so the high bytes stay
+constant. The earlier "IPK fault state latched at key-on" reading was wrong: the cross-car
+byte differences are accumulated *mileage*, not fault bits.
 
-**B0 bits 2,1,0 (=0x07):** set in parts car (faults present), clear in normal (no
-key-on faults). Three bits set, three active fault modules at key-on (ABS, Airbag,
-HVAC). Individual bit-to-lamp assignment cannot be determined from these two logs
-alone -- a log with only one fault active would be needed.
+**Decoded odometer:** reference car 0x085B57 = 547671 -> ~34.0k mi; parts car
+0x0F41EA = 999914 -> ~62.1k mi. B2 is the least-significant byte (normal 0x57-0x9B,
+parts car 0xE9-0xEB); its slow count within each capture is the 0.1 km digit ticking,
+consistent with the phase-4 CODACAN scan that showed B2 drives the ODO display.
 
-**B1 bits 4,3,1 (=0x1A):** set in normal (healthy), clear in parts car. These are
-likely "module OK" or "system healthy" bits that are de-asserted when the corresponding
-fault bits are raised. Same 3-module correlation applies.
-
-**B2:** Active counter in both logs, different ranges (normal 0x57-0x9B, parts car
-0xE9-0xEB). Likely ODO-related (phase 4 CODACAN scan confirmed B2 drives ODO display).
-Different ranges reflect different accumulated mileage between the two vehicles.
+**The internal tell:** another Coda (Part B) shows B0 == the parts car's B0 == 0x0F
+despite an entirely different fault set from the parts car. If B0 were a fault latch the
+two cars could not share it while differing in their faults; B0 matching is simply two
+cars near the same odometer high byte. B0 is the odometer high byte, not a fault latch.
 
 **B3:** 4-5 unique values in both logs (0x00-0x33 range). Likely lighting state
 (Interior Illum, Side Light, Low Beam -- confirmed field set for this ID).
 
-### 0x492 -- secondary IPK echo, all-zeros in parts car
+### 0x492 -- second odometer / IPK-cluster broadcast, all-zeros in parts car
 
-In normal Coda, 0x492 mirrors 0x491 B0/B1/B2 exactly (B0=0x08, B1=0x5B, B2 same
-active range), but B3=0 always (unlike 0x491 B3 which carries lighting state). 0x492
-starts at t=0.08s, before 0x491 (t=9.55s) -- it is not an echo of 0x491.
+In normal Coda, 0x492 mirrors 0x491 B0:B1:B2 exactly (B0=0x08, B1=0x5B, B2 same
+active range) -- a second odometer / IPK-cluster broadcast, not an echo of 0x491.
+B3=0 always (unlike 0x491 B3 which carries lighting state). 0x492 starts at t=0.08s,
+before 0x491 (t=9.55s).
 
 In parts car, 0x492 transmits all zeros for the entire 154s capture. The module
-generating 0x492 (likely TEM/telematics or GWM echo) is either absent or silent in
-the parts car configuration. Origin of the all-zero transmission is unresolved.
+generating 0x492 was silent in the parts car configuration -- the all-zeros is a silent
+module, not a fault-related state.
 
 ---
 
-# Part B -- Second Reference Car (2026-03-05)
+# Part B -- Car 2's Car (2026-03-05)
 
+**Log:** `projects/coda/logs/(Car 2 log) 03-08-25 16-14-24.asc` (Vector ASC format)
 **Duration:** 1012.87 s  **Frames:** 1,092,308  **Unique IDs:** 39
-**Logger:** CODACAN (another Coda owner)
-**Survey artifact:** `artifacts/survey_car2.txt`
+**Logger:** CODACAN (owned by Car 2, another Coda owner)
+**Survey artifact:** `artifacts/survey_jakecar.txt`
 
 ## Bus Identification
 
@@ -411,7 +406,7 @@ Note: Format is Vector ASC (`.asc`), same as CODACAN nilog. Required adding
 
 ## Survey Comparison (B CAN vs my Coda B CAN from defroster2)
 
-### IDs absent from second car log vs my Coda B CAN
+### IDs absent from Car 2 log vs my Coda B CAN
 
 | ID | Notes |
 |----|-------|
@@ -424,7 +419,7 @@ a healthy car; absent from parts car.
 ### 0x271 B0 -- Fault lamp state
 
 Range = 0x01-0x05. YELLOW fault lamp ON throughout (0x01 = YELLOW, 0x05 = YELLOW +
-lamp-test flag). This car has at least one active YELLOW fault.
+lamp-test flag). Car 2's car has at least one active YELLOW fault.
 
 0x270 B0 = 0x00 fixed throughout -- BMS is **not** the fault source. The active fault
 is in a non-BMS module (same logic as parts car Phase 2 analysis).
@@ -434,27 +429,30 @@ is in a non-BMS module (same logic as parts car Phase 2 analysis).
 Range = 0x20-0x2A, same as my normal Coda. Bit 7 = 0 throughout. **No SRS fault.**
 Unlike parts car (0xA0, bit 7 forced HIGH).
 
-### 0x491 / 0x492 -- IPK latched fault state
+### 0x491 / 0x492 -- odometer (24-bit BE, 0.1 km/count)
 
 ```
-         B0      B1
-My car:  0x08    0x5B   (no key-on faults)
-Parts:   0x0F    0x41   (3 fault bits B0[2:0] set)
-Car 2:  0x0F    0x0D   (4 fault bits B0[3:0] set; different B1 pattern)
+                 B0      B1
+My car:          0x08    0x5B   (~34.0k mi)
+Parts:           0x0F    0x41   (~62.1k mi)
+Another Coda:    0x0F    0x0D   (~61.3k mi)
 ```
 
-Car 2 B0 = 0x0F = 0000_1111: bits 0,1,2,3 all set. **4 fault modules latched at
-key-on**, vs 3 in parts car and 0 in my car. Car 2 B1 = 0x0D = 0000_1101 differs
-from both references -- a different combination of faults than either comparison vehicle.
+These are the two high bytes of the 24-bit big-endian odometer (0.1 km/count), not a
+fault latch. Another Coda's B0:B1:B2 = 0x0F0D4F = 986383 -> ~61.3k mi. Its B0 = 0x0F
+matches the parts car's B0 = 0x0F simply because both cars are near the same odometer
+high byte -- despite the two cars carrying entirely different fault sets. The differing
+B1 (0x0D vs the parts car's 0x41) is the odometer mid byte differing by mileage.
 
-0x492 in this car: B0=0x0F, B1=0x0D, mirroring 0x491 exactly. Module generating
-0x492 is active (unlike parts car's all-zeros). Consistent with my car's behaviour.
+0x492 in another Coda: B0=0x0F, B1=0x0D, mirroring 0x491 B0:B1:B2 exactly -- the second
+odometer / IPK-cluster broadcast is active (unlike the parts car's all-zeros). Consistent
+with my car's behaviour.
 
 ### 0x2C1 B1 -- BMSDrivingRange_Exp
 
 Range = 0x68-0x69 (104-105 decimal). My car's range in defroster2 was 0x00-0x63 (0-99).
-This car's value exceeds my car's max -- likely higher SoC at time of capture or a different
-displayed-range calibration for this car's pack.
+Car 2's value exceeds my car's max -- likely higher SoC at time of capture or a different
+displayed-range calibration for Car 2's pack.
 
 ### 0x382 B0-B2 -- BMSThermal (pack temperature)
 
@@ -475,19 +473,19 @@ Drive confirmed, Chargemode=1 = No Prox) -- car is in drive mode. The BMSmode di
 
 ### 0x600 -- Unidentified module (B CAN + D CAN via GWM)
 
-Present at 1.9 Hz. Confirms the module is active in this car, same as my car.
+Present at 1.9 Hz. Confirms the module is active in Car 2's car, same as my car.
 Native bus unknown (GWM rebroadcasts to both B CAN and D CAN). Absent from parts car.
 
-## Summary: Second Reference Car vs My Car vs Parts Car
+## Summary: Car 2's Car vs My Car vs Parts Car
 
-| Signal | My Coda | Car 2 | Parts Car |
+| Signal | My Coda | Car 2's Coda | Parts Car |
 |--------|---------|-------------|-----------|
 | Fault lamp (0x271 B0) | OFF (0x00) | YELLOW ON (0x01/0x05) | YELLOW ON (0x01/0x05) |
 | BMS fault source (0x270 B0) | 0x00 | 0x00 (not BMS) | 0x00 (not BMS) |
 | SRS fault (0x3A0 B0 bit7) | 0 | 0 (no fault) | 1 (B1382+B2505) |
-| IPK B0 latch (0x491) | 0x08 (0 faults) | 0x0F (4 faults) | 0x0F (3 faults) |
-| IPK B1 latch (0x491) | 0x5B | 0x0D | 0x41 |
-| 0x492 active | Yes (mirrors 0x491) | Yes (mirrors 0x491) | No (all-zeros) |
+| Odometer high byte (0x491 B0) | 0x08 (~34.0k mi) | 0x0F (~61.3k mi) | 0x0F (~62.1k mi) |
+| Odometer mid byte (0x491 B1) | 0x5B | 0x0D | 0x41 |
+| 0x492 active | Yes (2nd odo broadcast) | Yes (2nd odo broadcast) | No (all-zeros, module silent) |
 | BMSmode (0x378 B2) | 0xD2 (210) | 0xF2-0xF8 (242-248) | 0xF2-0xF8 (same as Car 2) |
 | DrivingRange_Exp (0x2C1 B1) | 0-99 | 104-105 | 0xAA-0xAC (invalid sentinel) |
 | Pack temp (0x382) | 10-25 degC | 13-14 degC (cold) | 13-14 degC (cold) |

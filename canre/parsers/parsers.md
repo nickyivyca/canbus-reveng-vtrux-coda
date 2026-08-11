@@ -1,18 +1,37 @@
-﻿# canre.parsers Reference
+# canre.parsers Reference
 
+> **Staleness check:** Each section shows a `Source last modified` timestamp. If the `.py` file's mtime is newer than the timestamp shown here, re-read the source before relying on this documentation. Timestamps MUST include both date and time (`YYYY-MM-DD HH:MM:SS`) — a date-only timestamp is invalid and must be corrected before the next session.
 
 ## COMMON MISTAKES — Read before writing any script
 
+### sys.path bootstrap (required in every scratchpad)
+
+Scripts in `projects/<vehicle>/notes/artifacts/` are not on the Python path by default — Python adds the script's own directory, not the project root, so `canre` is invisible without this at the top of every scratchpad:
+
+```python
+import sys
+sys.path.insert(0, ".")
+```
+
+All scratchpads are invoked via the Bash tool from the project root, so `"."` reliably resolves to the project root where `canre/` lives. Do **not** use the `Path(__file__).resolve().parent...` form — the required depth varies by script location and is easy to get wrong (a script in `artifacts/` needs five `.parent` calls to reach project root, not four).
+
+### Wrong import names
+
 | Wrong (do NOT use) | Correct |
 |--------------------|---------|
+| `from canre.parsers.parsers import parse_log` | `from canre.parsers import parse_file` |
+| `from canre.parsers.parsers import parse_file` | `from canre.parsers import parse_file` |
 | `from canre.parsers import parse_log` | `from canre.parsers import parse_file` |
+| `frame.arb_id` | `frame.arbitration_id` |
 | `frame.can_id` | `frame.arbitration_id` |
 | `frame.id` | `frame.arbitration_id` |
 | `frame.msg_id` | `frame.arbitration_id` |
+| `frame.channel` | `frame.bus` |
 
-The function is `parse_file`, not `parse_log`. The ID field is `arbitration_id`, not `can_id`. These are the two most frequent mistakes in generated scripts — double-check every new script before running it.
+There is no `canre.parsers.parsers` submodule. The function is `parse_file`, not `parse_log`. The ID field is `arbitration_id` and the bus field is `bus`.
 
 ## base.py — Core Data Types
+*Source last modified: 2026-02-16 00:35:37*
 
 ### `CANFrame` dataclass
 
@@ -48,6 +67,7 @@ class BaseParser(ABC):
 ---
 
 ## busmaster.py — BUSMASTER `.log` Parser
+*Source last modified: 2026-03-28 13:33:25*
 
 Parser for BUSMASTER CAN log files (v3.x). This is the primary log format for the project and the first parser tried during auto-detection.
 
@@ -80,6 +100,7 @@ Streams through a BUSMASTER log, yielding one `CANFrame` per data line. Skips he
 ---
 
 ## candump.py — candump / SocketCAN Parser
+*Source last modified: 2026-02-16 00:41:49*
 
 Parser for `candump` (SocketCAN) log format. Each line has the form `(epoch.usec) canX ID#DATA`.
 
@@ -106,6 +127,7 @@ Returns `True` if at least 2 non-comment lines match the candump pattern `(times
 ---
 
 ## peak_trc.py — PEAK PCAN TRC Parser
+*Source last modified: 2026-02-16 00:42:14*
 
 Parser for PEAK PCAN Trace (`.trc`) log files. Supports both version 1.1 and version 2.0 formats, auto-detecting from the `;$FILEVERSION=` header.
 
@@ -132,6 +154,7 @@ Selects v1.1 vs v2.0 regex based on header. Falls back to the other version's re
 ---
 
 ## savvycan.py — SavvyCAN CSV Parser
+*Source last modified: 2026-02-16 00:42:22*
 
 Parser for SavvyCAN CSV log files. Handles both header-row format (`Time Stamp,ID,Extended,Bus,LEN,D1,...,D8`) and a headerless positional variant.
 
@@ -162,6 +185,7 @@ Auto-detects header vs headerless by checking if the first non-empty line starts
 ---
 
 ## vector_asc.py — Vector CANalyzer ASC Parser
+*Source last modified: 2026-03-05 13:35:56*
 
 Parser for Vector CANalyzer / CANdb++ `.asc` log files. Used by CODACAN and other
 Vector-based loggers.
@@ -197,6 +221,7 @@ frames are silently skipped.
 ---
 
 ## autodetect.py — Format Auto-Detection & Convenience Entry Point
+*Source last modified: 2026-02-16 00:38:08*
 
 Automatic format detection and the primary public entry point for all log parsing.
 

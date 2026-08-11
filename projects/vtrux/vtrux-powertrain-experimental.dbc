@@ -52,7 +52,9 @@ BO_ 1430 BMS_SoC_0596: 8 VCM
  SG_ bms_soc : 48|8@1+ (1,0) [0|100] "%" Vector__XXX
 
 BO_ 1432 HCU_Power_0598: 8 VCM
+ SG_ ess_power : 0|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
  SG_ gen_power : 16|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
+ SG_ trac_power : 32|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
 
 BO_ 1604 VCM_CruiseDiag_0644: 8 VCM
  SG_ cruise_mode : 23|4@0+ (1,0) [0|15] "" Vector__XXX
@@ -66,7 +68,16 @@ BO_ 1442 VCM_TractMotor_05A2: 8 VCM
  SG_ trac_torque_fbk : 32|16@1+ (1,-32768) [-32768|32767] "" Vector__XXX
 
 BO_ 1609 VCM_EvapControl_0649: 8 VCM
- SG_ vcm_evap_active : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ vcm_evap_active : 39|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ vcm_evap_counter : 19|12@0+ (1,0) [0|4095] "" Vector__XXX
+
+BO_ 1593 VCM_ShiftPos_0639: 8 VCM
+ SG_ shift_lever_pos : 52|3@1+ (1,0) [0|7] "" Vector__XXX
+
+BO_ 1594 VCM_GenInitState_063A: 8 VCM
+
+BO_ 1606 VCM_WarnLamp_0646: 8 VCM
+ SG_ via_warn_lamp_state : 60|3@1+ (1,0) [0|7] "" Vector__XXX
 
 BO_ 2248146946 VCU_TracThermal_06000002: 8 VCM
  SG_ trac_therm_ind_pct : 46|10@1+ (1,0) [0|100] "%" Vector__XXX
@@ -93,8 +104,10 @@ CM_ SG_ 1426 throttle_pos "Scale to physical % unconfirmed.";
 CM_ BO_ 1430 "BMS-sourced (drops when HV battery LV connector unplugged). ~1 Hz. Integer SoC percent at B6. NOT in EPRI plist.";
 CM_ SG_ 1430 bms_soc "Integer-rounded version of 0x411. Use 0x411 for sub-percent resolution.";
 
-CM_ BO_ 1432 "VCM/HCU-sourced. ~1 Hz, DLC=8. Power statistics for ESS, traction, and generator channels. B0-B1=ESS power (also in epri-pt-bus.dbc). B4-B5=traction power (also in epri-pt-bus.dbc). B6-B7 = static bias, not power data.";
-CM_ SG_ 1432 gen_power "Near-zero in pure EV mode. Positive = generator providing power to HV bus.";
+CM_ BO_ 1432 "VCM/HCU-sourced. ~1 Hz, DLC=8. Power statistics for ESS, generator, and traction channels. All three are offset-binary excess-32768 (zero at raw 0x8000), 0.01 kW/count. Sign convention: positive = providing energy to HV bus. Channel balance trac_power = ess_power + gen_power holds. B6-B7 = static bias, not power data. ESS and traction channels are stubbed in epri-pt-bus.dbc -- the EPRI app decodes them as plain signed int16 and is wrong. FILTERING DIFFERS BY CHANNEL: ess_power and trac_power are ~8 s rolling averages (the -Avg- in the EPRI names is literal); gen_power is instantaneous. This is why gen_power matches measured V*I far better than the other two -- it is a filtering difference, not a decode error. Confirmed 2026-08-02 by sweeping a moving-average window over measured V*I and re-correlating.";
+CM_ SG_ 1432 ess_power "Battery pack power. Positive = battery discharging; negative = charging/regen. Active during AC charging; near-zero when the generator fully covers traction load. Encoding corrected from the EPRI app's signed-int16 decode. TIME-AVERAGED, not instantaneous: agreement with measured 0x410 pack V*I peaks at a ~8 s boxcar-equivalent filter (r 0.807 raw -> 0.984 at 8 s). Do not use for energy integration -- use 0x410 pack V*I.";
+CM_ SG_ 1432 gen_power "Near-zero in pure EV mode. Positive = generator providing power to HV bus. Not decoded by the EPRI app at all. INSTANTANEOUS, unlike the other two channels: matches measured 0x482 GENE V*I at r=0.9998 / 209 W mean error against a -5.2..+55.6 kW swing, and any smoothing makes agreement worse. Appears to be a direct passthrough of the 0x482 V*I product. Observed operating range is wider than that validation window: the 2026-07-24..26 weekend trip exercises the signal to 142.8 kW with no sign of saturation or wrap, consistent with a genset rated near 150 kW. Note the channel balance trac_power = ess_power + gen_power breaks transiently by -55..-75 kW during fast ramps -- that is the documented filtering difference (ess/trac are ~8 s rolling averages, gen is instantaneous), not a decode error.";
+CM_ SG_ 1432 trac_power "Drivetrain power. Positive = traction motor consuming power from the HV bus; negative = regen. Large in both EV and hybrid operation. Encoding corrected from the EPRI app's signed-int16 decode. TIME-AVERAGED, not instantaneous: agreement with measured 0x462 TRAC V*I peaks at a ~8 s boxcar-equivalent filter (r 0.794 raw -> 0.916 at 8 s). Do not use for energy integration -- use 0x462 TRAC V*I.";
 
 CM_ BO_ 1604 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz. Cruise control diagnostic -- VCM internal cruise state and speed setpoint. NOTE: NOT a command to the traction inverter (TRAC MCU is on the OBD bus). Signals reflect VCM cruise logic state for diagnostic/monitoring only.";
 CM_ SG_ 1604 cruise_mode "0x8=idle/standby, 0x9=throttle override/auto-disengage, 0xA=active cruise (speed controller running).";
@@ -107,8 +120,17 @@ CM_ BO_ 1442 "VCU-sourced re-broadcast of traction motor speed and torque. ~100 
 CM_ SG_ 1442 trac_rpm "Scale assumed 1 RPM/count by symmetry with GENE_RotSpd (0x054) and TRAC_RotSpd (0x044). Positive = forward rotation.";
 CM_ SG_ 1442 trac_torque_fbk "Positive = motoring; regen = negative. Scale to physical Nm unconfirmed.";
 
-CM_ BO_ 1609 "VCU/VCM evap canister purge control. 0x649 on PT bus, ~20 Hz, VCU-sourced. Full message encoding differs between drive and charge modes -- byte fields repurpose themselves; B0 values cannot be compared across modes. See notes/evap-cycle-analysis.md Phase 2D for full investigation.";
-CM_ SG_ 1609 vcm_evap_active "1 = evap purge in progress; clears ~6.1s before VCM commands generator stop. Holds through involuntary stalls; only clears on VCM-declared completion. Lower 7 bits unresolved -- may encode canister load or session context.";
+CM_ BO_ 1609 "VCU/VCM evap canister purge control. 0x649 on PT bus, ~20 Hz, VCU-sourced. Full message encoding differs between drive and charge modes -- byte fields repurpose themselves; values cannot be compared across modes. B0 role UNRESOLVED: it was previously mapped as the evap-active flag (bit 7) and that mapping is now invalidated -- see notes/evap-cycle-analysis.md Phase 5. B1 role unresolved. B2 upper nibble is a free-running clock independent of evap state.";
+CM_ SG_ 1609 vcm_evap_active "B4 bit 7. 1 = evap cycle pending or purging; 0 = not pending. Set at key-on when a cycle is due, before the engine ever runs, and clears at VCM-declared completion (~6.1s before the generator is commanded to stop). Holds through involuntary stalls -- tracks VCM intent, not engine state. Verified across all 104 logged sessions containing 0x649: set in 17/17 sessions where a purge actually ran, never set spuriously. NOTE: this flag alone does not distinguish PENDING from PURGING -- pair it with vcm_evap_counter (0 = pending, >0 = purging).";
+CM_ SG_ 1609 vcm_evap_counter "12-bit purge progress counter: B2 lower nibble = MSB, B3 = LSB. 0 whenever no cycle is active. Counts up only while the engine is running during an active evap cycle; frozen when the engine stops (stall or controlled off) and resumes on restart; survives log gaps and key cycles within a cycle. Returns to 0 at completion. Rate is variable (~0.1-1.0 counts/s, ramps up then down) and the terminal value differs per cycle (observed 901, 901, 856), so this is NOT a percentage and cannot drive a progress bar. Use only as a zero/non-zero purging discriminator.";
+
+CM_ BO_ 1593 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz, DLC=8. Carries the shift lever position the VCM has resolved from the Via shifter position box. B2-B3 active but uninterpreted; B5 near-constant 0x48/0x49. See notes/shifting-transfer-case-investigation.md.";
+CM_ SG_ 1593 shift_lever_pos "B6 bits[6:4]. Confirmed against logs/generator-on-then-off.log (steps 3->4 at t=39.08s and 4->3 at t=53.26s, matching the documented M engagement held ~14s) and logs/vtrux_shifter_disconnect.log (drops to 2=Neutral the instant the shifter box is unplugged at t=20.30s, returns on reconnect at t=29.56s -- the VCM's documented Neutral safe default). 0x644 B0 bits[7:6] carries the same index but only 2 bits, so it cannot distinguish M from Park; use this signal.";
+
+CM_ BO_ 1594 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz, DLC=8. No confirmed signals. B6-B7 are the generator initialization state described in notes/status-bits-cross-log-comparison.md. B7 observed values: 0x04, 0xC4, 0xD4, 0xE4, 0xF4; bits[3:0] constant 0x4. B7 bits[5:4] form a 2-bit field taking all four values: generator related, not further characterized. Use 0x649 for evap. See notes/powertrain-messages.md and notes/evap-cycle-analysis.md.";
+
+CM_ BO_ 1606 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz, DLC=8. Carries the Via amber warning telltale state. This is a Via system and is unrelated to the GM/GMLAN telltale set. See notes/warning-lamp-investigation.md.";
+CM_ SG_ 1606 via_warn_lamp_state "B7 bits[6:4]. 0 = HV not up (pre-start OR shut down by a major HV fault -- ambiguous on its own, pair with 0x400 B0 or 0x410 B1). 6 = HV up, lamp off. 5 = HV up, lamp ON. Bit6 set whenever HV is up; bit5 and bit4 are mutually exclusive, so effectively bit5=normal, bit4=warning. IMPORTANT: B7 bit7 is a separate 1 Hz heartbeat -- mask it off, or the raw byte (0x60/0xE0 normal, 0x50/0xD0 lit) looks like it is toggling. Does NOT encode a blinking lamp: during major HV faults the field goes to 0 rather than oscillating.";
 
 CM_ BO_ 2248146946 "VCU-sourced extended frame (29-bit). Re-broadcasts traction motor thermal load from OBD bus. B5/B6 carry trac_therm_ind_pct; other bytes uncharacterized (B0 multiples of 4, B3 slow 5-value field, B1[7:6] rolling sub-counter). See notes/thermal-investigation.md.";
 CM_ SG_ 2248146946 trac_therm_ind_pct "VCU re-broadcasts from OBD bus 0x44A B2 as integer percent. Traction derate onset ~78-79%. B5[1:0] are ADC jitter.";
@@ -122,5 +144,10 @@ CM_ BO_ 2566849312 "(SA=0x20). EMP WP29 C20 PE glycol coolant pump. J1939 propri
 
 VAL_ 1604 cruise_mode 8 "idle_standby" 9 "throttle_override" 10 "active";
 
-VAL_ 1609 vcm_evap_active 0 "not_active" 1 "evap_in_progress";
+VAL_ 1609 vcm_evap_active 0 "not_pending" 1 "pending_or_purging";
+
+VAL_ 1593 shift_lever_pos 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" 4 "Manual_generator_mode";
+
+
+VAL_ 1606 via_warn_lamp_state 0 "hv_not_up" 5 "lamp_on" 6 "lamp_off";
 

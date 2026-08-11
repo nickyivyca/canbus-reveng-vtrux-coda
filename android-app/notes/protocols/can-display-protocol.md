@@ -4,7 +4,7 @@ Created: 2026-05-10
 Locked: 2026-05-10 (v1)
 Amendments:
 - 2026-05-10 — added §8.5 best-effort multiplex decoding; updated §4.4 `dbc_unsupported_feature` to reference §8.5. Additive (no version bump).
-- 2026-05-10 — replaced the single `config.dbc` string field with a `config.dbcs` object keyed by named bus. Backwards-incompatible (no implementations deployed); no version bump because the protocol was still in pre-implementation flux. Motivation: subscriptions span multiple source DBCs (BelInverter, EPRI, and other buses), and shipping one giant concatenated DBC was awkward. Per-bus DBCs also make it natural for clients to ship only the messages they subscribe to on each bus (distillation), shrinking the wire payload.
+- 2026-05-10 — replaced the single `config.dbc` string field with a `config.dbcs` object keyed by named bus. Backwards-incompatible (no implementations deployed); no version bump because the protocol was still in pre-implementation flux. Motivation: subscriptions span multiple source DBCs (BelInverter, GMLAN, EPRI), and shipping one giant concatenated DBC was awkward. Per-bus DBCs also make it natural for clients to ship only the messages they subscribe to on each bus (distillation), shrinking the wire payload.
 
 WebSocket-based protocol for streaming decoded CAN signals from a logger (server) to a display (client). Designed to be implementable on Android (JVM), Python (test server), and ESP32 (future firmware) with the same wire semantics.
 

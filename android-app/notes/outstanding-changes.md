@@ -141,3 +141,62 @@ fixing Bug 1 (debounce) makes the app resilient when it does.
 
 Both fixes are independent and additive. The wake lock should be implemented regardless of the
 debounce, since degraded frame rates from CPU idling are also undesirable.
+
+---
+
+## Bug 3: `BusIdentityResolver` latches onto retired bus indices — live display stuck on "Waiting for buses"
+
+**Fixed 2026-07-14** — verified live on the truck mid-charge: banner went from
+`Waiting for buses: obd, powertrain` to `Streaming: obd, powertrain`, and the OBD gauges
+(engine coolant, ethanol %) populated for the first time.
+
+**File:** `cancore/src/main/java/com/reverseit/cancore/BusIdentity.kt`
+
+### Symptom
+The live display sat permanently on `Waiting for buses: obd, powertrain` while the logger wrote
+perfectly good data to disk. Battery gauges showed *stale* values (frozen at whatever was on the
+bus at the moment identification was lost); the OBD gauges were blank.
+
+The split is the diagnostic tell: **the logger does not care about bus identification** — it writes
+every frame regardless — so a resolver failure hides completely in the logs and only ever shows up
+on the display.
+
+### Root cause
+`CanPipelineManager` **retires bus indices**: `nextBusIndex++` per `addDevice()`, and an index is
+never reused. A dongle that re-enumerates (USB hub hiccup, root OTG role toggle, truck power cycle)
+therefore returns under a **new** `busIndex`. In the failing session the live log was writing
+channels 5 and 6 — the indices had churned well past 0/1.
+
+`BusIdentityResolver` keys its anchor-hit `counts` by `busIndex`, and nothing ever removed the
+counts for a dead index. `forget()` explicitly left them, on the reasoning that they would "decay
+naturally" — they don't; nothing decays them. Since those counts accumulated over the whole prior
+session, they **outweigh** the freshly re-enumerated index in `decide()`'s descending sort, so the
+bus name re-latched onto the dead index. `observe()` then returned `null` for every real frame
+forever, and `LocalCanDataSource` never left `Handshaking`.
+
+Worse, once a name latched to an index that never produces another frame, nothing could un-latch it:
+the `bus_lost` watchdog only forgets buses it saw go *live*, and `decide()` stopped running entirely
+once all three names were assigned (`_assignments.size < identities.size` gate).
+
+### Fix
+- Resolver tracks `lastSeenMsByBus` (busIndex -> wall ms of most recent frame).
+- New `evictDeadBuses()` drops the counts **and** any latched name for any index silent longer than
+  `staleBusMs` (5 s, matching `LocalCanDataSource`'s bus_lost threshold), letting the live index win
+  the next `decide()`. It runs even when every name is assigned — that is exactly the wedged state.
+- `forget()` now clears the stale index's counts as well, so the watchdog path can't re-latch either.
+- `decide()` is rate-limited to once per 500 ms (`DECIDE_INTERVAL_MS`) since `observe()` runs on
+  every frame at multi-kHz.
+
+### Note for future work
+The rate-limit counter must **not** be initialised to `Long.MIN_VALUE` — `nowMs - lastDecideMs`
+overflows to a negative value and wedges the gate shut permanently, so `decide()` never runs and
+*nothing* is ever identified. Initialise to `0L`. (Hit and fixed during this session; symptom is a
+completely blank display rather than a stale one.)
+
+### Not the cause
+Power sequencing was the initial suspect and was investigated and **exonerated** — the display taps
+`pipeline.frames` directly and never consults trigger/power state. Left as-is.
+
+The OBD anchors (`0x040`-`0x044`) were the second suspect, on the theory that a sleeping engine ECU
+silences them during a charge. Measured against the live charge log: **false** — `0x041` and `0x042`
+run at 100 Hz while charging (51k anchor hits). The anchors are fine and need no change.

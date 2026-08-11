@@ -17,7 +17,7 @@ Also runs on vtruxevapdrivelog4part2.log for cross-check.
 
 Output: find_drive_torque_feedback_output.txt
 
-Machine: L-EEHTRBPN2  Python: py -3.12
+Machine: the bench PC  Python: py -3.12
 """
 
 import re

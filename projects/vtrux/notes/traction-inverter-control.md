@@ -12,7 +12,7 @@
 
 The investigation plan and `epri-obd-bus.dbc` both name 0x451 B0-B1 as `TRAC_Mot_Trq`. This is wrong. In P2, 0x451 appears on Bus 1 (OBD bus) at 39.3 Hz with bytes 0-3 constant at 0x00 and only B4 varying (0-110). This does not match the expected ~100 Hz high-variance torque feedback.
 
-**EPRI data review (2026-03-29):** 0x451 is the standard GMLAN message `Gateway_LS_General_Information`. B0-B3 carry airbag severity flags (all zero = no deployment). B4 is `Climate_Control_Front_Blower_Fan_Speed` (uint8, scale 0.392157%, 0.0-100.0%). The observed B4 range 0-110 decodes to 0-43.1% fan speed. This is a GM-standard broadcast that passes through the OBD bus; it has no Via-specific encoding.
+**EPRI data review (2026-03-29):** 0x451 is the standard GMLAN message `Gateway_LS_General_Information`. B0-B3 carry airbag severity flags (all zero = no deployment). B4 is `Climate_Control_Front_Blower_Fan_Speed` (0.0-100.0%). The observed B4 range 0-110 decodes to 0-43.1% fan speed. This is a GM-standard broadcast that passes through the OBD bus; it has no Via-specific encoding.
 
 The Ghidra decompile confirms the EPRI app read `*(ushort *)(puVar20+2)` from the 0x451 handler — i.e., CAN B0:B1 — but that field contains airbag flags, not torque. The 2-byte CAN ID prefix convention (`puVar20[0:1]` = CAN ID, `puVar20[2+]` = CAN data) means the formula is reading CAN B0:B1 correctly; the earlier "B2:B3" label in the Ghidra session notes was a heading transcription error, not a byte offset error. The core mistake is that the plist misidentified the message as TRAC MCU output.
 

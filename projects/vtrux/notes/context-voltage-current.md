@@ -149,9 +149,9 @@ thermal/SoC drift. Script: `artifacts/bms_current_source_sweep.py`; output:
 ### Resolution
 
 All three channels are EPRI-confirmed **power** (0.01 kW/count, unsigned centered at 32768) in `epri-pt-bus.dbc`:
-- **B0-B1** `DBL_ESSPwrAvg` — battery power average (VCU-computed, not a direct sensor)
+- **B0-B1** `ess_power` (was `DBL_ESSPwrAvg`) — battery power average (VCU-computed, not a direct sensor)
 - **B2-B3** `gen_power` — generator power; scale confirmed 2026-03-29 vs T*omega
-- **B4-B5** `DBL_TracPwrAvg` — traction power average
+- **B4-B5** `trac_power` (was `DBL_TracPwrAvg`) — traction power average
 
 ---
 

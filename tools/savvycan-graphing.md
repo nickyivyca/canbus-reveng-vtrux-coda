@@ -51,7 +51,7 @@ DBC files that store 29-bit IDs without the `0x80000000` marker (e.g. BelInverte
 are fixed automatically on load via regex pre-processing before passing to cantools.
 
 ### Noisy DBCs
-DBCs with overlapping/duplicate signals (e.g. large GMLAN DBCs) loaded with `strict=False`;
+DBCs with overlapping/duplicate signals (e.g. GMW8762 GMLAN) loaded with `strict=False`;
 "Overwriting message" warnings suppressed via `redirect_stdout/stderr`.
 
 ### cantools field mapping (corrected)
@@ -71,8 +71,6 @@ DBCs with overlapping/duplicate signals (e.g. large GMLAN DBCs) loaded with `str
 
 | File | Contents |
 |------|----------|
-| `projects/vtrux/Bel-Inverter/charge graph.gdf` | BelInverter voltage/current — original hand-crafted reference |
-| `projects/vtrux/Bel-Inverter/chargegraph2.gdf` | Extended charge graph with SoC, BattVoltage, DCCurrent |
 | `projects/vtrux/notes/artifacts/speeds.gdf` | Engine RPM, vehicle speed, generator RPM, traction motor RPM |
 
 ---

@@ -2,6 +2,7 @@
 
 **Started:** 2026-03-04
 **Logs:** vtruxanotherevaplogpart1/2/3.log (anotherevaplog series, highway drive Mar 4 2026)
+**Plan:** notes/plans/vtrux-hvac.md
 
 ---
 
@@ -11,12 +12,12 @@ Highway drive with HVAC-relevant events:
 - Part 2 end: engine running, heater on -> stopped at quarry -> heater off (~2 min) -> heater on again
 - Part 3: drove out of quarry EV-only with heater running; then generator on for hill; generator on/off cycle
 
-**No OBD scanner active.** Coolant temp must come from the GM broadcast messages on the Vehicle bus.
+**No OBD scanner active.** Coolant temp must come from GMLAN messages.
 **Key question:** When engine stops (still warm), does VCM switch to PTC heat immediately or after coolant cools below a threshold?
 
 ---
 
-## Phase 1 -- GM-Bus HVAC Signal Catalog
+## Phase 1 -- GMLAN HVAC Signal Catalog
 
 *(Completed: 2026-03-04)*
 
@@ -34,7 +35,7 @@ Bus numbers swapped between sessions (dongle insertion order). PT bus identified
 
 **Total durations:** Part 1 = 364s, Part 2 = 2011s, Part 3 = 521s.
 
-**0x4C1 B2 (ECM_EngineCoolantTemp, EPRI-attributed) range across all parts:**
+**0x4C1 B2 (Engine_Coolant_Temperature) range across all parts:**
 
 | Part | B2 raw range | degC range (raw - 40) |
 |------|-------------|----------------------|
@@ -44,11 +45,11 @@ Bus numbers swapped between sessions (dongle insertion order). PT bus identified
 
 ### 1B. Unknown IDs on GM Buses
 
-Comparing the Vehicle bus (90 IDs per Part 2 survey) against the set of GM IDs known from the EPRI decompile and prior reference correlation (0x0AA, 0x0BE, 0x0C1, 0x0C5, 0x0C7, 0x0C9, 0x0D0, 0x0D1, 0x0D3, 0x0F1, 0x0F9, 0x1A1, 0x1E5, 0x1F1, 0x3F1, 0x3F9, 0x4C1, 0x4D1, etc.), there are approximately 40 IDs on the Vehicle bus that were not previously catalogued. These are candidates for Body/HVAC module messages.
+The PPEI DBC covers 51 messages. Comparing the Vehicle bus (90 IDs per Part 2 survey) against the DBC-known PPEI IDs (0x0AA, 0x0BE, 0x0C1, 0x0C5, 0x0C7, 0x0C9, 0x0D0, 0x0D1, 0x0D3, 0x0F1, 0x0F9, 0x1A1, 0x1E5, 0x1F1, 0x3F1, 0x3F9, 0x4C1, 0x4D1, etc.), there are approximately 40 IDs on the Vehicle bus not in the PPEI DBC. These are candidates for Body/HVAC module messages.
 
 Notable unknown Vehicle IDs in HVAC-relevant ranges:
-- **0x210, 0x214** (20 Hz) — uncatalogued; B0 range 0x00-0x06
-- **0x232, 0x287** (49-80 Hz) — uncatalogued
+- **0x210, 0x214** (20 Hz) — not in DBC; B0 range 0x00-0x06
+- **0x232, 0x287** (49-80 Hz) — not in DBC
 - **0x2C3** (20 Hz) — B0: 0x00-0x0F; B2-B3 static (0x06, 0xA0); B6 varies 0x29-0xD1
 - **0x3C1, 0x3C9** (10 Hz) — B0 fixed 0x07; B2 varies 0x14-0xF7 — wide range, could be temperature or blower
 - **0x3D1, 0x3D3** (10 Hz) — B2 varies on 0x3D1; B1 varies on 0x3D3
@@ -58,19 +59,19 @@ Notable unknown Vehicle IDs in HVAC-relevant ranges:
 
 ### 1C. Confirmed HVAC-Adjacent Signals
 
-**0x4C1 B2 -- ECM_EngineCoolantTemp (EPRI-attributed): CONFIRMED**
-- EPRI DBC encoding: `23|8@0+`, 1 degC/count, offset -40 degC. Raw 0 = -40 degC.
+**0x4C1 B2 -- Engine_Coolant_Temperature: CONFIRMED**
+- DBC encoding: `23|8@0+`, 1 degC/count, offset -40 degC. Raw 0 = -40 degC.
 - Validation: warm-idle/highway values of 57-100 degC are physically plausible. Part 3 start (85 degC) consistent with engine that had just shut off on a hot highway drive.
 - Signal is **faithfully bridged** — ECM broadcasts it continuously regardless of engine run state.
 - Artifacts: `notes/artifacts/analyze_4C1_part2.txt`, `notes/artifacts/coolant_temp_part2.csv`, `notes/artifacts/coolant_temp_part3.csv`
 
-**0x4D1 B0 -- A/C-off indicator: B0 = 0x00 constant throughout all parts**
-- AC is off (B0 = 0) for the entire capture. Expected — this is a heater investigation.
+**0x4D1 B0 -- Air_Conditioning_Off_Indication: B0 = 0x00 constant throughout all parts**
+- AC is off (AC_Off_Indication = 0) for the entire capture. Expected — this is a heater investigation.
 - B2 (range 0-115) and B5 (range 200-228) are unidentified varying signals within 0x4D1.
 - Artifact: `notes/artifacts/analyze_4D1_part2.txt`
 
-**0x3F1 B0 -- cooling-fan adjustment candidate: B0 = 0x00 constant throughout Part 2**
-- No active cooling fan speed adjustment seen. The byte does not respond to HVAC events.
+**0x3F1 B0 -- Engine_Cooling_Fan_Speed_Adjustment: B0 = 0x00 constant throughout Part 2**
+- No active cooling fan speed adjustment command. Fan speed signal not responding to HVAC events.
 
 **Generator flag (0x600 B0):**
 - 0x34 = generator active, 0x24 = inactive.
@@ -102,25 +103,25 @@ Ran analyze_id on top candidate IDs from 1B. Results:
 **No GM bus message identified as a clear HVAC module message (blower speed, setpoint, or mode).**
 Either the HVAC module messages are not on the captured GM buses, or they are static during this drive.
 
-**0x451 B4 -- cabin heater blower speed: CONFIRMED empirically**
+**0x451 B4 -- Climate_Control_Front_Blower_Fan_Speed: CONFIRMED**
 
-0x451 is present on **both GM buses** in all parts at 39 Hz. It is **bridged** (identical content on both buses). Absent from PT bus (Bus 3). B4 is the only varying byte; all other bytes are 0x00 constant.
+0x451 (`Gateway_LS_General_Information`, DBC message 1105 decimal) is present on **both GM buses** in all parts at 39 Hz. It is **bridged** (identical content on both buses). Absent from PT bus (Bus 3). B4 is the only varying byte; all other bytes are 0x00 constant.
 
-The blower-speed role of B4 was established empirically (thermal validation below), not from any spec signal table. A scan of fan-related IDs (0x3F1/0x3F9/0x451) did not yield a usable fan signal on the GM bus beyond this empirical B4 finding.
+DBC signal: `Climate_Control_Front_Blower_Fan_Speed`, carried in byte 4, range 0-100%.
 
-| Part | B4 raw range | Unique raw values |
-|------|-------------|-------------------|
-| Part 2 | 0-84 | 9 |
-| Part 3 | 0-85 | (not extracted) |
-| Part 4 | 0-85 | 5 |
+| Part | B4 raw range | % range | Unique raw values |
+|------|-------------|---------|-------------------|
+| Part 2 | 0-84 | 0-32.9% | 9 |
+| Part 3 | 0-85 | 0-33.3% | (not extracted) |
+| Part 4 | 0-85 | 0-33.3% | 5 |
 
-Max observed ~33% of B4 full scale, consistent with driver setting fan to a partial step (not full speed).
+Max observed ~33% consistent with driver setting fan to a partial step (not full speed).
 
 **Validation:** Part 2 zoomed plot (`notes/plots/blower_plot.png`) shows the coolant temperature clearly responding to blower state:
 - At t~1833s: blower drops to 0 -> coolant temp inflects from declining to rising (heat soak)
 - At t~1985s: blower resumes -> coolant temp rapidly resumes decline
 
-The thermal signature is unambiguous -- this is confirmed as the cabin heater blower speed signal (0x451 B4), validated thermally.
+The thermal signature is unambiguous -- this is confirmed as the cabin heater blower speed signal.
 
 Artifacts: `notes/artifacts/blower_part2.csv`, `notes/artifacts/blower_part4.csv`, `notes/artifacts/blower_plot.py`, `notes/plots/blower_plot.png`
 
@@ -165,7 +166,7 @@ Identified via HV battery current (0x598 B0-B1 LE) and coolant temp (0x4C1 B2) t
 
 **Heater thermal load on coolant circuit: ~5.4 degC/min differential** (heater-on driving vs heater-off soak).
 
-**Interpretation:** The fact that coolant temperature responds directly and cleanly to blower on/off confirms that 0x4C1 B2 (ECM_EngineCoolantTemp) represents the temperature of coolant being circulated to the cabin heater core — not a dedicated engine block sensor or ECM thermal model. The signal reflects heating demand drawn from the coolant loop. It is not a reliable standalone indicator of engine thermal state when the cabin heater is active.
+**Interpretation:** The fact that coolant temperature responds directly and cleanly to blower on/off confirms that 0x4C1 B2 (Engine_Coolant_Temperature) represents the temperature of coolant being circulated to the cabin heater core — not a dedicated engine block sensor or ECM thermal model. The signal reflects heating demand drawn from the coolant loop. It is not a reliable standalone indicator of engine thermal state when the cabin heater is active.
 
 The -21 degC/min rate for the final window is elevated because the cabin had cooled during the ~2.5 min HVAC-off period, producing a large cabin-to-coolant delta-T. The log ends before the rate settles to steady state.
 
@@ -198,7 +199,7 @@ The -21 degC/min rate for the final window is elevated because the cabin had coo
 
 **No HV PTC signature found:** HV battery current in both parts is dominated by motor driving noise. Any PTC load (~20-30A HV) would be buried.
 
-**0x4C1 B4 (ECM_OutsideAirTemp, EPRI-attributed):** Investigated as potential independent temperature. EPRI DBC encodes scale=0.5, offset=-40. Correct decoded range: Part 3 = 9-12°C, Part 4 = 8-18°C. In Part 4 it starts at raw=116 (18°C), decays via staircase to raw=97 (8.5°C) by t~511s, then holds flat for remainder. This is the ECM's outside air temperature low-pass filter converging from an inflated prior toward actual ambient -- purely an estimation artifact, not an independent sensor. (Earlier notes used scale=1.0 in error, producing spurious 57-76°C values -- those are now corrected.)
+**0x4C1 B4 ("OAT Powertrain Estimated"):** Investigated as potential independent temperature. DBC encodes scale=0.5, offset=-40 (confirmed in GMW8762_PPEI_GMLAN.dbc). Correct decoded range: Part 3 = 9-12°C, Part 4 = 8-18°C. In Part 4 it starts at raw=116 (18°C), decays via staircase to raw=97 (8.5°C) by t~511s, then holds flat for remainder. This is the ECM's outside air temperature low-pass filter converging from an inflated prior toward actual ambient -- purely an estimation artifact, not an independent sensor. (Earlier notes used scale=1.0 in error, producing spurious 57-76°C values -- those are now corrected.)
 
 ### Cold vs Warm Engine PTC Routing -- Key Finding (2026-03-05)
 
@@ -213,23 +214,23 @@ Cross-log comparison of `vtruxevapdrivelog4.log` (cold engine) vs `vtruxanothere
 
 **Hypothesis:** The Vtrux has at least two small pumps for selecting heat source. When engine coolant is cold (~17°C), the system may route PTC heat through a path that does not circulate the engine coolant sensor -- possibly a dedicated air-side heater or a short PTC-only loop bypassing the block. When coolant is warm (~39°C+), heat routes through the heater core shared with the engine coolant loop. A passive thermostat or VCM-controlled valve/pump switchover is the likely mechanism. Switchover threshold unknown.
 
-**Engine Oil Temperature candidate (0x4D1 B1): dead in both logs** -- raw=0x00 constant, decodes to -40°C. Not implemented on Vtrux.
+**Engine Oil Temperature (0x4D1 B1): dead in both logs** -- raw=0x00 constant, decodes to -40°C. Not implemented on Vtrux.
 
 Artifacts: `ptc_check_evap4.py/png`, `ptc_cold_vs_warm_comparison.py/png`, `blower_evap4.csv`, `coolant_temp_evap4.csv`, `batt_current_evap4.csv`, `gen_rpm_evap4.csv`
 
-**Transmission Oil Temperature candidate (0x4C9 B1):** raw=0x41=65 constant throughout Part 2. Frozen value, not a real sensor.
+**Transmission Oil Temperature (0x4C9 B1):** raw=0x41=65 constant throughout Part 2. Frozen value, not a real sensor.
 
-### Temperature Signal Offset Confirmation (resolved 2026-04-11)
+### GMLAN DBC Offset Confirmation (resolved 2026-04-11)
 
-All 0x4C1 temperature signal offsets are confirmed from the EPRI DBC (`epri-obd-bus.dbc`, message 0x4C1 = ECM engine temperatures):
+All 0x4C1 temperature signal offsets are now confirmed from GMW8762_PPEI_GMLAN.dbc:
 
-| Signal | Encoding | Notes |
+| Signal | DBC encoding | Notes |
 |--------|-------------|-------|
-| ECM_EngineCoolantTemp (B2) | `(1.0, -40)` | Matches what was used throughout |
-| ECM_EngineAirIntakeTemp (B3) | `(1.0, -40)` | Not actively used in this investigation |
-| ECM_OutsideAirTemp (B4) | **(0.5, -40)** | Scale was wrong in earlier scripts (used 1.0) -- corrected in phase3_plot.py |
+| Engine_Coolant_Temperature (B2) | `(1.0, -40)` | Matches what was used throughout |
+| Engine_Intake_Air_Temperature (B3) | `(1.0, -40)` | Not actively used in this investigation |
+| Outside_Air_Temperature_Powertrain_Estimated (B4) | **(0.5, -40)** | Scale was wrong in earlier scripts (used 1.0) -- corrected in phase3_plot.py |
 
-The Engine Oil Temperature candidate (0x4D1 B1 = 0x00 constant, decodes to -40°C with offset) is confirmed not implemented on Vtrux. The -40°C output at raw=0 is consistent with a "not implemented" sentinel encoded as raw zero.
+Engine Oil Temperature (0x4D1 B1 = 0x00 constant, decodes to -40°C with offset) is confirmed not implemented on Vtrux. The -40°C output at raw=0 is consistent with GM encoding a "not implemented" sentinel as raw zero.
 
 ### Artifacts
 
@@ -366,7 +367,7 @@ monotonic decay (368 → 364 → 360 ...). The BMS reading peaked and began deca
 **Guidance:** for timing-sensitive transient analysis, use BMS `bcm_vbus_pos` (0x0440), not EAC.
 EAC is fine for steady-state HV monitoring. Promoted to overview as a behavior:
 `vtrux.md` → Documented Behavior → HV Bus Voltage Measurement Sources. Artifact:
-`notes/artifacts/keith_precharge_profile.py` / `keith_precharge_profile_output.txt`.
+`notes/artifacts/truck3-precharge_profile.py` / `truck3-precharge_profile_output.txt`.
 
 **0x0868A047 (EAC_STATUS1) — DLC=6:**
 
@@ -404,14 +405,14 @@ correlates with V×I (r=0.055 for B1×V_hv vs B3).
 **GoPoint offset note:** The earlier ambiguity between `.N`=raw-CAN-byte vs `.N`=GoPoint-packet-byte
 is now moot for the power signal — B3 is ruled out as power regardless of interpretation.
 
-**GM A/C command note:** The truck no longer has the original belt-driven A/C compressor.
-The GM ECM's A/C command signal for the OEM unit was not seen active in the available multi-bus logs.
-It is unresolved whether the VCM still asserts an A/C request when cabin cooling is requested and
+**GMLAN A/C command note:** The truck no longer has the original belt-driven A/C compressor.
+`0x3D1` (`Air_Conditioning_Compressor_Command`) is the ECM's signal for the OEM unit.
+It is unresolved whether the VCM still asserts this bit when cabin cooling is requested and
 translates it into commands to the Sanden HV compressor, or whether the A/C request path is
 entirely separate. `oghighwaydrive.log` is PT-bus-only and cannot be used for this.
 
 **Partial result (2026-03-28) — vtruxanotherevaplogpart2.log (multi-bus):**
-- The GM A/C command bit was set for only ~0.6s (12 frames) at t=1002.7–1003.3s — a brief transient,
+- `0x3D1` B4 bit 5 was set for only ~0.6s (12 frames) at t=1002.7–1003.3s — a brief transient,
   probably triggered by defrost/dehumidify momentarily engaging.
 - `0x0868A047` was **all zeros throughout the entire log** — EAC compressor never ran in this
   session. This was likely a cooler-weather drive where A/C was not needed.
@@ -451,6 +452,6 @@ attribution is incorrect for this byte.
    EAC_STATUS1. B0 is the most likely location (seen {0x00, 0x84, 0x94} at startup, 0x00 during
    normal running). Full enum values not yet observed; need a log with fault events.
 
-5. **GM A/C command translation** — need a multi-bus log from a warm day where the EAC
-   compressor was actually running (B1/B2/B4 > 0) to check whether the GM ECM A/C command bit is
+5. **GMLAN A/C command translation** — need a multi-bus log from a warm day where the EAC
+   compressor was actually running (B1/B2/B4 > 0) to check whether 0x3D1 B4 bit 5 is
    simultaneously asserted. Cannot answer from current available logs.

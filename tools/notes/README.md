@@ -11,6 +11,7 @@ behave belongs here.
 | [influx_upload_benchmark_series.py](influx_upload_benchmark_series.py) | Same idea, scaled to the full T0–T12 series (~535 MB / 13 files) so per-file scan-pass overhead is visible alongside steady-state streaming. |
 | [influx_bench/](influx_bench/) | Single-log benchmark artifacts (`upload.pcapng`, `dry.prof`, `real.prof`, `analyze_pcap.py`, `findings.md`). |
 | [influx_bench_series/](influx_bench_series/) | Series benchmark artifacts. `findings.md` is the pre-optimization baseline; `findings_after_optimizations.md` is the post-fast-scan/custom-serializer/DROP-fix re-run. |
+| [innomaker_gs_usb_bench.md](innomaker_gs_usb_bench.md) | Back-to-back Innomaker (gs_usb) vs Kvaser bench: real-time + saturation TX/RX frame-loss results, the Kvaser-limiter analysis, and the coda-diagnostics UDS round-trip check. Harness/artifacts in `tools/artifacts/innomaker_bench.py`. |
 
 ## Conventions
 

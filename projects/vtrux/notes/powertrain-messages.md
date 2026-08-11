@@ -72,7 +72,7 @@ For voltage/current signal investigation methodology and correlation scan result
 | DLC | 2 |
 | Confidence | **MEDIUM** — bit assignments from single highway drive log (debuglog_M0.log, Aug 2025); patterns consistent across all observed transitions |
 
-**Observed state transitions (from a highway drive-cycle log):**
+**Observed state transitions (from `notes/deprecated/highway-drive-cycle.md`):**
 
 | Value (LE) | B0 | B1 | State |
 |------------|----|----|-------|
@@ -241,12 +241,14 @@ and 12 as "evap pending." This was incorrect. B3=12 is the universal normal stat
 
 All 16-bit words are little-endian, unsigned, centered at 32768.
 
-| Bytes | Signal | Confidence | Notes |
-|-------|--------|------------|-------|
-| B0-B1 | Battery power | HIGH | Active during AC charging; near-zero when generator fully covers traction load |
-| B2-B3 | Generator power | HIGH | Near-zero in pure EV (stddev=33 cts); mean +3083 cts when generator active; r=−0.98 vs gen torque (0x051) |
-| B4-B5 | Drivetrain power | HIGH | Large in both EV and hybrid; balance: B4-B5 = B0-B1 + B2-B3 (drivetrain = battery + generator) |
-| B6-B7 | Unknown | LOW | Static bias; not part of balance |
+| Bytes | Signal | DBC name | Confidence | Notes |
+|-------|--------|----------|------------|-------|
+| B0-B1 | Battery power | `ess_power` | HIGH | Active during AC charging; near-zero when generator fully covers traction load |
+| B2-B3 | Generator power | `gen_power` | HIGH | Near-zero in pure EV (stddev=33 cts); mean +3083 cts when generator active; r=−0.98 vs gen torque (0x051) |
+| B4-B5 | Drivetrain power | `trac_power` | HIGH | Large in both EV and hybrid; balance: B4-B5 = B0-B1 + B2-B3 (drivetrain = battery + generator) |
+| B6-B7 | Unknown | — | LOW | Static bias; not part of balance |
+
+All three are defined in `vtrux-powertrain-experimental.dbc` as `(0.01, -327.68)` unsigned LE. `BO_ 1432` in `epri-pt-bus.dbc` is a stub with no `SG_` entries: the EPRI app decodes B0-B1 and B4-B5 as plain signed int16, which Ghidra analysis confirmed on 2026-08-02 is a genuine app defect rather than a decompile artifact (see `epri-decompile.md` 0x0598 section).
 
 **Balance: `drivetrain = battery + generator`** (i.e., B4-B5 = B0-B1 + B2-B3). Verified across pure-EV and hybrid segments: residual stddev/mean = 5.9% (EV) and 6.9% (hybrid). Sign convention: positive = providing energy to HV bus (battery discharging, generator generating, drivetrain consuming).
 
@@ -343,6 +345,137 @@ Nearly all zeros in charge log; B6-B7 LE ×0.05 = 11.35V observed once. Needs ge
 
 ---
 
+### 0x639 B6 — Shift Lever Position (CONFIRMED 2026-07-26)
+
+| Field | Value |
+|-------|-------|
+| Bytes | B6 bits[6:4] (mask `0x70`) |
+| Encoding | 3-bit unsigned |
+| Rate / DLC | ~100 Hz, DLC=8 |
+| Source | VCM (VCU cluster 0x639–0x64B) |
+
+| Value | Position |
+|-------|----------|
+| 0 | Park |
+| 1 | Reverse |
+| 2 | Neutral |
+| 3 | Drive |
+| 4 | M (manual / generator mode) |
+
+The VCM's resolved view of the Via shifter position box. Confirmed two ways:
+
+- `logs/generator-on-then-off.log` — steps 3→4 at t=39.08s and 4→3 at t=53.26s, matching
+  the M engagement documented in `shifting-transfer-case-investigation.md` (engaged at
+  t=39.1s, held ~14s).
+- `logs/vtrux_shifter_disconnect.log` — drops to 2 (Neutral) the instant the shifter box is
+  unplugged at t=20.30s and returns to 3 on reconnect at t=29.56s, matching the documented
+  VCM behaviour of defaulting to Neutral when it loses a coherent shifter input.
+
+`0x644` B0 bits[7:6] carries the same index but only 2 bits, so it **cannot distinguish M
+from Park** (both read 0). Use `0x639` B6.
+
+**Why this matters:** the Vehicle-bus `0x1F5` gear/lever message is the usual source, but
+the OBD-bus copy of `0x1F5` is VCM-frozen at Park. On captures without the Vehicle bus,
+`0x639` B6 is the only shift-position source available.
+
+Other bytes: B2–B3 active but uninterpreted; B5 near-constant 0x48/0x49.
+
+---
+
+### 0x646 B7 — Via Warning Lamp State (CONFIRMED 2026-07-27)
+
+| Field | Value |
+|-------|-------|
+| Bytes | B7 bits[6:4] (mask `0x70`) |
+| Encoding | 3-bit unsigned |
+| Rate / DLC | ~100 Hz, DLC=8 |
+| Source | VCM (VCU cluster 0x639–0x64B) |
+
+| Value | Meaning |
+|-------|---------|
+| 0 | HV not up (pre-start, or shut down by a major HV fault) |
+| 6 | HV up, lamp off |
+| 5 | HV up, lamp **on** |
+
+State of the Via amber warning telltale. This is a Via system and is **unrelated to the
+GM/GMLAN telltale set** — GMLAN malfunction and indicator-request bits stay clear while
+the lamp is lit.
+
+**B7 bit7 is a separate 1 Hz heartbeat and must be masked off** — the raw byte alternates
+`0x60`/`0xE0` normal and `0x50`/`0xD0` lit, which looks like toggling if read whole.
+
+Validated across 18 logs on both trucks, with a captured off→on transition (parts truck,
+~20 min pump-missing timeout) and an on→off clear (2026-07-24 key cycle). Does not encode
+a blinking lamp: during major HV faults the field goes to 0 rather than oscillating.
+
+Full evidence, fault-log behaviour, and the timeout measurement: **`warning-lamp-investigation.md`**.
+
+---
+
+### 0x63A B7 bits[5:4] — evap reading FALSIFIED; generator related, not further characterized (2026-07-26, retracted and falsified 2026-08-09)
+
+> **This was previously listed here as "B7 bit4 — Evap Purge In Progress (CONFIRMED)". That is
+> withdrawn.** B7 bit4 is not an evap indicator. Use `0x649` (`vcm_evap_active` +
+> `vcm_evap_counter`) for evap — see `evap-cycle-analysis.md` Phase 5.
+
+**Why it was withdrawn:** a full evap purge runs to completion with bit4 clear. In
+`vtrux_20260719_190019` the counter resumes at 536, climbs to 901, and `vcm_evap_active` goes
+1 -> 0 at 19:16:29 — while bit4 is 0 across all 640,380 `0x63A` frames of that session.
+
+**What B7 actually looks like.** Observed values `0x04`, `0xC4`, `0xD4`, `0xE4`, `0xF4`:
+
+| Bits | Meaning |
+|------|---------|
+| bits[7:6] | both clear or both set; never seen split. **Not an HV-up indicator** — see below. |
+| bits[5:4] | 2-bit field, all four values occur. **Generator related, not further characterized.** |
+| bits[3:0] | constant `0x4` in every frame observed |
+
+Reading bit4 in isolation was the original error — it is the low bit of a field, not a flag.
+
+**The confound, and how it was broken.** Pooled over five 2026-07-19 / 2026-07-24 sessions,
+bits[5:4] appeared to separate on generator power, but every one of those sessions had evap
+activity overlapping the high-generator windows, so evap and generator could not be told apart:
+
+| bits[5:4] | frames | gen_power median (kW) | `vcm_evap_active` |
+|-----------|--------|----------------------|-------------------|
+| HV down | 845,917 | -0.01 | 19.1% |
+| 0 | 860,144 | 4.55 | 7.8% |
+| 1 | 8,282 | **40.21** | 100.0% |
+| 2 | 1,118,829 | 0.37 | 1.4% |
+| 3 | 252,016 | **40.30** | 98.9% |
+
+The 2026-07-24..26 weekend trip breaks it. On Sunday 2026-07-26 `vcm_evap_active` was 0 for
+30,871 of 30,876 sampled seconds and `vcm_evap_counter` held 0 all day (ruling out a pending
+cycle as well as a running purge), yet bits[5:4] reached state 1 for a continuous 329 s from
+12:50:12. State 1 ran 100% evap-**active** on Friday and 100% evap-**inactive** on Sunday, so
+the field is not evap-determined. **The evap reading is falsified**, not merely unsupported.
+
+The ~40 kW characterisation above is also too strong. Over the weekend, bit4-set states sit in a
+bounded band and never coincide with high generator output, while the highest output occurs with
+bit4 clear:
+
+| bits[5:4] | gen_power median (kW) | samples > 60 kW | max (kW) |
+|---|---|---|---|
+| 0 | 0.5 | 1,375 s | 142.8 |
+| 1 | 19.5 | **0** | 57.4 |
+| 2 | 6.5 | 1,600 s | 138.0 |
+| 3 | 20.5 | **0** | 52.5 |
+
+States 1 and 3 total 2,075 s with zero samples above 60 kW, against ~187 s expected at the
+states 0/2 rate.
+
+**Open:** no state has an assigned meaning. The falsification rests on a single 329 s episode —
+enough to kill the evap reading, thin for any positive claim. `0x63A` is a `BO_` stub in the
+experimental DBC — no `SG_` entries. Full working: `evap-cycle-analysis.md` Phase 7.
+
+**Separately, bits[7:6] is not an HV-up flag.** On Saturday 2026-07-25, B7 was `0x04` (bits[7:6]
+clear) for 100.0% of 27,926 sampled frames, while `ess_power` reached 22.4 kW and `trac_power`
+20.1 kW on `0x598` — power export plus light driving, so the HV bus was demonstrably live. Both
+reference signals come straight from the DBC on a different message, so the test does not depend
+on any `0x63A` interpretation. What bits[7:6] does mean is unresolved.
+
+---
+
 ## High Confidence — Not Yet Fully Confirmed
 
 ### 0x5A2 — Remy-Motor RPM
@@ -427,7 +560,7 @@ over the full log and are near-constant during the zero-throttle cruise window. 
 | B0 | Odd values only (bit 0 always 1). Range 1–109. Tracks throttle pedal (r=0.9998). | Command or status echo — see below |
 | B1 | 6 unique values, range 116–136. Slowly varying. | Possibly temperature or mode |
 | B2 | Always 0x39 | Constant — likely message type byte |
-| B3 | 4 unique values | Tracks gear state (one value per gear; mapping observed empirically) |
+| B3 | 4 unique values: 1=Park, 5=Reverse, 9=Neutral, 13=Drive | Gear state mirroring 0x1F5 |
 | B4 | 0=parked/off, 128=in motion | Motion flag |
 | B5 | Always 0 | |
 | B6 | 8 unique values (0–7) | Rolling counter or mode |
@@ -452,9 +585,12 @@ over the full log and are near-constant during the zero-throttle cruise window. 
 
 ## Partially Confirmed / Hypothesized
 
-### 0x639 — Unknown
+### 0x639 — Partially decoded
 
-**Notes:** Originally cataloged as battery current at B5-B6 BE, but that was wrong — B5=0x49 constant across all frames; the r=0.99 vs 0x592 B0-B1 was a spurious artifact of two near-constant signals. Active bytes are B2-B3 (93 unique values in highway logs) but no confirmed interpretation. Role and encoding unverified.
+**B6 bits[6:4] is the shift lever position — CONFIRMED 2026-07-26.** See the
+`0x639 B6 — Shift Lever Position` section under Confirmed Signals above.
+
+**Remaining bytes:** originally cataloged as battery current at B5-B6 BE, but that was wrong — B5=0x49 constant across all frames; the r=0.99 vs 0x592 B0-B1 was a spurious artifact of two near-constant signals. Active bytes are B2-B3 (93 unique values in highway logs) but no confirmed interpretation. Role and encoding unverified.
 
 ---
 
@@ -697,7 +833,7 @@ an independent thermometer. Sentinel 0xFE = invalid (same as voltage fields).
 ### 0x308 — BorgWarner TCM Park Pin State
 
 **Source: BorgWarner TCM (same unit as in the Coda EV). Confirmed 2026-03-05 by cross-vehicle
-ID/byte-structure match and correlated timeline analysis against the GMLAN gear-position broadcast in generator-on-then-off log.**
+ID/byte-structure match and correlated timeline analysis against 0x1F5 in generator-on-then-off log.**
 
 | Bytes | Signal | Encoding | Confidence |
 |-------|--------|----------|------------|
@@ -708,9 +844,9 @@ ID/byte-structure match and correlated timeline analysis against the GMLAN gear-
 
 **Rate:** 100 Hz. **DLC:** 5.
 
-**Timing correlation with the GMLAN gear-position broadcast (generator-on-then-off log):**
-- Park exit: B0 = 0x40 at t=25.045; GMLAN gear-position transitions out of Park at t=25.058 (13 ms lag — ~1 frame)
-- Park entry: GMLAN gear-position reaches Park at t=56.000; B0 = 0x20 at t=56.065 (65 ms after GMLAN — pin physically
+**Timing correlation with 0x1F5 (generator-on-then-off log):**
+- Park exit: B0 = 0x40 at t=25.045; GMLAN 0x1F5 B3 transitions at t=25.058 (13 ms lag — ~1 frame)
+- Park entry: GMLAN 0x1F5 B3 = Park at t=56.000; B0 = 0x20 at t=56.065 (65 ms after GMLAN — pin physically
   engages after position is declared, as expected for a solenoid-actuated mechanism)
 
 **Cross-vehicle match (Coda 0x308):** Identical ID, frequency, DLC, and B0 values (0x20/0x40). On the Coda,

@@ -45,12 +45,6 @@ This came at an earlier point in the project than the EPRI app decompile, but st
 
 ![](images/codacan-replay.jpg)
 
-## Android Apps
-One secondary part of this project was that I was able to have it write me an Android app, complete with apparently from scratch writing an Android USB driver for the cheap Innomaker CAN dongles, such that I could have my Android tablet based headunit I installed in the Coda act both as a CAN logger, and as a replacement for the original 'green screen' in the Coda. It turned out that the box that generated the green screen (which previously was fed into the backup camera input) just stored the base images on an SD card, so it was trivial to import those images and then using the CANbus definitions extracted from the investigation, replicate this display. And now it works in the cold - which the original green screen often did not. (It's missing a few minor things, such as the green graphics in the battery that indicate state of charge)
-
-![](images/coda-green-screen-display.jpg)
-
-
 ## Conclusions
 I'm releasing this information both to help others use this tool for reverse engineering CANbus logs for other vehicles, and also as a specific knowledge base for either of these vehicles. Hopefully someone finds it useful. If you have either of these vehicles and you are interested in keeping it running, or just want to discuss using these tools for CANBus reverse engineering, please reach out to me, I'd love to help.
 

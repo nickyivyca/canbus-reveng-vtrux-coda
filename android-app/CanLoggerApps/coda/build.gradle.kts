@@ -9,7 +9,9 @@ android {
 
     defaultConfig {
         applicationId = "com.reverseit.coda"
-        minSdk = 21
+        // 26 is required by the :display module (shared ColorBandSlider/StatusWord
+        // widgets). Harmless for the A007 head unit, which runs Android 12.
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -46,6 +48,7 @@ android {
 
 dependencies {
     implementation(project(":cancore"))
+    implementation(project(":display"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.lifecycle.viewmodel.ktx)
     implementation(libs.lifecycle.runtime.ktx)
@@ -54,6 +57,8 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
+    // Explicit (was transitive): HorizontalPager for the page-2 swipe.
+    implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.runtime)
 }

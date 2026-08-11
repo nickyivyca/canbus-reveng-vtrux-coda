@@ -22,10 +22,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import cantools
 
-sys.path.insert(0, r"C:\Users\nicholas.ivy\seadrive_root\nickivyc_1\My Libraries\NotGit\reverse-it")
+sys.path.insert(0, r"<repo>")
 from canre.parsers import parse_file
 
-base     = r"C:\Users\nicholas.ivy\seadrive_root\nickivyc_1\My Libraries\NotGit\reverse-it\projects\vtrux"
+base     = r"<repo>\projects\vtrux"
 logs_dir = base + r"\logs"
 out_dir  = base + r"\notes\artifacts"
 CACHE    = out_dir + r"\engine_gen_torque_aligned.csv"

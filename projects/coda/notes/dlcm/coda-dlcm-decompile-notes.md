@@ -170,6 +170,13 @@ Key unknowns: (a) SecurityAccess level 0x01/0x02 key algorithm, (b) CRC algorith
 
 #### SecurityAccess algorithm — seed/key pairs
 
+> **See `dlcm-security-access.md`** for the dedicated analysis. Key findings
+> (2026-07-21): the handshake is on **D CAN**, terminated by the **DLCM** (the
+> GWM only bridges `0x7E0`/`0x7E8`); and a `CMP/EQ #SID` scan of PROG shows **no
+> UDS/SecurityAccess handler in PROG** — the seed/key algorithm is in the
+> **bootloader** (`<0x80040000`), which we do not have. So "decompile the Omitec"
+> below is one option, but "dump + decompile the bootloader" is the other.
+
 Extracted from all flash logs using `security_access_extract.py` (artifacts/). Three distinct sessions confirmed — seeds are truly random (ECU-generated). No simple single-transform algorithm found (not constant XOR, constant add, or any rotation).
 
 | Log | Seed | Key | XOR |
@@ -214,6 +221,26 @@ There is no application-layer checksum at any point in the transfer protocol:
 - **UDS TransferExit (0x37/0x77)**: both tester request and ECU response carry no extra bytes.
 
 The interposer swaps content bytes inside valid CAN frames, so the hardware CRC is correct by construction. No additional integrity bypass is needed at any layer.
+
+**Content-checksum re-verification on the complete capture (2026-07-02)**
+
+Re-ran the "no content checksum" question with a stronger method on the gap-free `flash6.log`. Artifact: `artifacts/flash_session_analyze.py`.
+
+- **Reconstructed PROG (0x80040000, 1,834,496 B) and CAL (0xA0020000, 114,688 B) from the TransferData stream — both byte-exact** vs `coda_dlcm_prog.bin` / `coda_dlcm_cal.bin`. Confirms flash6 is gap-free and the bins are authentic to the flashed image.
+- Full reprogramming sequence captured: DiagSession 0x02 -> SecurityAccess (seed `7C876E19` / key `2726966F`, accepted) -> erase `31 01 FF00` (data `02`=PROG, `03`=CAL) -> RequestDownload (`dataFormatIdentifier=0x00` = no compression/encryption) -> TransferData (252-byte blocks) -> TransferExit -> verify `31 01 FF01` (no data; constant status `00 00 00 0C` for both regions). Only negative response in the whole session is NRC `0x78` (responsePending) during the ~37 s erase; no rejections.
+- **Checksum hunt:** computed CRC32, adler32, sum16/32, XOR32, wordsum16, CRC16-CCITT, CRC16-XMODEM over CAL (whole / active `0x0-0x24900` / minus-header) and PROG, then searched (a) all 399 distinct 2- and 4-byte values across every non-TransferData UDS message (both endiannesses) and (b) the PROG and CAL binaries for the CAL's own 32-bit checksums. **Zero matches in either.**
+- **Conclusion:** no application-layer content checksum/signature over the CAL is transmitted during flashing *or* stored for a boot-time comparison. Confirms and strengthens the 2026-04-27 findings. Residual (not brute-forceable): a custom-polynomial CRC or a cryptographic signature — but no signature-length data is transmitted anywhere in the session, and cryptographic CAL signing is uncommon for a 2012 Continental EMS. Low likelihood.
+
+**Flash-proxy byte-targeting validated offline — no dongles (2026-07-02)**
+
+Drove the real `FlashSession` (imported from `dlcm_flash_proxy.py`) over all 301,994 `flash6.log` frames in dry-run, cross-checked against an independent ground-truth walk of the CAL TransferData blocks. Artifact: `artifacts/flash_proxy_dryrun_validate.py`.
+
+- Default patches `0xA0021532` / `0xA0021B6E` (runtime `0x80021532` / `0x80021B6E`) both currently hold `0x01` — the lash-minimum (index 5) of the two V-curve copies at `0x80021528` and `0x80021b64`.
+- **Both methods agree exactly:** `0xA0021532` -> CAL TransferData block_seq `0x16` (block index 21), in-block offset 134 = CF#19 d[5]; `0xA0021B6E` -> block_seq `0x1C` (index 27), offset 218 = CF#31 d[5]. The proxy's fixed 252-byte-block base-address assumption holds (all blocks are 252 B except a final 28 B block, well past the targets).
+- The proxy writes LE i16 `05 00` (value 1->5) at both cells and arms **only** for the CAL download (leaves PROG untouched). It reports 4 byte-writes = 2 real changes + 2 no-op high-byte (`00`->`00`) writes — expected for a 2-byte LE i16 patch, not a bug.
+- **Conclusion:** the proxy flips exactly the two intended lash-minimum bytes, with correct block/offset math and endianness, verified against real captured traffic.
+
+**Flash-readiness summary (2026-07-02):** the two flash-failure risks — a content checksum the patch would invalidate, and wrong-byte targeting — are both cleared offline. What remains is *efficacy only* (whether the `0x80021500`/`0x80021b50` V-curve is the active gradient LUT — medium confidence by elimination; the patch is the experiment that decides it) plus one operational item: a **proven CAL rollback** (re-flash stock CAL via the same Omitec flow, proxy off) before a first live attempt.
 
 ### Goal 3: State machine and fault enumeration
 Locate the state table behind `REDYWAIT` strings and extract fault/error code definitions for DLCM-reported faults.
@@ -490,6 +517,10 @@ Zero-torque throttle setpoint: approximately **21% pedal position** (throttle@cr
 
 Analysis scripts: `dlcm_zero_crossing_ramp.py` (V-curve through lash zone), `dlcm_lash_exit_ramp.py` (post-lash table), `dlcm_drive_ramp.py` (Region 3), `dlcm_lash_crossing_graph.py` (timing visualization). All scripts in `notes/artifacts/`.
 
+> **Clarification (2026-07-08) — the "8 cts/frame" figure and the §10.7 framing of this section.** The per-update step near zero is **not** a flat rate and "±8 cts/frame" is not a single rate limit. A raw re-run of `dlcm_zero_crossing_ramp.py` shows a **state-dependent V-curve in TrqLast**: ~16 cts/update deep in regen, narrowing to **exactly 8 at the zero crossing**, tightening to **~0–1** at the top of the lash zone (TrqLast ~= +33), then re-widening (1, 2, 3, 5, 7, 9 ...). The value **8 is the crossing-specific step only.** It reproduces at exactly 8 across independent events with different throttle rates (39 %/s and 70 %/s), and the shaping is **throttle-independent**: in a slow event the torque keeps stepping after the pedal stops moving; in a fast event the step *decreases* (16 -> 13 -> 8) while the pedal is still rising. So proximity to zero (TrqLast), not demand magnitude, sets the step. Torque updates every **~20 ms (~50 Hz)**; each value is repeated in two adjacent sub-frames (the B4-nibble mux), so "per frame" here means per 20 ms update. 8 cts/20 ms ~= 400 cts/s ~= 98 Nm/s at the unconfirmed 0.244 Nm/ct scale.
+>
+> **Attribution is a hypothesis, not a finding.** The observed profile is the *combined* output of the rate limiter and the §10.6 smoothing IIR, whose pipeline order is unconfirmed — an IIR can round a fixed-rate clamp into a curve. The Phase 0–2 descriptions below attribute the profile to reads of `gradientLimiterPositive_TrqLast[TrqLast]`; that attribution presupposes the modern §10.7 mechanism and is **under active re-examination**: is the near-zero limit a TrqLast-indexed table (modern §10.7 State Dependent Torque Gradient Limiter) or a fixed near-zero clamp plus a separate zero-crossing detector (the pre-Rev-2 Zero Torque Rate Limiter + Zero Crossing Filter)? The behavioral state-dependence is *consistent with* §10.7 but does not by itself prove the modern code topology. Code-level resolution is tracked in `dlcm-torque-limiter-code-trace.md`.
+
 The total elapsed time from pedal press to maximum torque command is approximately **1 second**. The torque curve is smooth. The smooth appearance likely comes from the Torque Smoothing Filter (§10.6, a separate 3rd-order IIR on all torque requests) rather than from filtering inside the gradient limiter itself. The gradient limiter (§10.7) is a pure rate limiter — its smoothness is a product of the TrqLast-indexed table having small step sizes near zero, not a separate filter pole.
 
 The empirical data below describes per-frame step sizes at the gradient limiter output (which is TorqueDemand to the motor before §10.6 smoothing, or after — the pipeline order relative to §10.6 is unconfirmed).
@@ -701,6 +732,8 @@ Searched the entire PROG binary for embedded 0x8002xxxx constants (CAL address r
 
 **Conclusion:** all gradient limiter CAL access is through SRAM pointers initialized by the init code at 0x8004xxxx. The DBC0 instruction `mov.l @(0x34,r12),r0` reads a CAL table pointer from SRAM — R12 points to a module parameter block that was populated by the init code at startup. To find the CAL table addresses, the init code at 0x8004xxxx (specifically the code near 0x80041A0C that reads CAL 0x80021400) must be analyzed.
 
+> **SUPERSEDED (2026-07-02) — see "Off-by-8 resolved" section below.** The table row `0x80041A0C -> 0x80021400` above and the tail of this conclusion are wrong. `0x80041A0C` does **not** hold a pointer to `0x80021400`. Those bytes `80 02 14 00` are little-endian data `0x00140280` = the u16 pair `(640, 20)` — the `+0x30` field of a 52-byte descriptor record, structurally identical to the same field in 23 sibling records. It only reads as a CAL pointer when misinterpreted big-endian. Nothing in PROG references `0x80021400`. The `mov.l @(0x34,r12),r0` instruction IS real (BE `0x50cd`), but R12 points to a runtime RAM struct, not this init table.
+
 #### CAL table inventory — 0x0001/0x8003 format (2026-05-03)
 
 Scanning CAL 0x80020400–0x80021000 for `[0x0001, 0x8003, count-1]` headers found 8 tables, all n=6:
@@ -727,6 +760,8 @@ DLCM Functional Requirements §10.7 names this function **State Dependent Torque
 **Revision history note (from spec changelog):** The spec we have is **DLCM Functional Requirements V4.2, Revision 4.2, dated 11 June 2012**. Revision 25 of its changelog deleted the Zero Crossing Filter and Zero Torque Rate Limiter sections and replaced them with the Torque Smoothing Filter (§10.6) and the State Dependent Torque Gradient Limiter (§10.7).
 
 **Firmware-to-spec correspondence is unconfirmed.** Scanner reports `1CI527_D003` (captured 2026-05-05), matching the binary part numbers `1CI527` / `1CI52710` (PROG), `1CI315270D003` (CAL header). None of these strings map directly to a spec revision. The empirical Phase 1 V-curve through zero is *consistent* with a single TrqLast-indexed LUT (post-Rev-25 / v4.2-style §10.7 behavior) rather than a separate ZCF + rate limiter, but does not prove the firmware was built against spec v4.2 specifically. **Working assumption:** §10.7 architecture applies; if the hunt cannot make sense against §10.7, fall back and re-attempt against the pre-Rev-25 spec (separate Zero Crossing Filter + Zero Torque Rate Limiter).
+
+> **RESOLVED (2026-07-08) — working assumption confirmed: the firmware implements the modern §10.7, not the old scheme.** Behavioral discrimination on three drive logs shows the torque rate limit is **vehicle-speed-dependent** with a clean `min(VehSpd-limb, TrqLast-limb)` structure: the accelerating per-update rate collapses from ~50 cts/update near standstill to ~1–3 cts/update at high speed, flat across all TrqLast bands at high speed, and survives a demand-controlled confound check. The old torque-only Zero Torque Rate Limiter structurally cannot produce a speed-dependent cap, so it is ruled out. The empirical near-zero V-curve documented above is the **TrqLast limb** of that `min()`; a co-equal **VehSpd limb** dominates at speed and was never isolated by the low-speed lash-zone characterization (hence the "single TrqLast-indexed LUT" read above is incomplete — it is at least two limbs). This resolution is **behavioral**; the instruction-level §10.7 topology claims in these notes (the "Firmware search targets" table's *Confirmed* rows for the D1CE Relational Operator and the positive/negative limbs) should be read as **structure-consistent but operand-unverified** — the region is literal-pool-contaminated and neither disassembly nor Ghidra decompile cleanly extracts the limb/`min` bindings. The CAL-table hunt's "strong shape evidence, zero discoverable code reference" wall reflects the §10.7 LUTs living in **runtime RAM** (per the 2026-07-02 off-by-8 / R13 up-trace), **not** the firmware being the old scheme. Full write-up, evidence tables, and confidence levels: **`dlcm-torque-limiter-code-trace.md`**. Repro: `artifacts/torque_limiter_scheme_test.py`.
 
 **Simulink flow chart:** see `dlcm-torque-flow.md`.
 
@@ -909,6 +944,92 @@ Static analysis of these two binaries alone cannot distinguish (1) from (2). To 
 **Best guess:** the V-curves at `0x80021528` and `0x80021b64` are the `gradientLimiterPositive_TrqLast` LUT data, and the descending sequence at `0x80021b88` is the `gradientLimiterNegative_TrqLast` LUT data, accessed by code via GBR-relative loads where GBR is configured outside this PROG binary.
 
 **Confidence: medium.** Strong shape evidence + strong elimination evidence + arithmetic/opcode concentration in the right call tree, but **zero direct code-side proof** that any code reads from these specific addresses.
+
+#### Off-by-8 resolved: the "0x80021400 pointer at 0x80041A0C" is a big-endian misread of a little-endian data field (2026-07-02)
+
+Scratchpad: `artifacts/descriptor_offby8_trace.py`.
+
+Re-examined the single most load-bearing claim of the code-side analysis — that DBC0's `mov.l @(0x34,r12),r0` leads to CAL `0x80021400` (the table row and conclusion in "CAL access method — no literal addresses in application code", 2026-05-03). **It does not.** Three findings, all from the raw binary:
+
+**1. The 0x80041800 region is a 24-record descriptor array — 0x34 (52) bytes per record, little-endian.** Records begin with a `<type> ff 01 01` marker (`type` in {0x04,0x05,0x06,0x07,0x08}) at a clean 0x34 stride from 0x80041808 to 0x80041d16. Every record has the same column layout (offsets relative to the marker):
+
+| off | field | example |
+|---|---|---|
+| +0x00 | type/flags `<t> ff 01 01` | 0x08 |
+| +0x04 | count/enable (0 or 1) | 1 |
+| +0x08 | **LE PROG pointer**, steps ~+0x2A/record | 0x800676ee |
+| +0x0C | **LE PROG pointer** into a 0x80041F00 table, +2/record | 0x80041f18 |
+| +0x10 | small int | 2 |
+| +0x18 | **LE PROG pointer** into a 0x80067AD8 table, +6/record | 0x80067afc |
+| +0x24 | u16 pair (symmetric limits?) | (200,200) |
+| +0x2C | u16 scalar | 1372 |
+| +0x30 | u16 pair | (640,20) |
+
+Endianness is decisive: read little-endian, **48 fields are valid PROG pointers and 0 are CAL pointers**; read big-endian, only 2 PROG and 1 CAL (the phantom). This confirms the 2026-05-05 endianness fact (BE instructions / LE data) and extends it to the PROG descriptor tables. The three pointer columns (+0x08, +0x0C, +0x18) each step by a fixed amount per record, i.e. they index parallel companion tables — the hallmark of a signal/task descriptor array, not a LUT-pointer table.
+
+**2. `0x80021400` is not a pointer — it is the +0x30 data field `(640, 20)`.** In the record at 0x800419dc, the +0x30 field holds LE `0x00140280` = u16 pair `(640, 20)`, bytes `80 02 14 00`. Read big-endian those bytes are `0x80021400`, which coincidentally lands on the V-curve region — the entire basis of the "pointer." But +0x30 is a **data column**: across all 24 records it holds `(608,20)`, `(704,20)`, `(672,200)`, `(768,4)`, `(832,4)`, `(1152,5)`, `(960,0)`, `(832,4)`… Our record's low half is `0x0280`, the single value whose raw bytes happen to form a plausible CAL address under BE. It is the only such coincidence in the table, and there are **zero** little-endian pointers into `0x80021xxx` anywhere in it.
+
+**3. The "off-by-8" dissolves.** The field is at record offset **+0x30**, not +0x3C. The "+0x3C" (which set up the code-reads-+0x34 vs pointer-at-+0x3C paradox) came from drawing the record boundary 8 bytes before the marker (base 0x800419d0 instead of 0x800419dc) — the framing ambiguity was itself the artifact of forcing a pointer to appear. Either way the offset is moot: the field is data, so there is nothing for the code's +0x34 to be "off from."
+
+**What IS confirmed on the code side:** DBC8 `mov.l @(0x34,r12),r0` is real — the bytes are `50 cd` = BE `0x50cd`, a genuine instruction (verified alongside the documented D1B8 sequence `62bd b4ff d90f 50ed 14ff`, all of which decode only as BE; the known anchor `0x1420` at E5CC is likewise BE). So R12 is a live struct pointer and `[R12+0x34]` genuinely is E5CC's input. It just isn't this init table: at a 0x34 stride, `[record_base+0x34]` lands on the next record's marker, and no field in the table is a CAL pointer. **R12 points at a runtime RAM structure** (native BE order, populated by init code) — tracing R12's provenance is the valid, still-untried next step, now free of the 0x80021400 red herring.
+
+**Net effect on prior conclusions:**
+- **Confirms** (2026-05-05): no PROG literal/pointer references the candidate LUTs; endianness is BE-code / LE-data.
+- **Corrects** (2026-05-03 "CAL access method"): `0x80041A0C` does not point to `0x80021400`; the DBC0/R12 path does not read this init table. The row should be struck from the "4 CAL literals" table (it leaves 3 genuine ones: 0x800452C8, 0x8005FFD4, 0x800932EC).
+- **Resolves** the second-pass "off-by-8 crux" and the H6 "Inconsistent Endianness Problem" loose end — both were symptoms of this one BE-misread data field.
+- **Leaves** the V-curve-LUT-by-elimination hypothesis (medium confidence) standing, but **removes the phantom code-side support** that specifically propped up 0x80021400. The unresolved access mechanism is now R12-struct-relative (DBC0 path) and/or GBR-relative (E606 path).
+
+#### R12 backtrace: gradient tables are reached via a RAM context pointer (R13), double-indirected (2026-07-02)
+
+Scratchpad: `artifacts/r12_backtrace.py`. Ground truth: Ghidra recursive-descent listing `dlcm_export/can212_analysis.txt` (linear-sweep disassembly is NOT reliable in this region — the dense literal pools alias to plausible opcodes; every claim below is from Ghidra's listing, which separates code from pool data).
+
+Backtraced R12, the pointer DBC8 dereferences (`mov.l @(0x34,r12),r0`). Findings:
+
+**R12 and R13 are both inherited base pointers — neither is written on the path into DBC0.** The DBC0 caller is `FUN_8006d192` (0x8006d192-0x8006d228). On its execution path `d192 -> d1be (bsr DBC0) -> d1ce (cmp/ge r0,r12) -> d224 (bra d40a)`, R12 is *read* (compared at D1CE, dereferenced inside DBC0) but never *written*. Same for R13. Both are callee-saved (SH-4 preserves R8-R14) and threaded in from an ancestor — Ghidra models R13 as `unaff_r13` and passes it as an implicit argument through the whole gradient/filter family (FUN_8006d0ce, d0e2, d076, d08a, ...).
+
+**The module-wide idiom identifies what these base pointers are.** `[R13+0x34]` is loaded into a scratch register right before each interpolation/filter stage, at 13 Ghidra-confirmed sites:
+
+| sites | instruction |
+|---|---|
+| 0x8006cda4 / cdc2 / cddc | `mov.l @(0x34,r13),r6` |
+| 0x8006ce40 / ce5e | `mov.l @(0x34,r13),r8` |
+| 0x8006ceb6 / ced0 | `mov.l @(0x34,r13),r10` |
+| 0x8006d2b2 / d2d0 / d2ea | `mov.l @(0x34,r13),r12` |
+| 0x8006d33a / d358 / d372 | `mov.l @(0x34,r13),r14` |
+
+So `[R13+0x34]` is the **module data-block pointer**, and R13 is the **module context**. R12 is set to `[R13+0x34]` by an ancestor before the gradient compare (the `mov.l @(0x34,r13),r12` idiom at d2b2/d2d0/d2ea is the same load on other paths). The E5CC input is therefore a **double RAM indirection**:
+
+```
+R13 (module context, inherited)  --[+0x34]-->  MDB (module data block)  --[+0x34]-->  E5CC X-input / table ptr
+```
+
+**Reached from the 0x212 CAN-TX handler.** FUN_8006d192 is called at 0x8006d9ae, inside the 0x212 periodic-TX dispatcher (0x8006d8fa+). R12/R13 are inherited into the dispatcher too (read via `cmp/hi r0,r12`, never written there), so they are established still higher, at the task entry.
+
+**Why this matters:**
+- It gives a **concrete mechanism** for the 2026-05-05 "no PROG literal references the LUTs" result: the table addresses are stored in **RAM struct fields** (`[[R13+0x34]+0x34]` and neighbors) populated at init, not as code literals — so a literal search could never have found them, regardless of endianness.
+- The gradient tables the code actually reads therefore live at **RAM addresses not present in our flash dump** (PROG+CAL only); their values are set at runtime.
+- It **redirects the hunt to a tractable static target**: trace R13 up to the task-init/scheduler that sets it, then find the init code that populates `[R13+0x34]` and `[[R13+0x34]+0x34]`. This is more concrete than the prior "GBR set in boot ROM, impasse" framing — R13 is set inside PROG's own task setup. (It remains possible R13 itself derives from GBR at the task entry; the up-trace will show which.)
+
+**Hypothesis (unconfirmed):** R13 points at a per-module RAM context (OSEK/AUTOSAR-style runnable context); `+0x34` is its parameter/data-block pointer; the gradient X/Y tables are either RAM copies of CAL data or base-relative views established at init. Confirming requires the R13 up-trace (next step) or a live-ECU RAM read.
+
+#### R13 up-trace (Ghidra): R13 is OS/context-managed; the tables are runtime RAM, not statically resolvable (2026-07-02)
+
+Ghidra script `DlcmR13Trace.java` -> `dlcm_export/r13_trace.txt`; scratchpad cross-check `artifacts/dispatch_table_search.py`. Ran a headless pass: a program-wide scan of Ghidra's *defined* instructions (code only) for real R13/R12 writes, a caller-chain walk up from the gradient code, and decompiles of every function that writes R13.
+
+1. **R13/R12 are never cleanly set in the gradient module.** Across 0x8006cd00-0x8006da40, R13 is touched only by pool-alias byte-loads (`mov.b @r0,r13`), never a pointer write. Both are inherited — confirms the backtrace above.
+
+2. **The call chain tops out at OS-dispatched functions.** `FUN_8006d192` (gradient) <- `FUN_8006d96e` (0x212 TX) <- `FUN_8006cf68`; and `FUN_8006d29c` <- `FUN_8006da00`. The top functions `FUN_8006cf68` / `FUN_8006da00` have **no analyzed callers and appear zero times as function pointers anywhere in PROG** (verified by raw pointer search). They are entered by the firmware's OS/dispatch layer, not by a static call or a flash pointer table.
+
+3. **The only clean R13 *pointer* writes in the entire binary are in VBR / interrupt-context handlers.** e.g. the VBR+0x400 handler `FUN_8005e2d8` does `mov.l @(0x20,r1),r13` — restoring R13 from a context frame at `[R1+0x20]`. (The other 730-odd "r13 writers" the scan reported are `mov.w @r0,r13` byte-loads in mis-disassembled data regions at 0x80054000-0x80056000 — noise.) A context-frame restore is the signature of R13 as an **OS-managed, per-task context base**, not a value produced by any code literal. (Note: this shows R13 is context-managed in general; it does not prove this specific handler dispatches the gradient task.)
+
+4. **The 0x80041800 descriptor table is a registration table for a 0x80067xxx handler band.** Its +0x08 and +0x18 pointer columns reference functions at 0x80067568.., 0x80067ad8.., and those addresses appear **only** inside the descriptor table. That handler band is saturated with the no-op'd Continental variant opcodes, so its dataflow can't be followed cleanly with the current SLEIGH.
+
+**Conclusion — the gradient tables are not statically resolvable from the flash images.** R13 is established by the OS/context-switch layer (VBR dispatch + task/context control blocks), so E5CC's input `[[R13+0x34]+0x34]` is a doubly-indirected RAM pointer whose value only exists at runtime. That RAM is not in our PROG+CAL dump, and the OS code that would populate it is obscured by unresolved variant opcodes. This upgrades the earlier "GBR set in boot ROM, impasse" to a precise diagnosis: **R13 = OS task-context base; the gradient tables live in per-task RAM.**
+
+**Realistic paths to the actual table address (in order):**
+1. **Live-ECU RAM walk** — read R13 (or GBR) at runtime and follow R13 -> +0x34 -> +0x34 to the table addresses. Definitive; needs ECU access.
+2. **Empirical patch-and-observe** on the by-elimination CAL V-curve candidate (0x80021500 / 0x80021b50): flash a widened lash-zone curve and observe behaviour. Needs a writable + recoverable ECU.
+3. **Deeper static OS trace** — low payoff until the Continental variant opcodes are modelled in SLEIGH (they currently no-op, hiding the dispatch/init dataflow).
 
 ##### Positive evidence (supporting)
 

@@ -83,6 +83,64 @@ class BusmasterParser(BaseParser):
                 return True
         return False
 
+    @staticmethod
+    def scan_ids(path: Path | str) -> tuple[dict[int, set], dict[int, int], float]:
+        """Fast scan path for the influx_upload.scan_log() dual-pass.
+
+        Returns ``(channel_ids, channel_counts, last_ts)`` -- the same shape
+        scan_log builds via the full parser, but skips work that scan_log
+        does not consume:
+          * `_parse_timestamp` per line (~36s tottime in the 535MB benchmark
+            across both passes) -- only the last line's timestamp is
+            converted, since scan_log only uses last_ts as the
+            derive_start_epoch mtime fallback.
+          * `bytes(int(b,16) for b in tokens)` data-byte decoding (~63s
+            tottime) -- not needed for ID-only counting.
+          * `CANFrame` dataclass allocation per line.
+          * Tx/Rx, frame_type, dlc, is_extended.
+
+        Hex/Dec mode and session-restart markers are honoured by virtue of
+        skipping every ``***`` line; mode flips don't matter because we
+        never decode data bytes here.
+
+        Other parsers (CandumpParser, PeakTrcParser, SavvyCANParser,
+        VectorAscParser) don't override this -- influx_upload.scan_log
+        falls back to the full ``parse_file`` for them. That fallback is
+        slower but those formats are rare in this project, so correctness
+        beats speed.
+        """
+        path = Path(path)
+        channel_ids: dict[int, set] = {}
+        channel_counts: dict[int, int] = {}
+        last_ts_str = ""
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for raw_line in fh:
+                if not raw_line or raw_line[0] == "*":
+                    continue
+                line = raw_line.strip()
+                if not line:
+                    continue
+                m = _DATA_RE.match(line)
+                if not m:
+                    continue
+                last_ts_str = m.group(1)
+                channel = int(m.group(3))
+                arb_id = int(m.group(4), 16)
+                ids = channel_ids.get(channel)
+                if ids is None:
+                    ids = set()
+                    channel_ids[channel] = ids
+                    channel_counts[channel] = 0
+                ids.add(arb_id)
+                channel_counts[channel] += 1
+
+        last_ts = 0.0
+        if last_ts_str:
+            parts = last_ts_str.split(":")
+            last_ts = (int(parts[0]) * 3600 + int(parts[1]) * 60
+                       + int(parts[2]) + int(parts[3]) * 0.0001)
+        return channel_ids, channel_counts, last_ts
+
     def parse_file(self, path: Path | str, *, absolute: bool = False) -> Iterator[CANFrame]:
         """Parse a BUSMASTER log file, yielding CANFrame objects.
 

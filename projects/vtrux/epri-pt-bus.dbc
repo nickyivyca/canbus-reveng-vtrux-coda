@@ -100,8 +100,6 @@ BO_ 1426 EPRI_HCU_Sensor_0592: 8 Vector__XXX
  SG_ Veh_BrakePdl_Pos : 32|16@1+ (0.01,0) [0|100] "%" Vector__XXX
 
 BO_ 1432 EPRI_HCU_VIRTSENS_7_PwrStatAvg_0598: 8 Vector__XXX
- SG_ DBL_ESSPwrAvg : 0|16@1- (0.01,0) [-327.68|327.67] "kW" Vector__XXX
- SG_ DBL_TracPwrAvg : 32|16@1- (0.01,0) [-327.68|327.67] "kW" Vector__XXX
 
 BO_ 1433 EPRI_HCU_VIRTSENS_5_Pressures_0599: 8 Vector__XXX
  SG_ GeneOilPress : 0|16@1+ (0.1,0) [0|6553.5] "kPa" Vector__XXX
@@ -209,7 +207,7 @@ CM_ BO_ 1154 "Via Motors GENE MCU HV bus current and voltage.";
 
 CM_ BO_ 1426 "HCU sensor inputs. EVSESwitchState (B0 bit1), ExportPowerState (B0 bit2), IgnitionKeyState (B0 bit4) not in plist sampling. B6-B7 uncharacterized.";
 
-CM_ BO_ 1432 "HCU average power statistics. B2-B3 and B6-B7 uncharacterized (see vtrux-powertrain-experimental.dbc for generator power at B2-B3).";
+CM_ BO_ 1432 "EPRI DECODE DEFECT: the app decodes B0-B1 and B4-B5 as plain signed int16 (zero at raw 0x0000), but the wire format is offset-binary excess-32768 (zero at raw 0x8000). SG_ entries removed per DBC signal policy. Corrected signals are in vtrux-powertrain-experimental.dbc, which also carries generator power at B2-B3. B6-B7 = static bias, not power data.";
 
 CM_ BO_ 1433 "HCU motor cooling oil pressures. Note: plist index .1=traction, .2=generator (reversed from format string order). B2-B3 and B6-B7 uncharacterized.";
 
@@ -250,8 +248,6 @@ CM_ BO_ 1154 "B5 uncharacterized.";
 CM_ SG_ 1154 GENE_HighPwr_Curr "Zero at raw=8192. Byte-swapped (BE) alternative gives absurd values -- use Intel LE.";
 
 
-CM_ SG_ 1432 DBL_ESSPwrAvg "Positive = battery discharging.";
-CM_ SG_ 1432 DBL_TracPwrAvg "Positive = traction motor producing power.";
 
 CM_ SG_ 1573 VehicleOdometer "Scale 1 km/count (integer km). See vtrux.md 'How to Tell the Two Trucks Apart'.";
 CM_ SG_ 1573 VehicleConfig "0=K2XX (Silverado/Tahoe-based Vtrux), 1=GMT-600 (Express van Vtrux).";

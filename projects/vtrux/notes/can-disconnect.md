@@ -11,7 +11,7 @@ disconnected while the dongle captures all three buses.
 **Attribution caveat:** The "Module / Attribution" labels in the ID presence matrix are working hypotheses. Do **not** use these labels as source attribution in other analyses. Only use module attributions that have been confirmed and promoted to `Vtrux.md`.
 
 **Known errors flagged 2026-06-06 (during trailer-brake Phase 5):**
-- The "ECM / EBCM -- native OBD" row for 0x189, 0x1A6, 0x1DF (and others) is a lumped-bucket label that conflates sources. Forum reverse-engineering identifies 0x189 as TCM-to-ECM torque request and 0x1A6 as a TCM TX ID. Other IDs in that row (e.g. 0x2F9, 0x1E9) are EBCM; 0x2C3 is ECM; 0x1E1 / 0x1F1 are gateway.
+- The "ECM / EBCM -- native OBD" row for 0x189, 0x1A6, 0x1DF (and others) is a lumped-bucket label that conflates spec sources. The GM spec does **not** contain 0x189, 0x1A6, or 0x1DF at all; forum reverse-engineering identifies 0x189 as TCM-to-ECM torque request and 0x1A6 as a TCM TX ID (see `notes/deprecated/gmlan-additional-investigation.md`). Other IDs in that row (e.g. 0x2F9, 0x1E9) are EBCM per spec; 0x2C3 is ECM; 0x1E1 / 0x1F1 are gateway.
 - The Vehicle bus row attribution "0x1A3, 0x1A6 -- VCM bridges to Vehicle bus" is wrong for 0x1A6. The reference log (`genlog-survey.json`) shows 0x1A6 has never been on the Vehicle bus, so VCM is **not** bridging it. 0x1A3 IS bridged correctly. 0x1A6 should be reclassified as OBD-only, not bridged.
 
 Cross-reference for these corrections: `projects/vtrux/notes/trailer-brake-investigation.md` Phase 5.
@@ -43,9 +43,32 @@ IDs from the reference log (`logs/generator on then off.log`, Bus 3, 93 IDs).
 | ID(s) | Module / Attribution | T1 Pump | T2 BMS LV | T3 B-conn | T4 Gene inv fuse |
 |-------|---------------------|---------|-----------|-----------|-----------------|
 | **0x18FF0320** | PE coolant pump (SA=0x20) | **A** | P | A | P |
-| 0x370, 0x371, 0x372, 0x373, 0x374, 0x375 | BMS -- function unknown | P | **A** | A | P |
+| 0x370, 0x371, 0x372, 0x373, 0x374, 0x375 | **Pack-side conditioning module** (see note below) | P | **A** | A | P |
 | 0x400, 0x410, 0x411, 0x412, 0x420, 0x430, 0x440, 0x460 | BMS status / SoC / cell voltages | P | **A** | A | P |
-| 0x506, 0x507 | BMS -- function unknown | P | **A** | A | P |
+| 0x506, 0x507 | **Pack-side conditioning module** (0x506) / **rebroadcast of 0x430** (0x507) — see note below | P | **A** | A | P |
+
+> **Attribution note (added 2026-08-09) — this refinement did NOT come from a disconnect test.**
+>
+> The T2 result above is unchanged and still stands: `0x370-0x375`, `0x506` and `0x507`
+> all drop when the HV battery LV connector is pulled, so they are **pack-side**. That is
+> a disconnect-test conclusion and remains the basis for their physical location.
+>
+> What is new is their *function*, and that was established by a different method —
+> signal-behaviour analysis across cooling-on vs cooling-off windows plus cross-pack
+> presence comparison, **not** by disconnecting anything:
+>
+> - `0x507` B0/B1 are verbatim floor-copies of `0x430` cell_tmax/tmin (100%, n=8149).
+> - `0x506` B2/B3 move in opposite directions at the cooling edge (cold/hot pair), and
+>   B0 bit5 is the cooling-active flag.
+> - `0x370-0x375` read above cell temperature and rise when cooling engages; their
+>   payload expands only while conditioning is active.
+> - The whole group is present-or-absent **as a unit**, and is absent from the main-orig
+>   pack across 35 logs.
+>
+> A disconnect test could still add value here — nothing in this file isolates the
+> conditioning module from the BMS board, since T2 removes power from both at once.
+> See `powertrain-messages.md` and `battery-thermals.md` for the evidence and the
+> unresolved scaling caveat.
 | 0x474 | Unknown -- source unresolved; drops ~32s after BMS pull. Present even with gene inv fuse removed (see T4 anomaly note). | P | **A** (~32s after BMS pull) | A | P |
 | 0x478 | Unknown -- source unresolved; drops ~32s after BMS pull | P | **A** (~32s after BMS pull) | A | **A** |
 | 0x480, 0x481 | Unknown -- source unresolved. Previously suspected traction inverter; attribution invalidated — traction inverter (TRAC MCU) is on OBD bus, not PT bus (EPRI 2026-03-28). Drops ~32s after BMS pull. | P | **A** (~32s after BMS pull) | A | **A** |
@@ -86,6 +109,7 @@ directly affected (marked `-`).
 | ID(s) | Attribution | T1 Pump | T2 BMS LV | T3 B-conn | T4 Gene inv fuse |
 |-------|-------------|---------|-----------|-----------|-----------------|
 | 0x0C9, 0x3D1, 0x3D3, 0x3E9 | ECM-native engine/speed signals | - | - | P | - |
+| 0x0C1, 0x0C5 | ECM-native wheel speed (masked to zero by VCM on OBD bus) | - | - | P | - |
 | 0x0AA, 0x0BE, 0x0D3 | ECM/EBCM-native on OBD bus (VCM bridges these to Vehicle bus) | - | - | P | - |
 | 0x1C3, 0x1C4, 0x1C5 | Real ECM torque/engine data on OBD bus (VCM replaces on Vehicle bus) | - | - | P | - |
 | 0x189, 0x18E, 0x1A1, 0x1A3, 0x1A6, 0x1AA, 0x1AF, 0x1BA, 0x1C6, 0x1CF, 0x1DF | ECM / EBCM -- native OBD | - | - | P | - |
@@ -120,6 +144,7 @@ affected (marked `-`).
 |-------|-------------|---------|-----------|-----------|-----------------|
 | 0x17D | EBCM-native (Vehicle bus anchor) | - | - | P | - |
 | 0x1E5, 0x500, 0x514, 0x52A, 0x52B, 0x530, 0x778, 0x780, 0x785, 0x788 | Vehicle native anchors | - | - | P | - |
+| 0x0C1, 0x0C5 | Real wheel speed -- EBCM-native on Vehicle bus | - | - | P | - |
 | 0x1C7 | Real EBCM data on Vehicle bus (VCM generates a separate substitute on OBD bus) | - | - | P | - |
 | 0x1E9 | Real EBCM chassis status (VCM substitutes frozen version on OBD) | - | - | P | - |
 | 0x4C9 | Source unknown — not VCM, not shift box (see OBD bus table and 0x4C9 attribution correction below) | - | - | P | - |
@@ -221,7 +246,7 @@ Supporting evidence:
 
 ### OBD Bus -- Notable Findings
 
-**0x4C9 attribution:** 0x4C9 (TCM health flags) is present on both GM buses without VCM active — ruling out VCM as source. The shift box was previously hypothesized as the source, but the shifter box disconnect test (see `shifting-transfer-case-investigation.md`) ruled that out too: 0x4C9 continued broadcasting at 2 Hz after the box was physically unplugged (frame-count confirmed — not stale data). Source is currently unknown. Hypothesis: Via-added electronics under the dashboard, possibly related to IPC driving, which would explain native presence on both GM buses.
+**0x4C9 attribution:** 0x4C9 (`Transmission_General_Status_3`, TCM health flags) is present on both GM buses without VCM active — ruling out VCM as source. The shift box was previously hypothesized as the source, but the shifter box disconnect test (see `shifting-transfer-case-investigation.md`) ruled that out too: 0x4C9 continued broadcasting at 2 Hz after the box was physically unplugged (frame-count confirmed — not stale data). Source is currently unknown. Hypothesis: Via-added electronics under the dashboard, possibly related to IPC driving, which would explain native presence on both GM buses.
 
 **Real ECM data confirmed on OBD bus:** 0x0C9 present at 80 Hz with engine speed = 0 RPM
 (no start -- expected). 0x3D1, 0x3E9, 0x1C3, 0x1C4, 0x1C5 all present as real ECM messages.
@@ -241,7 +266,7 @@ bus in T3 (VCM was generating a separate substitute on OBD bus). Confirms prior 
   pull; only drop at the 12V battery cycle. Source module unidentified — not VCM-sourced.
 - **B-connector wake signal:** Which specific pin carries the wake/enable? A test reconnecting
   only CAN pins (not the enable pin) could isolate CAN disconnection from module wake loss.
-- **0x19D:** VCM-generated on both GM buses at 50 Hz, DLC=8. Role unknown.
+- **0x19D:** VCM-generated on both GM buses at 50 Hz, DLC=8. Not in GMLAN DBC. Role unknown.
 - **0x040-0x044, 0x441-0x44A, 0x460-0x464:** Frequency/DLC match PT bus IDs suggests VCM
   bridging with ID remapping, but content comparison needed to confirm.
 

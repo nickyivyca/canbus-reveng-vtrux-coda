@@ -17,6 +17,10 @@ When writing scripts or scratchpads that touch `CANFrame` objects:
 
 **Cross-tool investigations and benchmarks** live in `tools/notes/` — see `tools/notes/README.md`.
 
+**Implementation plans** live in `tools/plans/`:
+- `influx-sync.md` — incremental DBC-aware InfluxDB uploader + diff engine (proposed)
+- `can-tools-migration.md`, `can_logger_vehicle_support.md`, `filter_log.md`, `uds-interrogator.md`
+
 ---
 
 ## dbc_parity_generate.py
@@ -151,18 +155,89 @@ sum/min/max/mean primitives against known sequences. Run with `py -3.12`.
 
 ---
 
+## influx_sync.py
+*Source last modified: 2026-08-10 11:00:24*
+*Plan: `tools/plans/influx-sync.md`*
+
+Keeps InfluxDB in agreement with the local logs and the local DBCs, and drives the backfill.
+Computes a work list, prints it for review, and executes it. No hand-driven folder uploads.
+
+**Discovery is NON-RECURSIVE.** Roots are scanned one level deep; a subfolder must be named in
+`OPT_IN_SUBFOLDERS` to come into scope. `projects/vtrux/logs` alone holds 5 subfolders of
+specialised captures (another owner's truck, a single 6.2 GB file, one-off experiment sets) —
+295 files / 16.0 GB that recursive discovery would sweep in unasked. `EXCLUDE_PATHS` is a hard
+deny-list applied even to explicitly named paths.
+
+**Two diff layers:**
+
+| Layer | Source | Catches | Cost |
+|---|---|---|---|
+| L0 | `upload_manifest` rows | scale/offset/bit-position changes where the signal name did not change — the **only** layer that can | ~1 s |
+| L1 | `SELECT COUNT(*) GROUP BY bus,can_id` | a lying or missing manifest, partial uploads, orphan series, legacy schema | one full-session scan each |
+
+L1 is **opt-in** (`--check-existing`): 212 full-session `COUNT(*)` queries take tens of minutes
+against the current database, and the answer is discarded by a wipe-and-rebuild anyway.
+
+L1 alone cannot drive per-file repair — a session's field set is the union across its chunks,
+so after repairing 1 of 4 chunks it reports the message as current while three are stale. That
+is what the manifest's per-file `msg_hashes` exist for.
+
+**Session tags** come from `detect_capture_sessions()`, which groups by each chunk's real start
+time rather than by filename, so `_M{n}` groups that are separate captures stay separate and
+one prefix spanning unrelated captures splits.
+
+**Usage:**
+```
+python3.13 tools/influx_sync.py --plan [--out work.ndjson] [--check-existing]
+python3.13 tools/influx_sync.py --apply [--from work.ndjson] [--limit N]
+```
+
+**Work-item actions:** `upload_new`, `reupload_file` (encoding/policy/size changed),
+`reupload_ids` (per-message repair via recorded window + `--only-id`), `drop_series`,
+`rebuild_session`.
+
+**Repair safety:** `reupload_ids` counts the points inside the recorded window *before*
+deleting and **aborts** if the count is zero, rather than proceeding. A zero-row delete would
+turn the repair into an append — the exact failure the Phase 1.2 slice test hit when a window
+was recomputed instead of recorded.
+
+---
+
 ## influx_upload.py
-*Source last modified: 2026-05-05 22:50:25*
+*Source last modified: 2026-08-10 01:31:18*
 
 Uploads CAN log data to InfluxDB 1.x for Grafana visualization. Decodes frames against
 per-vehicle DBC sets (cantools) and writes signal values to the `signals` measurement.
 Optionally writes raw byte values for undecodable frames to the `raw` measurement.
 
+**Changed 2026-08-09 (influx-sync Phase 1 — see `tools/plans/influx-sync.md`):**
+- **Default write policy is now `on-change`**, not every frame. A signal is written only
+  when its value changes, plus a heartbeat at most every `--heartbeat` seconds. Measured
+  3.5x less disk. Use `--write-policy all-frames` for the old behaviour.
+- Timestamps are computed in integer nanoseconds. The old
+  `int((start_epoch + t) * 1e9)` injected +/-128 ns of float64 noise into every point.
+  This is a **correctness** fix (exact `DELETE` time bounds), not a storage one —
+  the noise was measured to cost nothing on disk.
+- Tag values are now escaped. A `--session` containing spaces previously stored literal
+  backslashes in the tag (e.g. `generator\ on\ then\ off`).
+- The `influxdb` package is no longer a dependency — `DROP SERIES` goes over raw HTTP
+  POST. `--dry-run` no longer requires `requests` either, so it works offline.
+- `--only-id 0xNNN [...]` restricts an upload to specific CAN IDs, for targeted repair
+  after a DBC message definition changes.
+- **Anchoring is session-aware** via `canre/utils/timebase.py`. Laptop BUSMASTER captures
+  record wall-clock time of day and some chunk headers state the wrong time
+  (`debuglog_M1_T8` claims 12:07:43 for data starting 11:04:39); the anchor is now the
+  file's true first-frame instant. 324 of 3,156 files are affected, 294 of them by under
+  a second, two by more than 10 minutes. No file already in InfluxDB moves.
+- **Header regex relaxed.** BUSMASTER does not zero-pad (`12:2:2025`, `0:1:30`); the old
+  pattern rejected 356 of 3,135 headers and fell back to filename/mtime silently.
+
 Each point carries a `bus` tag (e.g. `powertrain`/`vehicle`/`obd` for Vtrux,
 `b_can`/`c_can`/`d_can` for Coda) identified from anchor IDs — never from the arbitrary
 channel number in the log file.
 
-**Requires:** `pip install influxdb cantools`
+**Requires:** `pip install cantools requests` (`requests` only for actual writes; `--dry-run`
+needs just `cantools`)
 
 **Default connection:** `localhost:8086`, database `canbus-data`, user `claude`.
 
@@ -185,6 +260,12 @@ py -3.11 tools/influx_upload.py <log|folder> [<log2|folder2> ...] --vehicle <nam
   --delete               DROP existing series for vehicle+session before uploading
   --dry-run              Parse and count points but do not write to InfluxDB
   --batch-size N         Points per write batch (default: 5000)
+  --write-policy P       on-change (default) | all-frames. on-change writes a signal only
+                         when its value changes, plus a heartbeat point. all-frames is the
+                         pre-2026-08-09 behaviour (one point per decoded frame).
+  --heartbeat SECONDS    Max gap between points for a signal under on-change (default: 1.0).
+                         A heartbeat cannot fire without a frame, so for messages slower
+                         than this the gap equals the message period.
   --success-log FILE     Append-only file recording successfully uploaded log paths.
                          On re-run, files already listed are skipped automatically.
                          Use with folder uploads so interrupted batches can be resumed.
@@ -195,15 +276,46 @@ py -3.11 tools/influx_upload.py <log|folder> [<log2|folder2> ...] --vehicle <nam
 
 | Vehicle | DBCs loaded by default |
 |---------|----------------------|
-| vtrux | `vtrux-powertrain.dbc`, `BelInverter.dbc` |
+| vtrux | `vtrux-powertrain.dbc`, `BelInverter.dbc`, `GMW8762_PPEI_GMLAN.dbc` |
 | coda | `CODA-B-CAN.dbc`, `CODA-D-CAN.dbc`, `CODA-C-CAN-cells.dbc` |
 
 **Data model:**
 
 | Measurement | Tags | Fields | When |
 |---|---|---|---|
-| `signals` | vehicle, bus, signal, can_id, session | value (float) | DBC-decoded frame |
+| `signals` | vehicle, bus, can_id, session | one field per signal name (float) | DBC-decoded frame |
 | `raw` | vehicle, bus, can_id, session | b0..b7 (int), dlc (int) | Frame not in any DBC, with --raw |
+| `upload_manifest` | vehicle, session, file | see below | one point per file, written after its data lands |
+
+**`upload_manifest`** records what an upload actually wrote, so a later sync run can tell a
+changed message (repair one `can_id`) from a changed policy (re-upload the file). Grafana
+never queries it.
+
+| Field | Purpose |
+|---|---|
+| `rel_path` | path relative to the project root, `..` allowed so `../../CANLogs/...` stays portable |
+| `log_sha1`, `log_bytes`, `mtime` | source-file identity; sha1 only computed when size/mtime disagree |
+| `encoding_ver` | bump invalidates every row and forces full re-upload |
+| `policy_hash` | exclusions + write policy + heartbeat + `--raw` + `--only-id` |
+| `msg_hashes` | JSON `{"bus\|can_id": hash}` from `canre.dbc.msghash`, only for messages this file wrote |
+| `bus_map` | JSON channel -> bus name, as identified for this file |
+| `points`, `values` | what was written |
+| `t_start_ns`, `t_end_ns` | **observed** bounds, never re-derived — the repair path deletes by these |
+| `uploaded_at` | also the point's timestamp; re-uploads append, newest wins via `LAST()` |
+
+The manifest point is written **after** the data, so an interrupted upload leaves no row
+claiming the file is done and a re-run replans it.
+
+> The table above previously showed a `signal` tag and a single `value` field. That is the
+> **legacy** schema, replaced by one-point-per-frame with signal names as fields (which is
+> what keeps series cardinality bounded). Six sessions uploaded under the old schema are
+> still live in `canbus-data` and are scheduled for rebuild — see `tools/plans/influx-sync.md`.
+
+**Known limitation — duplicate timestamps:** BUSMASTER logs timestamp at 0.1 ms resolution,
+and two frames of the same CAN ID occasionally land on the same tick (measured 2 in 21,669
+frames of Vtrux obd `0x044`). InfluxDB overwrites on identical
+(series, field, timestamp), so the earlier frame is silently lost. This is independent of
+`--write-policy` and predates the 2026-08-09 changes.
 
 **Bus tag values:**
 
@@ -368,7 +480,7 @@ py -3.12 tools/make_graph.py \
 
 # Step 2: append a signal from a second DBC
 py -3.12 tools/make_graph.py \
-    --dbc projects/vtrux/epri-obd-bus.dbc \
+    --dbc projects/vtrux/GMW8762_PPEI_GMLAN.dbc \
     --signal SomeMsg.SomeSignal \
     --output projects/vtrux/notes/artifacts/my_graph.gdf --append
 ```
@@ -385,25 +497,144 @@ py -3.12 tools/make_graph.py \
 SavvyCAN may use a different bit-addressing convention — hand-edit the `.gdf` if needed.
 
 **Notes:**
-- DBC files with overlapping signals (e.g. large GMLAN DBCs) load with `strict=False` — noisy
+- DBC files with overlapping signals (e.g. GMW8762 GMLAN) load with `strict=False` — noisy
   "Overwriting message" warnings are suppressed automatically.
 - Extended CAN IDs stored without the 0x80000000 marker are fixed automatically on load.
 - Save `.gdf` files to `projects/<vehicle>/notes/artifacts/` for reuse across sessions.
 
 ---
 
-## CAN runtime tools -- moved to the `can-tools` submodule
+## can_monitor.py
+*Source last modified: 2026-03-09*
 
-`can_logger.py`, `can_replayer.py`, and the live `can_monitor.py` GUI, together
-with the hardware layer (`canbench/live/`, formerly `canre/live/`) and the GUI
-framework (`canbench/gui/`, formerly `canre/gui/`), now live in the standalone
-**can-tools** repository, included here as a git submodule at `can-tools/`. See
-`can-tools/README.md` and `can-tools/tools/README-can_logger.md`.
+Live CAN monitor with vehicle-aware GUI. Auto-detects dongles, sniffs for 5 s to identify which
+physical channel is which logical bus (anchor detection), then opens a PyQt5 window showing decoded
+signals for the active vehicle mode. Simultaneously writes a BUSMASTER log if `--output` is given.
 
-The default capture format is candump / SocketCAN `.log` (python-can native;
-absolute epoch timestamps; bus id in the `canN` interface field). Analysis tools
-in this repo that need live hardware (e.g. `uds_interrogator.py`) import
-`canbench.live` from the submodule.
+**Usage:**
+```
+py -3.12 tools/can_monitor.py --vehicle coda [options]
+
+  --vehicle, -v   Vehicle name: coda | vtrux  [required]
+  --bitrate, -b   CAN bitrate in bps (default: 500000)
+  --brands        Comma-separated brands to capture from (e.g. ixxat,kvaser)
+  --output, -o    Optional BUSMASTER log file for simultaneous capture
+  --output-dir,-d Directory for auto-named log file
+  --debug         Verbose logging
+```
+
+**Vehicle profiles:** `projects/<vehicle>/gui_profile.py` — each exports a `PROFILE` instance
+(subclass of `canre.gui.base_profile.VehicleProfile`).
+
+**Mode detection:** `ModeRule` objects declare conditions (ID presence or signal value predicate).
+A mode is active if ANY of its rules evaluates True. Modes are evaluated in priority order; the
+last mode is the fallback default. Mode switches automatically on every 50 ms tick.
+
+**Coda modes (charging GUI implemented 2026-03-09):**
+
+| Mode | Trigger signals |
+|------|----------------|
+| charging | HVPowermode=5 OR Chargemode=3 OR HVBattCharging=1 OR CMS messages present (0x27B) |
+| idle | B CAN alive (0x383 present) |
+
+**Charging layout signals (all B CAN):**
+- Battery Pack: SoC (0x383), PackVoltage/PackCurrent/BattSentChargeLimit (0x275)
+- Cell Voltages: min/avg/max mV, spread, cell IDs (0x381 BMSVminVmax) — spread alert > 50 mV
+- Pack Temperature: avg/max/min degC (0x382 BMSThermal)
+- Charger Input CMS: AC voltage/current/power (0x27B CMSInputValues)
+- Charger Output CMS: HV out V/I/P (calc), LV out V/I (0x27C CMSOutputValues)
+- Charger Temps CMS: case/PFC/HV1/HV2 degC (0x27A CMSTempStatus)
+- BMS Charger Command: current cmd, max voltage (0x050 BMSChargerCmd)
+- System Status: HVPowermode, Chargemode, BMSmode, fault severity/code, fault lamp, cable/full flags
+- HVAC/Thermal: PTC power, battery fan PWM, radiator fan PWM (0x276), DCDC 14V (0x1D5)
+
+**Dependencies:** `PyQt5`, `cantools`, `python-can` (all already project deps)
+
+**Architecture:** `canbench/live/receiver.py` (hardware), `canbench/live/vehicle_configs.py` (anchor data),
+`canre/gui/` (framework: `base_profile`, `bus_decoder`, `widgets`, `main_window`).
+
+---
+
+## can_logger.py
+*Source last modified: 2026-07-02 (migrated to can-tools repo)*
+
+> **Migrated 2026-07-02:** now sourced from the standalone **can-tools** repo (`canbench` package) and mirrored here at the reverse-it root via `sync_from_can_tools.py`. Default output changed from BUSMASTER to **candump / SocketCAN `.log`** (python-can native; absolute epoch timestamps; bus id carried in the `canN` interface field). Vehicle-folder auto-routing was dropped — pass `--output-dir` (GUI vehicle profiles arrive in Phase 2). `canre` parsers still read the historical BUSMASTER corpus for analysis.
+
+Multi-device CAN logger. Auto-detects all connected dongles and logs traffic from all of them simultaneously to a single candump / SocketCAN `.log` file.
+
+**Refactored 2026-03-09:** CAN hardware plumbing (`CANBusLogger`, `detect_all_can_interfaces`, USB reset) moved to `canre/live/receiver.py`. Queue 4-tuple format changed from 3-tuple to `(timestamp, bus_id, msg, direction)` where direction is `"Rx"`. Behavior and CLI interface unchanged.
+
+**2026-06-27:** Added gs_usb (Innomaker USB2CAN / candleLight) auto-detection in `canre/live/receiver.py`. No vendor driver/Zadig needed (WinUSB auto-binds via WCID); requires `python-can[gs_usb]` + `libusb-package` (now in `requirements.txt`), which `receiver._ensure_gs_usb_libusb()` bootstraps onto the DLL search path. Bench results: `tools/notes/innomaker_gs_usb_bench.md`; setup: `tools-reference.md`.
+
+**Usage:**
+```
+tools\can_logger_admin.bat [options]        <- preferred (auto-elevates for ixxat recovery)
+py -3.11 tools/can_logger.py [options]     <- direct (must be in admin prompt for ixxat recovery)
+
+  --output, -o    Output log file. Bare filename (no directory) is placed in --output-dir.
+                  Default: auto-generated canlog_YYYYMMDD_HHMMSS.log in --output-dir.
+  --output-dir,-d Directory for output log files. Default: project root (parent of tools/).
+  --bitrate, -b   CAN bitrate in bps (default: 500000)
+  --brands        Comma-separated brands to capture from, e.g. kvaser or ixxat,kvaser
+                  Default: auto-detect all brands
+  --debug         Verbose logging
+```
+
+**Supported hardware:** ixxat, kvaser, pcan, socketcan
+
+**Output format:** candump / SocketCAN (`.log`), read by python-can and by all `canre` parsers.
+
+**Notes:**
+- Use `--brands` to restrict capture to specific dongles. Required for loopback testing so the logger doesn't also capture from the dongle that's transmitting.
+- Each detected dongle becomes a separate channel (1-indexed) in the log file.
+- **Administrator privileges required** when ixxat dongles are connected. Use `can_logger_admin.bat` (self-elevating via UAC) rather than opening an admin cmd manually. Without admin, ixxat overflow recovery silently fails.
+- **ixxat overflow recovery:** if a dongle latches in hardware overflow, the logger auto-resets it via PowerShell `Disable-PnpDevice` / `Enable-PnpDevice` targeting the specific dongle by `unique_hardware_id` (`USB\VID_08D8&PID_0008\HWxxxxxx`). Other connected ixxat dongles are unaffected. Full details in `tools/README-can_logger.md`.
+
+---
+
+## can_replayer.py
+*Source last modified: 2026-07-02 (migrated to can-tools repo)*
+
+> **Migrated 2026-07-02:** now sourced from the standalone **can-tools** repo (`canbench` package), mirrored here via `sync_from_can_tools.py`. Reads logs through python-can's native `LogReader` (candump/SocketCAN `.log`, Vector `.asc`/`.blf`, CSV — by extension) instead of `canre.parsers`. BUSMASTER replay is not yet supported by the migrated tool (the old corpus can still be replayed from an earlier build); a read-only shim may be added later.
+
+Plays back a captured log file through connected CAN hardware at the original timing. Complementary to `can_logger.py`.
+
+**Usage:**
+```
+py -3.11 tools/can_replayer.py <logfile> [options]
+
+  logfile        Path to log file (auto-detects format)
+  --bitrate, -b  CAN bitrate in bps (default: 500000)
+  --brands       Comma-separated brands to transmit on, e.g. ixxat
+                 Default: auto-detect all brands
+  --bus BUS_ID   Only replay frames from this log bus/channel ID.
+                 Default: replay all buses.
+  --speed, -s    Replay speed multiplier (default: 1.0). Use 0 for no delay.
+  --loop, -l           Loop replay indefinitely (Ctrl+C to stop)
+  --skip-confirmation  Skip the "Press Enter to start" prompt (use for non-interactive/scripted runs)
+  --debug              Verbose logging
+```
+
+**Supported input formats:** candump / SocketCAN `.log`, Vector `.asc`/`.blf`, CSV (dispatched by file extension via python-can)
+
+**Channel mapping:**
+- If the log has the same number of channels as connected dongles, log channel N is sent through dongle N (1:1).
+- Otherwise all frames go through the first dongle.
+
+**Notes:**
+- Prints a startup summary with the channel mapping and waits for Enter before transmitting (skip with `--skip-confirmation`).
+- Timing uses `time.perf_counter()` for sub-millisecond accuracy.
+- On Ctrl+C, finishes the current frame then shuts down cleanly.
+
+**Loopback test (Ixxat TX → Kvaser RX):**
+```
+# Terminal A — capture on Kvaser only
+py -3.11 tools/can_logger.py --brands kvaser --output verify.log
+
+# Terminal B — replay through Ixxat only
+py -3.11 tools/can_replayer.py <capture.log> --brands ixxat
+```
+Start the logger first, then the replayer. Frame counts should match to within a handful of frames.
 
 ---
 

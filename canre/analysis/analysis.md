@@ -1,11 +1,13 @@
-﻿# canre.analysis Reference
+# canre.analysis Reference
 
+> **Staleness check:** Each section shows a `Source last modified` timestamp. If the `.py` file's mtime is newer than the timestamp shown here, re-read the source before relying on this documentation.
 
 All analysis functions take `Iterator[CANFrame]` (or `list[CANFrame]` where noted) and return dicts. Use `iter(frame_list)` when calling with a stored list to allow re-iteration across multiple analysis passes.
 
 ---
 
 ## survey.py — Bus Survey
+*Source last modified: 2026-02-15 12:39:26*
 
 Streaming single-pass survey. Suitable for multi-GB captures — does not store raw frames.
 
@@ -50,6 +52,7 @@ Writes results dict to JSON file.
 ---
 
 ## bitstats.py — Deep Per-ID Analysis
+*Source last modified: 2026-02-15 12:40:03*
 
 Single-pass analysis of one CAN ID. Computes byte histograms, bit toggle rates, entropy, and byte-pair stats.
 
@@ -95,6 +98,7 @@ Pretty-prints byte stats table, byte-pair table, active bits (only bits where bo
 ---
 
 ## counters.py — Counter & Checksum Detection
+*Source last modified: 2026-02-15 12:40:37*
 
 ### `detect_counters(frames, target_id, bus_filter=None) -> dict`
 
@@ -142,6 +146,7 @@ Tests each byte position as a potential checksum over the remaining bytes. Algor
 ---
 
 ## transitions.py — State/Event Detection
+*Source last modified: 2026-02-15 12:42:10*
 
 Detects three behaviors per byte position of a single CAN ID.
 
@@ -183,6 +188,7 @@ Pretty-prints state machine states (hex), first 10 abrupt changes, first 10 puls
 ---
 
 ## correlation.py — Cross-ID Correlation
+*Source last modified: 2026-02-15 12:40:59*
 
 Finds byte positions in different CAN IDs that change in sync using Pearson correlation. Pure stdlib (no numpy).
 
@@ -214,6 +220,7 @@ Results sorted by descending `|correlation|`.
 ---
 
 ## diff.py — Capture Comparison
+*Source last modified: 2026-02-15 12:41:26*
 
 Compares two captures by running `run_survey()` on each and diffing the results.
 
@@ -259,6 +266,7 @@ If `ids_only=True`, only the ID presence summary is printed (byte-range section 
 ---
 
 ## timeseries.py — Signal Extraction
+*Source last modified: 2026-02-15 12:41:38*
 
 Extracts a multi-byte signal from one CAN ID as a time series.
 

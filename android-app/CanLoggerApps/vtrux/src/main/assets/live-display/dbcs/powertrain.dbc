@@ -95,13 +95,30 @@ BO_ 2566903475 EPRI_DCDC_18FFD6B3: 8 Vector__XXX
  SG_ DCDC_Temperature : 48|16@1- (0.1,0) [-3276.8|3276.7] "degC" Vector__XXX
 
 BO_ 1609 VCM_EvapControl_0649: 8 VCM
- SG_ vcm_evap_active : 7|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ vcm_evap_active : 39|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ vcm_evap_counter : 19|12@0+ (1,0) [0|4095] "" Vector__XXX
 
 BO_ 2566903232 BELINV_overallTemperature: 8 BELINV
  SG_ BELINV_overAllInverterTemperature : 0|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
  SG_ BELINV_buckBoostTemperature : 16|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
  SG_ BELINV_ambientTemperature : 32|16@1- (0.1,0) [-32768|32767] "" Vector__XXX
  SG_ BELINV_overallTemperaturePercent : 48|8@1+ (1,0) [0|100] "%" Vector__XXX
+
+BO_ 2566903744 BELINV_hvBatteryAndCharger: 8 BELINV
+ SG_ BELINV_hvBatteryVoltage : 0|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_hvBatteryCurrent : 16|16@1- (0.05,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_chargerInputVoltage : 32|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_chargerInputCurrent : 48|16@1+ (0.05,0) [0|65535] "" Vector__XXX
+
+BO_ 2566904000 BELINV_j1772Info: 8 BELINV
+ SG_ BELINV_system12vBatteryVoltage : 0|16@1+ (0.02,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_pilotDuty : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ BELINV_pilotFrequency : 24|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ BELINV_chargePilotOnlineTime : 40|24@1+ (1,0) [0|16777216] "" Vector__XXX
+
+BO_ 2566904256 BELINV_chargeInfo: 8 BELINV
+ SG_ BELINV_maxAvailableChargingCurrent : 0|16@1- (0.05,0) [-32768|32767] "" Vector__XXX
+ SG_ BELINV_vehicleState : 16|8@1+ (1,0) [0|255] "" Vector__XXX
 
 
 CM_ BO_ 84 "Via Motors GENE (generator) MCU.";
@@ -129,6 +146,11 @@ CM_ SG_ 1137 GENE_Mot_Trq "Zero at raw=32768. Offset -4096 Nm.";
 CM_ BO_ 1145 "Via Motors GENE MCU thermal status.";
 CM_ BO_ 1145 "B3 uncharacterized.";
 CM_ BO_ 2566903475 "Separate DC-DC step-down converter (NOT the Bel INVCH unit). Not in BelInverter.dbc.";
-CM_ BO_ 1609 "VCU/VCM evap canister purge control. 0x649 on PT bus, ~20 Hz, VCU-sourced. Full message encoding differs between drive and charge modes -- byte fields repurpose themselves; B0 values cannot be compared across modes. See notes/evap-cycle-analysis.md Phase 2D for full investigation.";
-CM_ SG_ 1609 vcm_evap_active "1 = evap purge in progress; clears ~6.1s before VCM commands generator stop. Holds through involuntary stalls; only clears on VCM-declared completion. Lower 7 bits unresolved -- may encode canister load or session context.";
+CM_ BO_ 1609 "VCU/VCM evap canister purge control. 0x649 on PT bus, ~20 Hz, VCU-sourced. Full message encoding differs between drive and charge modes -- byte fields repurpose themselves; values cannot be compared across modes. B0 role UNRESOLVED: it was previously mapped as the evap-active flag (bit 7) and that mapping is now invalidated -- see notes/evap-cycle-analysis.md Phase 5. B1 role unresolved. B2 upper nibble is a free-running clock independent of evap state.";
+CM_ SG_ 1609 vcm_evap_active "B4 bit 7. 1 = evap cycle pending or purging; 0 = not pending. Set at key-on when a cycle is due, before the engine ever runs, and clears at VCM-declared completion (~6.1s before the generator is commanded to stop). Holds through involuntary stalls -- tracks VCM intent, not engine state. Verified across all 104 logged sessions containing 0x649: set in 17/17 sessions where a purge actually ran, never set spuriously. NOTE: this flag alone does not distinguish PENDING from PURGING -- pair it with vcm_evap_counter (0 = pending, >0 = purging).";
+CM_ SG_ 1609 vcm_evap_counter "12-bit purge progress counter: B2 lower nibble = MSB, B3 = LSB. 0 whenever no cycle is active. Counts up only while the engine is running during an active evap cycle; frozen when the engine stops (stall or controlled off) and resumes on restart; survives log gaps and key cycles within a cycle. Returns to 0 at completion. Rate is variable (~0.1-1.0 counts/s, ramps up then down) and the terminal value differs per cycle (observed 901, 901, 856), so this is NOT a percentage and cannot drive a progress bar. Use only as a zero/non-zero purging discriminator.";
 CM_ BO_ 2566903232 "(SA=0xC0). Bel inverter/charger temperatures. EPRI app: INVCH_Bdc_Temp. B0:B3 from previous DBC only. Note: EPRI identifies B4:B5 as BDC internal temperature, not ambient. overallTemperaturePercent corrected to 8-bit (B6 only); previous DBC had 16-bit.";
+CM_ BO_ 2566903744 "(SA=0xC0). Bel charger HV battery and AC input. EPRI app: INVCH_Bdc_Ibat. hvBatteryCurrent is signed (bidirectional); other signals unsigned (corrected from previous DBC). SIGN CORRECTION 2026-08-03: the value is NEGATIVE while the pack is charging -- the previously documented positive=charging convention is WRONG. Verified across 16 charge sessions: negating gives |E_dc|/E_ac = 90-93% (a sane charger efficiency) and agrees with BMS pack energy from 0x410. chargerInputVoltage/Current are RMS, so V*I is APPARENT power (VA) not real power; at light load PF degrades and efficiency computed from them is a lower bound. See notes/charger-efficiency-and-grid-consumption.md.";
+CM_ BO_ 2566904000 "(SA=0xC0). Bel J1772 pilot and 12V monitoring. EPRI app: INVCH_Bdc_12Vbat. B2-B7 from previous DBC only.";
+CM_ BO_ 2566904256 "(SA=0xC0). Bel available charge current and vehicle state. Source: previous DBC. Not in EPRI plist.";
+CM_ SG_ 2566904256 BELINV_maxAvailableChargingCurrent "DC/pack-side charge current limit, NOT the J1772 AC advertised current. Tracks HV battery current (~13 A limit vs -12.4 A actual during a 5 kW charge). The J1772 advertised current is not on CAN -- derive it from BELINV_pilotDuty per SAE J1772. Confirmed 2026-07-14, live charge log. See android-app/notes/plans/vtrux-live-display.md.";

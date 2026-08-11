@@ -19,8 +19,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.reverseit.cancore.CanLoggingService
 
@@ -77,6 +82,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // HorizontalPager is still experimental in the foundation version pinned by
+    // Compose BOM 2024.04.01; it stabilises in foundation 1.7.
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugLog.log(TAG, "onCreate start")
@@ -134,10 +142,23 @@ class MainActivity : ComponentActivity() {
             DebugLog.log(TAG, "storage manager not needed")
         }
 
-        // Attach pipeline to ViewModel
-        DebugLog.log(TAG, "attaching pipeline")
-        viewModel.attach(pipeline)
-        DebugLog.log(TAG, "pipeline attached")
+        // Attach a frame source to the ViewModel. Live USB frames normally, or a
+        // replayed log when no dongle is present -- the emulator has no USB host
+        // passthrough, so replay is the only way to exercise the display there.
+        val replay = findReplayLog()
+        if (replay != null && usbManager.deviceList.values.none { isInnomaker(it) }) {
+            DebugLog.log(TAG, "no dongle present; replaying ${replay.name}")
+            val source = com.reverseit.cancore.ReplayCanSource(
+                file = replay,
+                loop = true,
+                anchorIds = CodaConstants.B_CAN_ANCHOR_IDS,
+            )
+            viewModel.attach(source.frames())
+        } else {
+            DebugLog.log(TAG, "attaching live pipeline")
+            viewModel.attach(pipeline.frames)
+        }
+        DebugLog.log(TAG, "frame source attached")
 
         // Register USB receiver
         val filter = IntentFilter().apply {
@@ -158,7 +179,21 @@ class MainActivity : ComponentActivity() {
         DebugLog.log(TAG, "setContent start")
         setContent {
             val state by viewModel.displayState.collectAsState()
-            GreenScreenView(state = state)
+            val specs by viewModel.specsState.collectAsState()
+            // Two discrete pages. HorizontalPager snaps to a whole page by
+            // default, so there is no partial-scroll resting position.
+            // GreenScreenView is a bare Canvas with no gesture handling, so it
+            // does not compete with the pager for the swipe.
+            val pagerState = rememberPagerState(pageCount = { 2 })
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                when (page) {
+                    0 -> GreenScreenView(state = state)
+                    else -> SpecsScreen(state = specs)
+                }
+            }
         }
         DebugLog.log(TAG, "onCreate complete")
     }
@@ -176,6 +211,20 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(usbReceiver)
+    }
+
+    /**
+     * First `.log` in `<externalFilesDir>/replay/`, or null.
+     *
+     * Push one with:
+     *   adb push <log> /sdcard/Android/data/com.reverseit.coda/files/replay/
+     */
+    private fun findReplayLog(): java.io.File? {
+        val dir = java.io.File(getExternalFilesDir(null), CodaConstants.REPLAY_DIR)
+        if (!dir.isDirectory) return null
+        return dir.listFiles { f -> f.isFile && f.name.endsWith(".log", ignoreCase = true) }
+            ?.sortedBy { it.name }
+            ?.firstOrNull()
     }
 
     private fun isInnomaker(device: UsbDevice) =

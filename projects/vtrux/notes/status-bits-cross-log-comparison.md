@@ -68,6 +68,45 @@ All three signals analyzed here (0x644, 0x63A, 0x649) are in the **VCM BMS relay
 
 ### 0x63A Bytes 6-7 - Generator Initialization State ✅ MAJOR DISCOVERY
 
+> **CORRECTION 2026-07-26 — read this before using the section below.**
+> Two claims here were invalidated by the 2026-07-24 trip logs (8 h, main truck):
+>
+> 1. **The field is not purely persistent.** B7 bit5 (the `0xC4`↔`0xE4` difference,
+>    described below as the "operational/ready flag" that persists once set) toggles
+>    **at least a dozen times across a single day**, tracking generator activity rather
+>    than latching. The "advances through levels and stays" model holds for the
+>    `0x1804`→`0x1AC4` step but not for bit5.
+> 2. **B7 bit4 was never observed** in the six logs this section was built from, so the
+>    values `0xD4` and `0xF4` are absent from the tables and the bit gloss below. Both
+>    values do occur in later logs.
+>
+> **RE-CORRECTED 2026-08-09 — point 2 above went too far.** It claimed B7 bit4 was "evap
+> purge in progress." **That is withdrawn.** A full evap purge completes with bit4 clear
+> across all 640,380 `0x63A` frames of `vtrux_20260719_190019`. The correct reading is
+> that **B7 bits[5:4] are a single 2-bit field** taking all four values — bit5 and bit4 are
+> not independent flags, and neither should be read in isolation. The field is
+> **generator related, not further characterized**, consistent with this section's overall
+> subject. See `evap-cycle-analysis.md` Phase 6 for the retraction. Use `0x649` for evap.
+>
+> **FALSIFIED 2026-08-09 (Phase 7).** The evap reading is now excluded by counterexample, not
+> just unsupported: on Sunday 2026-07-26 `vcm_evap_counter` held 0 all day and
+> `vcm_evap_active` was never set, yet bits[5:4] reached state 1 for a continuous 329 s.
+> The same state ran 100% evap-active on Friday and 100% evap-inactive on Sunday. Note also
+> that "bit4 tracks generator power, median 40 kW" — asserted in the first version of this
+> box — is too strong: bit4 set means a *bounded* ~16-57 kW band (zero samples above 60 kW
+> in 2,075 s), while the highest generator output occurs with bit4 **clear**.
+>
+> **ALSO FALSIFIED 2026-08-09: bits[7:6] is not an HV-up flag.** The tables below and the
+> `0x1804`/`0x1AC4` gloss treat bits[7:6] clear as "HV / VCM not up". On Saturday 2026-07-25
+> B7 was `0x04` for 100.0% of 27,926 sampled frames while `ess_power` reached 22.4 kW and
+> `trac_power` 20.1 kW on `0x598` — power export plus light driving, so the HV bus was live
+> the whole time. Both reference signals are read straight from the DBC on a different
+> message, so this does not depend on any `0x63A` interpretation. What bits[7:6] encodes is
+> unresolved.
+>
+> The `0x1804`/`0x1AC4`/`0x1AE4` observations below remain valid as far as they go; treat
+> them as a partial view of B6-B7 rather than a complete decode.
+
 **Distribution across logs:**
 - `0x1804`: Never started (100% in movingaround)
 - `0x1AC4`: Generator initialized (27% in generator on/off after startup)
@@ -154,7 +193,7 @@ t=54.405s: 0x40 (returned to idle)
 | Status Field | Purpose | Validation Status |
 |--------------|---------|-------------------|
 | **0x644 byte 6** | Current operating mode (init/normal/backdriving) | ✅ **VALIDATED** - Consistent across all 6 driving logs |
-| **0x63A bytes 6-7** | Generator initialization state (persistent) | ✅ **VALIDATED** - Clear progression 0x1804→0x1AC4→0x1AE4 observed in multiple logs |
+| **0x63A bytes 6-7** | Generator initialization state (partly persistent) | ⚠️ **PARTIALLY SUPERSEDED 2026-07-26, re-corrected and falsified 2026-08-09** - progression 0x1804→0x1AC4 holds, but B7 bits[5:4] are a 2-bit field that toggles repeatedly within a session (not persistent); generator related, not further characterized. The interim "bit4 = evap purge" reading was retracted, then **falsified by counterexample** (2026-07-26: bit4 set 329 s with evap idle all day). Separately, **bits[7:6] is not an HV-up flag** - clear for 100% of 2026-07-25 while ess_power hit 22.4 kW. See correction box above. |
 | **0x649 byte 7** | Generator load indicator (idle vs active) | ✅ **VALIDATED** - 0x40=idle, 0x00=producing power (confirmed in T2, T4, T0_half) |
 
 ---
@@ -162,9 +201,14 @@ t=54.405s: 0x40 (returned to idle)
 ## Key Insights
 
 ### 1. 0x63A is NOT "generator currently running"
-- It's a **persistent initialization state** that advances through levels
+- It's a **partly persistent initialization state** that advances through levels
 - Stays at 0x1AE4 even when generator is off (EV mode)
 - Indicates "generator subsystem initialization level" not "current activity"
+- **Corrected 2026-07-26, re-corrected 2026-08-09:** the persistence claim is true of the
+  0x1804→0x1AC4 step, but B7 bits[5:4] do *not* persist — that field toggles repeatedly
+  within a session. Read bits[5:4] as one 2-bit field (B7 = 0xC4/0xD4/0xE4/0xF4), not as two
+  independent flags. It is unassigned; an interim "bit4 = evap purge" reading was retracted
+  2026-08-09. See correction box above.
 
 ### 2. 0x649 byte 7 IS "generator currently producing power"
 - 0x40 = Idle/off

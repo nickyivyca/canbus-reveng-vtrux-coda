@@ -76,6 +76,8 @@ Motor torque, climate power, and aux power are filtered before display to suppre
 Battery temperature is not filtered — it changes slowly by nature.
 SoC, range are not filtered — they update infrequently and don't jitter.
 
+**Page 2 (Phase 4):** the DC-DC gauge shows the same aux-power quantity (0x1D5 V×I) as the green screen, so `CodaViewModel` reuses the already-computed `filteredAuxPowerW` for it rather than running a second filter — 0x1D5 current is 2 A/count (~28 W/step at 14 V), so unfiltered it visibly stepped. The other page-2 sliders are unfiltered: they either update slowly (temps, limits) or the raw jitter is informative (pack current, torque).
+
 ---
 
 ### Bus Identification — slowturnonwithdefroster2 Log
@@ -111,7 +113,7 @@ Extracted the ring/circle graphic from `android-app/Coda_Logo.svg.png` (top ~65%
 
 ### Build Environment (Desktop)
 
-- `local.properties` must exist at `android-app/CanLoggerApps/local.properties` with `sdk.dir=<ANDROID_SDK_DIR>`
+- `local.properties` must exist at `android-app/CanLoggerApps/local.properties` with `sdk.dir=<ANDROID_SDK_DIR>
 - JAVA_HOME must be set to `<ANDROID_STUDIO_JBR>` (JDK 17) — the system default java is 1.8 and will fail
 - Gradlew must be invoked via PowerShell with explicit env var: `[System.Environment]::SetEnvironmentVariable('JAVA_HOME', ..., 'Process')`
 - ADB device connects over TCP: `<lan-ip>:39271` (port changes each wireless debug session)
@@ -227,9 +229,63 @@ If the Coda phone is ever powered from an ignition-switched source rather than a
 
 ---
 
+## Phase 4 — Page 2 Specs Screen + Replay Source (2026-07-23)
+
+**Goal:** a second page, reached by swiping right, showing detailed specs in the style of the Vtrux live display. Two discrete snapping pages, no continuous scroll.
+
+### Structure
+
+`MainActivity` now hosts a 2-page `HorizontalPager` (page 0 = `GreenScreenView` unchanged, page 1 = `SpecsScreen`). Pager snaps to whole pages by default; `GreenScreenView` is a bare Canvas with no gesture handling so it does not compete for the swipe. `HorizontalPager` is still experimental in the foundation version pinned by Compose BOM 2024.04.01, hence the `@OptIn(ExperimentalFoundationApi::class)` on `onCreate`.
+
+`:coda` now depends on `:display` to reuse `ColorBandSlider` / `StatusWord`, which required raising `:coda` minSdk from 21 to 26 (`:display` is minSdk 26). Harmless — the head unit runs Android 12. `androidx.compose.foundation` was also made an explicit dependency (previously transitive).
+
+### Page 2 layout
+
+Three columns on the 1024x600 landscape panel. Battery and Loads are always visible; the third column swaps on `0x378` HVPowermode, the same source page 1 uses, so the two pages can never disagree about vehicle state.
+
+| Column | Contents | Source IDs |
+|--------|----------|-----------|
+| Battery (always) | Cell voltage spread, cell temp spread, pack current vs BMS limits, outlier cell IDs | 0x381, 0x382, 0x275 |
+| Loads (always) | A/C compressor (with commanded ceiling as a live reference line), PTC heater, DC-DC (low-pass filtered — see below) | 0x439 + 0x410, 0x276, 0x1D5 |
+| Drive | Drivetrain torque (green regen / blue motoring), drivetrain thermal | 0x1C0, 0x241 |
+| Charge | AC input current with EVSE and CAR reference lines, charge power (AC in vs DC out), charger thermal, Chargemode word | 0x050, 0x27B/0x27D, 0x279/0x27C, 0x27A, 0x378 |
+
+Design rules, carried over from the Vtrux display: sliders and status words rather than numeric readouts; axis labels on every scale but no printed live values; nothing duplicated from the instrument cluster (SoC and speedometer); a signal absent from the bus renders as a missing marker, never as zero.
+
+### Signal findings from this phase
+
+**PackCurrent sign convention (verified).** Discharge reads **negative**, charge and regen **positive**. Confirmed on a charge log (100% of samples positive, steady +15.6 A) and a drive log (0% positive under motoring >50 Nm, median -81.7 A; 86% positive under regen, peak +69.1 A — matching the 69.1 A figure already recorded in `coda.md`). Script: `projects/coda/notes/artifacts/packcurrent_sign_check.py`.
+
+**Battery fault display.** Shown only when `0x270` B0 is exactly `0x12` — the known RED-lamp value — as an amber `BATT COLD FAULT`. Matched as a whole byte rather than via the DBC's severity/code nibble split, because that split is disputed (the DBC decodes `0x12` as severity 1 = "Information Only, No Limiting", which contradicts it driving a RED lamp) and is tracked as an open item in `coda.md`. No other `0x270` value has a defined meaning, so nothing else is claimed.
+
+**Charge limits.** Both the station's J1772 offer (`0x050` EVSEMaxCurrent) and the car's own ~6.7 kW onboard-charger ceiling are drawn as reference lines, with the green band running to whichever is lower — so the display shows which side is binding rather than a permanent phantom gap on a station larger than the car can use. The 6730 W constant is empirical, not a spec figure.
+
+**0x241 drivetrain thermal — byte roles still unconfirmed.** `0x241` is gateway-rebroadcast to B CAN (so the single-dongle setup sees it) at 1 Hz, and its role is confirmed as Rotor/Stator/IGBT. But analysis of a drive log found roughly **six** live channels in the frame, not three: B1 and B6 are the same channel (mean |diff| 0.01), B4 is constant zero, and B0/B2/B3/B5/B7 all move independently. The `DLCM_glb.xml` cluster order (IGBT, Rotor, Stator) is also contradicted by the physics — B2/B3 are the fast-moving pair, yet IGBT junction temp should be the fastest-responding and cluster order puts it first. The slider is therefore **unitless with unlabeled markers**, fed from `CodaConstants.MCM_THERMAL_BYTES` (currently B0/B1/B2) so nothing on screen claims an identity that has not been established. Script: `projects/coda/notes/artifacts/mcm_thermal_0x241_bytes.py`. Resolving it needs the coarse sweep or VICD disassembly described in `codacan-signal-decode-notes.md` §6 item 6.
+
+### Replay source (emulator testing)
+
+The Android emulator has no USB host passthrough, so `CanPipelineManager` produces nothing there. Two new `:cancore` files decouple the display from USB:
+
+- `BusmasterReader.kt` — inverse of `BusmasterWriter`, so any captured log replays directly with no PC-side conversion. Also surveys buses and selects one by anchor-ID content (channel numbers depend on dongle insertion order and are never stable).
+- `ReplayCanSource.kt` — cold `Flow<CanFrame>` paced to recorded inter-frame timing, looping at EOF, collapsing idle gaps longer than 2 s so a capture's key-off stretches do not look like a hung app.
+
+`CodaViewModel.attach()` now takes a `Flow<CanFrame>` rather than a `CanPipelineManager`. `MainActivity` uses the replay source when the USB scan finds no dongle and a log is present in `<externalFilesDir>/replay/`:
+
+```
+adb push <log> /sdcard/Android/data/com.reverseit.coda/files/replay/
+```
+
+Full emulator setup: `android-app/notes/avd-emulator-bringup.md`.
+
+### Not yet validated on the head unit
+
+Everything above was verified on the 7-inch AVD against replayed drive and charge logs. It has **not** been run on the A007. The density assumption (1024x600 mdpi) in particular is unverified — page 1 is immune since its overlays are canvas fractions, but page 2 lays out in dp and will shift if the real panel is not mdpi.
+
+---
+
 ## Future Scope — Additional Display Screens
 
-Architecture of the display layer must support sliding between screens. The green screen compositor is Screen 0. Future screens (from-scratch Compose layouts, numeric dashboards, etc.) slot in as additional pages without reworking the signal decoder or logging layers.
+Pages 0 and 1 exist as of Phase 4. Further screens slot into the same `HorizontalPager` without reworking the signal decoder or logging layers.
 
 ## Future Scope — Diag CAN DID Reader
 
@@ -244,7 +300,7 @@ Not scoped. A future phase could use Diag CAN (second Innomaker dongle) to issue
 
 ## Phase 4 — LogFileServer (Complete, 2026-05-07)
 
-**Goal:** Expose completed log files over local WiFi so a companion app on a regular phone can pull them, bypassing the slow head-unit SeaDrive upload.
+**Goal:** Expose completed log files over local WiFi so a companion app on a regular phone can pull them, bypassing the slow head-unit SeaDrive upload. See `notes/plans/companion-file-sync.md` for full architecture.
 
 ### What was built (Phase 1 of the sync plan)
 
@@ -284,7 +340,7 @@ D/App: CodaApplication.onCreate complete
 
 ### How to verify after a new build
 
-A PowerShell test runner (`notes/artifacts/test_log_file_server.ps1`, a working helper not included in the public repo) exercised the endpoints. It ran with the phone or laptop on the Coda hotspot (or anywhere with line-of-sight to the head unit IP):
+PowerShell test runner at `notes/artifacts/test_log_file_server.ps1`. Run it with the phone or laptop on the Coda hotspot (or anywhere with line-of-sight to the head unit IP):
 
 ```powershell
 .\android-app\notes\artifacts\test_log_file_server.ps1                         # auto-discover gateway

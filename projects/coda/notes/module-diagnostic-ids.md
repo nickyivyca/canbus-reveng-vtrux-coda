@@ -66,7 +66,42 @@ Notes:
 The passenger seatbelt buckle switch (DTC B1513) is a **passive switch**, not a
 smart sensor tied to the SRS generation. Most practical match path is by
 electrical signature (connector pinout, NO/NC type, resistance) rather than by
-SRS part catalog.
+SRS part catalog. **This part is also the pending physical confirmation of the
+Hyundai/Kia lineage below** -- a buckle switch from the matching Hyundai/Kia
+generation with an identical connector/pinout would upgrade the lineage from
+semi-confirmed to confirmed.
+
+### SRS DTC list provenance & lineage (2026-07-03) -- semi-confirmed
+- **Source of the list:** the Coda airbag DTC descriptions come from Coda's own
+  2012 SRS diagnostic manual (`Diagnostic/SRS_DTCs.htm`, an Adobe RoboHelp export
+  dated 2012-12-06, plus `Diagnostic/SRS DTCs.pdf` / `DTC Master List.pdf`),
+  mechanically extracted into `coda-diagnostics/coda_dtc_list.csv` by
+  `extract_dtc_pdf.py`.
+- **Lineage (semi-confirmed): the airbag DTC table matches the Hyundai/Kia SRSCM
+  scheme.** Direct list comparison found 75/99 Coda airbag codes share the code
+  number with a Hyundai/Kia airbag code, and 72/99 (73%) also share the
+  description (~50 verbatim identical, e.g. B1346, B1382, B1473, B1511). Controls
+  scored 0%: Chrysler (whose airbag codes are the separate B1Bxx/B1Cxx
+  "Squib"/ORC range), Toyota/Lexus, Honda/Acura, GM, and the generic SAE B0xxx set.
+- **Approximate generation:** occupant sensing uses the older weight-based
+  OC / Weight Classification System (B1324/B1325), not the capacitive PODS
+  (B149x range) that Hyundai/Kia adopted ~2011+. With dual-stage frontal +
+  front/rear side + inflatable curtains + buckle pretensioners, this points to a
+  **~2005-2010 Hyundai/Kia SRSCM vintage**, consistent with the 2012 Coda's older
+  Hafei-derived platform.
+- **"Chrysler" was never a real attribution.** An earlier `extract_dtc_pdf.py`
+  hard-coded a `CHRYSLER_AIRBAG_CODES` placeholder list; a row-parsing bug
+  (`if len(row) < 4: continue` skipped every real PDF row) briefly let that list
+  override the real PDF data. It was a hallucinated mash-up (Hyundai decimal codes
+  B1382/B2505 + Chrysler *immobilizer* B1Axx + Chrysler *squib* B1Bxx) and was
+  later removed; the final list is Coda-manual-sourced. Full captured dev session:
+  `Diagnostic/copilot-log.md`.
+- **Why only semi-confirmed:** the match is on the DTC table (software), and the
+  module still exposes only Coda's `AK36030100` on the bus -- no supplier ID.
+  Physical confirmation is still pending (see buckle-switch note above).
+- **Evidence / re-run:** `notes/artifacts/dtc_lineage_compare.py` with
+  `hyundai_kia_airbag_dtc.csv` and `chrysler_airbag_dtc.csv`;
+  `notes/artifacts/dtc_ancel_compare.py` for the Toyota/Honda/GM/generic controls.
 
 ## SRS DTCs read 2026-06-27 (real scanner cross-checked)
 Captured in `logs/coda_srs_dtc_read.log`:

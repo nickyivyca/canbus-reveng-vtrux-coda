@@ -27,7 +27,7 @@ import sys, os, struct, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 from canre.parsers import parse_file
 
-LOG = r'C:\Users\nicholas.ivy\seadrive_root\nickivyc_1\My Libraries\Projects\reverse-it\projects\vtrux\logs\vtruxevapdrivelog4part2.log'
+LOG = r'<home>\<drive-root>\<library>\My Libraries\Projects\reverse-it\projects\vtrux\logs\vtruxevapdrivelog4part2.log'
 OUT = os.path.join(os.path.dirname(__file__), 'scan_bms_voltage_output.txt')
 
 REF_ID   = 0x18FFD6B3

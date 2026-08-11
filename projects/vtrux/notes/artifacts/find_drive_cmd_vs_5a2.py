@@ -12,7 +12,7 @@ Log: vtruxcurrentlimitingtest.log (has both drive and confirmed regen events)
 
 Output: find_drive_cmd_vs_5a2_output.txt
 
-Machine: L-EEHTRBPN2  Python: py -3.12
+Machine: the bench PC  Python: py -3.12
 """
 
 import re

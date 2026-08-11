@@ -3,13 +3,14 @@
 Back-to-back bench test of the **Innomaker USB2CAN** (gs_usb / candleLight
 firmware) against a **Kvaser Leaf Light v2** (trusted reference), wired
 CAN-H/CAN-L together with a single 120R terminator, both at **500 kbit/s** on
-the bench PC. Goal: confirm the Innomaker can carry live full-rate vehicle
+`the bench PC`. Goal: confirm the Innomaker can carry live full-rate vehicle
 traffic without dropping frames.
 
 Harness: `tools/artifacts/innomaker_bench.py` (`sanity` / `rx` / `tx` / `all`,
 plus a `speed` arg: `1.0` = real-time, `0` = flood/as-fast-as-possible). Raw
 output in `tools/artifacts/innomaker_flood_rx_v3.txt`,
-`innomaker_bench_results.txt`, etc. Setup/driver details: the device needs no vendor driver on Windows (WinUSB auto-binds via WCID descriptors).
+`innomaker_bench_results.txt`, etc. Setup/driver details are in
+`tools-reference.md` ("Innomaker USB2CAN").
 
 ## Stimulus
 
@@ -87,7 +88,7 @@ artifact of the Kvaser TX churn, not real RX loss — the valid run shows 0.066%
 
 ## End-to-end functional check (coda-diagnostics)
 
-The `coda-diagnostics` submodule was given gs_usb support.
+`~/Git/coda-diagnostics` was given gs_usb support (see `tools-reference.md`).
 Verified on the same bench by running `playback/coda_fake_car.py` on the Kvaser
 (simulated Coda, BMS DTCs `P1B1D`/`P1B1E`) while `read_dtcs_coda.py` ran over the
 auto-detected Innomaker: it read back both BMS DTCs via a multi-frame ISO-TP

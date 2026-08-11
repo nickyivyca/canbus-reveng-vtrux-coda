@@ -84,7 +84,7 @@ sdk.dir=<ANDROID_SDK_DIR>
 
 Gradlew from bash (no `cd` needed — use `--project-dir`):
 ```bash
-JAVA_HOME="<ANDROID_STUDIO_JBR>" \
+JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr" \
   android-app/CanLoggerApps/gradlew.bat \
   --project-dir android-app/CanLoggerApps \
   :coda:assembleDebug
@@ -95,7 +95,7 @@ JAVA_HOME="<ANDROID_STUDIO_JBR>" \
 ## Build Environment — the bench PC
 
 - JDK 21 (Android Studio bundled JBR): `<ANDROID_STUDIO_JBR>` (no `1` suffix)
-- Android SDK: `<ANDROID_SDK_DIR>`
+- Android SDK: `%LOCALAPPDATA%\Android\Sdk`
 - AGP 8.3.2 accepts JDK 21 — no issues.
 
 `local.properties`:
@@ -105,7 +105,7 @@ sdk.dir=<ANDROID_SDK_DIR>
 
 Gradlew from bash:
 ```bash
-JAVA_HOME="<ANDROID_STUDIO_JBR>" \
+JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" \
   android-app/CanLoggerApps/gradlew.bat \
   --project-dir android-app/CanLoggerApps \
   :vtrux:assembleDebug
@@ -130,10 +130,10 @@ adb -s <transport> install -r coda\build\outputs\apk\debug\coda-debug.apk
 
 Copy to head unit drop folder (increment N from the highest existing number):
 ```powershell
-Copy-Item '<repo>\android-app\CanLoggerApps\coda\build\outputs\apk\debug\coda-debug.apk' '<apk-drop-folder>\coda-debug (N).apk'
+Copy-Item '<repo>\android-app\CanLoggerApps\coda\build\outputs\apk\debug\coda-debug.apk' 'E:\Google Drive\To Seafile\coda-debug (N).apk'
 ```
 
-Head unit installs the APK from SeaDrive on the car's Android head unit (<lan-ip>). The head unit's file manager can browse `<apk-drop-folder>\` via the SeaDrive sync folder.
+Head unit installs the APK from SeaDrive on the car's Android head unit (<lan-ip>). The head unit's file manager can browse `E:\Google Drive\To Seafile\` via the SeaDrive sync folder.
 
 ADB device (phone): connected over TCP at `<lan-ip>:39789` (port changes each wireless debug session — check `canlogger-build-notes.md` for latest).
 
@@ -446,19 +446,19 @@ Fix: `CanPipelineManager.removeDevice()` now returns `Boolean` (true = was activ
 ## Session 2026-04-01 — the bench PC Setup + Power Sequencing Rewrite
 
 ### Build environment (the bench PC)
-- Android Studio installed fresh (Meerkat era), JBR JDK 21, SDK path `<ANDROID_SDK_DIR>`
+- Android Studio installed fresh (Meerkat era), JBR JDK 21, SDK path `%LOCALAPPDATA%\Android\Sdk`
 - `local.properties` updated for this machine's username
 - First build required Gradle to auto-download build-tools 34.0.0 and platform 34; initial download corrupted due to `FileAlreadyExistsException`, fixed by cleaning `.temp/` folder and retrying
 - See "Build Environment -- the bench PC" section above for full details
 
 ### ADB on the bench PC
-- ADB pairing via PowerShell works: `& '<ANDROID_SDK_DIR>\platform-tools\adb.exe' pair <ip:port> <code>`
+- ADB pairing via PowerShell works: `& '%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe' pair <ip:port> <code>`
 - Bash `adb pair` with positional code argument gives "protocol fault" -- use PowerShell for all adb commands on this machine
 - mDNS discovery works after pairing (device shows as `adb-<guid>._adb-tls-connect._tcp`)
 - If mDNS doesn't find the device, `adb connect <ip:port>` using the port from the Wireless Debugging main screen (not the pairing port)
 
 ### Devices
-- OnePlus 7 Pro (HD1901): wireless ADB, guid `adb-<device-guid>`
+- OnePlus 7 Pro (HD1901): wireless ADB, guid `adb-16e7d2b3-RSkDoo`
 - Pixel 8 Pro (husky): USB, serial `41270DLJG00054`
 - Both have the vtrux app installed
 
@@ -495,26 +495,26 @@ ADB is on the system PATH — use `adb` directly, no full SDK path needed.
 
 **Always use PowerShell, never Git Bash for ADB.** Git Bash mangles `/sdcard/...` device paths into `C:/Program Files/Git/sdcard/...`. Run ADB commands directly from PowerShell or via `powershell -Command "adb ..."`.
 
-**Transport IDs:** After pairing, the OnePlus 7 Pro (guid `<device-guid>`) shows up as mDNS transport `adb-<device-guid>._adb-tls-connect._tcp` (no space variant). If the device shows `offline` after a WiFi drop, run `adb disconnect <lan-ip>:<port>` then `adb connect <lan-ip>:<port>` using the current port from Developer Options → Wireless Debugging. The port changes every time wireless debugging is toggled — check the phone screen each session.
+**Transport IDs:** After pairing, the OnePlus 7 Pro (guid `16e7d2b3`) shows up as mDNS transport `adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp` (no space variant). If the device shows `offline` after a WiFi drop, run `adb disconnect <lan-ip>:<port>` then `adb connect <lan-ip>:<port>` using the current port from Developer Options → Wireless Debugging. The port changes every time wireless debugging is toggled — check the phone screen each session.
 
 ```powershell
 # Pull a log file
-adb -s "adb-<device-guid>._adb-tls-connect._tcp" pull /sdcard/VtruxLogs/vtrux_<session>_T0.log E:\path\to\out.log
+adb -s "adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp" pull /sdcard/VtruxLogs/vtrux_<session>_T0.log E:\path\to\out.log
 
 # Shell command
-adb -s "adb-<device-guid>._adb-tls-connect._tcp" shell "ls -lh /sdcard/VtruxLogs/"
+adb -s "adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp" shell "ls -lh /sdcard/VtruxLogs/"
 
 # Install (always -r, see ADB install rule above)
-adb -s "adb-<device-guid>._adb-tls-connect._tcp" install -r vtrux\build\outputs\apk\debug\vtrux-debug.apk
+adb -s "adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp" install -r vtrux\build\outputs\apk\debug\vtrux-debug.apk
 ```
 
-**Building on Desktop:** System Java is 1.8, which AGP 8.3.2 rejects. Use `build_vtrux.ps1` (in `android-app/CanLoggerApps/`) which sets `JAVA_HOME` to the Android Studio JBR before invoking Gradle:
+**Building on Desktop:** System Java is 1.8, which AGP 8.3.2 rejects. Use `build_vtrux.ps1` (in `android-app/CanLoggerApps/`) which sets `JAVA_HOME` to the Android Studio1 JBR before invoking Gradle:
 ```powershell
 powershell -File "android-app/CanLoggerApps/build_vtrux.ps1"
 ```
 APK output: `vtrux/build/outputs/apk/debug/vtrux-debug.apk`
 
-`local.properties` must have `sdk.dir=<ANDROID_SDK_DIR>` (path differs per build machine).
+`local.properties` must have `sdk.dir=<ANDROID_SDK_DIR>
 
 ### Terminator fixed; TX buffer overflow root-caused
 

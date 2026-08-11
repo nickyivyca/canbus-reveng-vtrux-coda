@@ -17,7 +17,7 @@ For confirmed powertrain signals, see `powertrain-messages.md`. For generator ac
 Bus numbers change between sessions (dongles plugged in randomly), so always identify by message content.
 
 **Primary method — exclusive ID fingerprint (no scanner needed):**
-- OBD bus has **0x040–0x044** and does NOT have 0x1E5 or 0x500–0x530. (Do **not** use 0x441–0x464 as an OBD-exclusive anchor — part of that range is GMLAN that the VCM bridges to the Vehicle bus, e.g. 0x451, causing false OBD identification.)
+- OBD bus has **0x040–0x044** and does NOT have 0x1E5 or 0x500–0x530. (Do **not** use 0x441–0x464 as an OBD-exclusive anchor — part of that range is GMLAN, e.g. 0x451 = `Gateway_LS_General_Information`, which the VCM bridges to the Vehicle bus, causing false OBD identification. See `Vtrux.md`.)
 - Vehicle bus has **0x1E5, 0x500, 0x514, 0x52A–0x530, 0x778, 0x780, 0x785, 0x788** and does NOT have 0x040–0x044
 - Either exclusive set alone is sufficient; a quick `survey.py --bus N` and check for presence/absence of these IDs settles it
 
@@ -48,7 +48,7 @@ Bus numbers are coincidental — dongles are plugged in randomly each session.
 |----------|---------------------|-----------------|
 | **Powertrain** | 0x051 + extended IDs (0x18xxxxxx) | Via Motors EV control |
 | **Vehicle** | Real sensor data in GMLAN messages; exclusive 0x1E5, 0x500–0x530 | Direct ECU, unfiltered |
-| **OBD** | Masked sensor data; exclusive 0x040–0x044 (NOT 0x441–0x464 — partly GMLAN, VCM-bridged to Vehicle); 0x7E0/0x7E8 when scanner active | Filtered; accessible via harness P1 connector only (NOT standard DLC) |
+| **OBD** | Masked sensor data; exclusive 0x040–0x044 (NOT 0x441–0x464 — partly GMLAN, VCM-bridged to Vehicle; see `Vtrux.md`); 0x7E0/0x7E8 when scanner active | Filtered; accessible via harness P1 connector only (NOT standard DLC) |
 
 ### Powertrain Bus
 
@@ -80,16 +80,16 @@ Bus numbers are coincidental — dongles are plugged in randomly each session.
 ### Vehicle Bus (Direct ECU)
 
 **How to identify:**
-- GMLAN messages with **real sensor data**
-- **0x0C1** shows actual rotation values during driving
-- **0x1F5** byte 3 shows actual gear changes (1-9)
+- GMLAN messages (0x0C1-0x77F range) with **real sensor data**
+- **0x0C1 Driven_Wheel_Rotational_Status** shows actual rotation values during driving
+- **0x1F5 Transmission_General_Status_2** shows actual gear changes (1-9)
 - More message IDs than OBD bus (~90–93 vs ~74–79)
 - Additional platform/body messages (0x1E5, 0x1FC, 0x210, 0x214, 0x232, 0x34A, 0x500, 0x514, etc.)
 
 **Evidence from driveway log (driving):**
 - 0x0C1: Full rotation data `00-F3 00-FF 00-FF 00-FF...` ✅ REAL DATA
 - 0x1F5 byte 3: Varies `00-04` showing actual gear changes ✅ REAL DATA
-- 0x3E9 (vehicle speed): Varying values ✅ REAL DATA
+- 0x3E9 Vehicle_Speed_and_Distance: Varying values ✅ REAL DATA
 
 **Unique message IDs (not on OBD):**
 - 0x0D0, 0x120, 0x121, 0x12A, 0x135, 0x137, 0x139 (platform messages)
@@ -103,9 +103,9 @@ Bus numbers are coincidental — dongles are plugged in randomly each session.
 ### OBD Bus (Filtered, OBD2 DLC wired here)
 
 **How to identify:**
-- GMLAN messages with **masked/filtered sensor data**
-- **0x0C1** = all zeros EVEN WHEN DRIVING
-- **0x1F5** mostly constant, simplified
+- GMLAN messages (0x0C1-0x77F) with **masked/filtered sensor data**
+- **0x0C1 Driven_Wheel_Rotational_Status** = all zeros EVEN WHEN DRIVING
+- **0x1F5 Transmission_General_Status_2** mostly constant, simplified
 - Fewer message IDs than Vehicle (~74–79 vs ~90–93)
 - Subset of GMLAN standard messages
 
@@ -156,13 +156,13 @@ P0621 is stored in the ECM because the original alternator's L-terminal (charge 
 ### Common Messages (All GM Buses)
 
 Both Vehicle and OBD have these GMLAN messages (but with different data quality):
-- 0x0C1, 0x0C5 (rotation data) - MASKED on OBD
+- 0x0C1, 0x0C5 (wheel rotation) - MASKED on OBD
 - 0x0C9 (engine status)
-- 0x0F1 (platform)
+- 0x0F1, 0x0F9 (transmission)
 - 0x1C3, 0x1C5, 0x1C6, 0x1C7 (engine/chassis torque)
-- 0x1F1, 0x1F5 (platform status)
+- 0x1F1, 0x1F5 (platform/transmission status)
 - 0x3E9 (vehicle speed)
-- 0x451 (a GMLAN message, VCM-bridged to Vehicle; the earlier "engine torque status" label was a misidentification)
+- 0x451 (GMLAN `Gateway_LS_General_Information` — airbag/fan flags; the earlier "engine torque status" label was a misidentification, see `Vtrux.md`)
 - Plus ~50 more GMLAN standard messages
 
 ---

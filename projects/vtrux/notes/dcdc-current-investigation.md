@@ -30,7 +30,7 @@ Voltage is constant at 14.35V throughout, consistent with DCDC in constant-volta
 ### Phase 7 (epri_verify_open_items.py, 2026-03-29) — Blower fan test
 
 Log: `vtruxanotherevaplogpart2.log` (2010s drive, heater active, blower on/off events).
-Blower: 0x451 B4 x0.392% (Climate_Control_Front_Blower_Fan_Speed, 0-32.9% observed).
+Blower: 0x451 B4 x0.392% (0-32.9% observed).
 
 **Second blower-off span** (t=1839-1982s, 143s, controlled dropout mid-drive):
 

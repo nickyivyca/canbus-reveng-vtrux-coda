@@ -37,161 +37,159 @@ BU_:
 
 
 BO_ 0 Cells0: 8 Vector__XXX
- SG_ Cell0 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell1 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell2 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell3 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell1 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell2 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell3 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell4 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 1 Cells1: 8 Vector__XXX
- SG_ Cell4 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell5 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell6 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell7 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell5 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell6 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell7 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell8 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 2 Cells2: 8 Vector__XXX
- SG_ Cell8 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell9 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell10 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell11 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell9 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell10 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell11 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell12 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 3 Cells3: 8 Vector__XXX
- SG_ Cell12 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell13 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell14 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell15 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell13 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell14 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell15 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell16 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 4 Cells4: 8 Vector__XXX
- SG_ Cell16 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell17 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell18 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell19 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell17 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell18 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell19 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell20 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 5 Cells5: 8 Vector__XXX
- SG_ Cell20 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell21 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell22 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell23 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell21 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell22 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell23 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell24 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 6 Cells6: 8 Vector__XXX
- SG_ Cell24 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell25 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell26 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell27 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell25 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell26 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell27 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell28 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 7 Cells7: 8 Vector__XXX
- SG_ Cell28 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell29 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell30 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell31 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell29 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell30 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell31 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell32 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 8 Cells8: 8 Vector__XXX
- SG_ Cell32 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell33 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell34 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell35 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell33 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell34 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell35 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell36 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 9 Cells9: 8 Vector__XXX
- SG_ Cell36 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell37 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell38 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell39 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell37 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell38 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell39 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell40 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 10 CellsA: 8 Vector__XXX
- SG_ Cell40 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell41 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell42 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell43 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell41 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell42 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell43 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell44 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 11 CellsB: 8 Vector__XXX
- SG_ Cell44 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell45 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell46 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell47 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell45 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell46 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell47 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell48 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 12 CellsC: 8 Vector__XXX
- SG_ Cell48 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell49 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell50 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell51 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell49 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell50 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell51 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell52 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 13 CellsD: 8 Vector__XXX
- SG_ Cell52 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell53 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell54 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell55 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell53 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell54 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell55 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell56 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 14 CellsE: 8 Vector__XXX
- SG_ Cell56 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell57 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell58 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell59 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell57 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell58 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell59 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell60 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 15 CellsF: 8 Vector__XXX
- SG_ Cell60 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell61 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell62 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell63 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell61 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell62 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell63 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell64 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 16 Cells10: 8 Vector__XXX
- SG_ Cell64 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell65 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell66 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell67 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell65 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell66 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell67 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell68 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 17 Cells11: 8 Vector__XXX
- SG_ Cell68 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell69 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell70 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell71 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell69 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell70 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell71 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell72 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 18 Cells12: 8 Vector__XXX
- SG_ Cell72 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell73 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell74 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell75 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell73 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell74 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell75 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell76 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 19 Cells13: 8 Vector__XXX
- SG_ Cell76 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell77 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell78 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell79 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell77 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell78 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell79 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell80 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 20 Cells14: 8 Vector__XXX
- SG_ Cell80 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell81 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell82 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell83 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell81 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell82 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell83 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell84 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 21 Cells15: 8 Vector__XXX
- SG_ Cell84 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell85 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell86 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell87 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell85 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell86 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell87 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell88 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 22 Cells16: 8 Vector__XXX
- SG_ Cell88 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell89 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell90 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell91 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell89 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell90 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell91 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell92 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 23 Cells17: 8 Vector__XXX
- SG_ Cell92 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell93 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell94 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell95 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell93 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell94 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell95 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell96 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 24 Cells18: 8 Vector__XXX
- SG_ Cell96 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell97 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell98 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell99 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell97 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell98 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell99 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell100 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
 BO_ 25 Cells19: 8 Vector__XXX
- SG_ Cell100 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell101 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell102 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
- SG_ Cell103 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell101 : 7|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell102 : 23|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell103 : 39|16@0+ (1,0) [0|0] "V" Vector__XXX
+ SG_ Cell104 : 55|16@0+ (1,0) [0|0] "V" Vector__XXX
 
-
-
-
+CM_ "Cell voltage frames on C CAN. Signals Cell1..Cell104 use the BMS 1-based cell numbering, matching 0x381 VmaxId/VminId directly (VmaxId N = CellN). Renumbered 2026-07-22 from a prior zero-based scheme (old CellK = new Cell(K+1)); the +1 offset documented in notes/cell-index-mapping.md no longer applies. Bit layout unchanged: 26 frames 0x000-0x019, 4x 16-bit Motorola per frame, 1 mV/bit.";

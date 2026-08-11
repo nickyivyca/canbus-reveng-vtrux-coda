@@ -2,22 +2,32 @@
 """Upload CAN log data to InfluxDB 1.x for Grafana visualization.
 
 Two measurements are written:
-  signals  -- DBC-decoded signal values, one point per signal per frame
+  signals  -- DBC-decoded signal values, one point per decoded frame
   raw      -- raw bytes for frames not in the DBC (only with --raw)
 
 Each point carries a 'bus' tag (e.g. powertrain/vehicle/obd for Vtrux,
 b_can/c_can/d_can for Coda) derived by matching anchor IDs to channel numbers.
 
-Requires:  pip install influxdb cantools
+Write policy (--write-policy, default on-change): a signal value is written
+only when it differs from the last value written for that signal, plus a
+heartbeat point at most every --heartbeat seconds so gaps stay bounded and
+Grafana's last-value-before-window stays correct. Measured 3.5x less disk
+than writing every frame; see tools/plans/influx-sync.md.
+
+Requires:  pip install cantools requests
 """
 import argparse
 import contextlib
 import glob
+import hashlib
 import io
+import json
+import os
 import queue
 import re
 import sys
 import threading
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -28,16 +38,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from canre.parsers import parse_file
 from canre.parsers.autodetect import detect_format
 from canre.parsers.busmaster import BusmasterParser
+from canre.dbc.msghash import message_hashes
+from canre.utils.timebase import TimebaseIndex
 
 try:
     import cantools
 except ImportError:
     cantools = None
-
-try:
-    from influxdb import InfluxDBClient
-except ImportError:
-    InfluxDBClient = None
 
 try:
     import requests
@@ -59,6 +66,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VEHICLE_PROFILES = {
     "vtrux": {
         "dbcs": [
+            PROJECT_ROOT / "projects/vtrux/GMW8762_PPEI_GMLAN.dbc",
             PROJECT_ROOT / "projects/vtrux/epri-pt-bus.dbc",
             PROJECT_ROOT / "projects/vtrux/epri-obd-bus.dbc",
             PROJECT_ROOT / "projects/vtrux/BelInverter-v2.dbc",
@@ -79,7 +87,7 @@ VEHICLE_PROFILES = {
         #   {"can_id": 0xXXX, "bus": "..."}    -- exclude entire message on a specific bus
         #   {"can_id": 0xXXX}                  -- exclude entire message on all buses
         #
-        # VCM gateway modifications (real data bus differs per ID):
+        # VCM gateway modifications:
         # OBD bus carries wrong/synthetic data for these IDs — real data is on Vehicle bus.
         # Vehicle bus carries wrong/synthetic data for these IDs — real data is on OBD bus.
         # Faithfully bridged IDs are excluded from the non-source bus to avoid duplicates.
@@ -219,12 +227,24 @@ def _parse_tz(tz_str: str):
                          "or a numeric offset (e.g. '-7').")
 
 
-def read_log_start_time(path: Path, tz=timezone.utc) -> float | None:
+NS_PER_S = 1_000_000_000
+
+
+def read_log_start_time_ns(path: Path, tz=timezone.utc) -> int | None:
     """
     Read the start timestamp from a BUSMASTER log header line:
       ***START DATE AND TIME DD:MM:YYYY HH:MM:SS:TTTT***
-    Returns Unix epoch (seconds, UTC) or None if not found / not parseable.
-    TTTT are 10 kHz ticks (0.1 ms), same unit as frame timestamps.
+    Returns Unix epoch in integer NANOSECONDS (UTC), or None if not found /
+    not parseable. TTTT are 10 kHz ticks (0.1 ms), same unit as frame
+    timestamps, so each tick is exactly 100_000 ns.
+
+    Integer nanoseconds, not float seconds: a float epoch (~1.7e9) has only
+    ~0.24 us of resolution left in a float64 mantissa, so `(epoch + offset) *
+    1e9` injected +/-128 ns of rounding noise into every stored timestamp.
+    Building the epoch in integer ns and adding an integer offset removes it.
+    (That noise turned out NOT to cost disk -- see tools/plans/influx-sync.md,
+    Lever B -- but exact timestamps are required for the time-bounded DELETE
+    that per-file repair depends on.)
 
     tz: tzinfo for the recording PC's clock. datetime.timestamp() converts to UTC.
     Defaults to UTC (header treated as UTC). Pass ZoneInfo('America/Los_Angeles')
@@ -236,31 +256,60 @@ def read_log_start_time(path: Path, tz=timezone.utc) -> float | None:
                 line = f.readline()
                 if not line:
                     break
+                # BUSMASTER does not zero-pad: real headers include
+                # "12:2:2025 16:51:57:846" and "17:1:2026 0:1:30:217". The
+                # previous {2}-digit pattern rejected 356 of 3,135 headers in
+                # the corpus and fell through to the filename/mtime fallbacks
+                # without saying so.
                 m = re.search(
-                    r'START DATE AND TIME\s+(\d{2}):(\d{2}):(\d{4})\s+(\d{2}):(\d{2}):(\d{2}):(\d+)',
+                    r'START DATE AND TIME\s+(\d{1,2}):(\d{1,2}):(\d{4})\s+'
+                    r'(\d{1,2}):(\d{1,2}):(\d{1,2}):(\d+)',
                     line
                 )
                 if m:
-                    day, mon, yr, h, mn, s, ticks = (int(x) for x in m.groups())
-                    frac = ticks * 0.0001
+                    day, mon, yr, h, mn, s, ms = (int(x) for x in m.groups())
                     dt = datetime(yr, mon, day, h, mn, s, tzinfo=tz)
-                    return dt.timestamp() + frac
+                    # The HEADER's sub-second field is milliseconds, unlike the
+                    # data lines' 10 kHz ticks: across 1,062 headers it never
+                    # exceeds 998, while data-line values reach 9999. Reading it
+                    # as ticks was wrong by 10x.
+                    # dt has whole seconds, so dt.timestamp() is an exactly
+                    # representable float integer; int() is lossless here.
+                    return int(dt.timestamp()) * NS_PER_S + (ms % 1000) * 1_000_000
     except Exception:
         pass
     return None
 
 
-def derive_start_epoch(path: Path, log_duration: float = 0.0, tz=timezone.utc) -> float:
+def derive_start_epoch_ns(path: Path, log_duration: float = 0.0,
+                          tz=timezone.utc, timebase: "TimebaseIndex" = None) -> int:
     """
-    Return the Unix epoch (seconds, UTC) for the start of this capture.
-    Priority:
-      1. BUSMASTER header: ***START DATE AND TIME DD:MM:YYYY HH:MM:SS:TTTT***
-      2. YYYYMMDD_HHMMSS in filename
-      3. file mtime minus log_duration (mtime is when the file was written = end of capture)
+    Return the Unix epoch in integer NANOSECONDS (UTC) that this capture's
+    frame timestamps are counted from. Priority:
+      1. canre.utils.timebase -- session-aware anchor (see below)
+      2. BUSMASTER header: ***START DATE AND TIME DD:MM:YYYY HH:MM:SS:TTTT***
+      3. YYYYMMDD_HHMMSS in filename
+      4. file mtime minus log_duration (mtime is when the file was written = end of capture)
+
+    Step 1 exists because two loggers write BUSMASTER files with different time
+    bases. The Android logger resets frame timestamps to zero every chunk, so
+    `header + frame.timestamp` is right. The laptop captures write wall-clock
+    time of day, so the same sum double-counts and displaces points by up to
+    ~24 h; 348 files / 14.74 GB of the corpus are that flavour. Which flavour a
+    file is cannot always be told from the file alone -- `debuglog_M1_T8`'s
+    header disagrees with its own data -- so `TimebaseIndex` decides per
+    session. Pass a shared index to reuse its per-directory cache.
+
+    Only the mtime fallback is inexact, and it is already an approximation.
 
     tz: tzinfo for the recording PC's clock (applied to header and filename timestamps).
     """
-    t = read_log_start_time(path, tz)
+    if timebase is not None:
+        t = timebase.anchor_ns(path, tz)
+        if t is not None:
+            return t
+
+    t = read_log_start_time_ns(path, tz)
     if t is not None:
         return t
 
@@ -268,11 +317,11 @@ def derive_start_epoch(path: Path, log_duration: float = 0.0, tz=timezone.utc) -
     if m:
         try:
             dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
-            return dt.replace(tzinfo=tz).timestamp()
+            return int(dt.replace(tzinfo=tz).timestamp()) * NS_PER_S
         except ValueError:
             pass
 
-    return path.stat().st_mtime - log_duration
+    return round((path.stat().st_mtime - log_duration) * NS_PER_S)
 
 
 def scan_log(path: Path) -> tuple[dict, dict, float]:
@@ -281,7 +330,7 @@ def scan_log(path: Path) -> tuple[dict, dict, float]:
       - channel_ids:    {bus_int: set of arbitration_ids}     -- for anchor matching
       - channel_counts: {bus_int: total frame count}          -- for churn filtering
       - last_timestamp: float (seconds), only used as a mtime fallback for
-                        derive_start_epoch when the BUSMASTER header and the
+                        derive_start_epoch_ns when the BUSMASTER header and the
                         filename-date both fail to parse.
 
     Per-channel frame counts let identify_buses filter out the Android-logger
@@ -346,19 +395,60 @@ def identify_buses(
     if not channel_counts:
         return {}
     max_count = max(channel_counts.values())
-    threshold = max(min_frames, int(max_count * min_fraction))
 
-    mapping = {}
+    # Step 1: score every channel against every anchor set and take the best
+    # match by FRACTION of that anchor set present, not by first-listed hit.
+    #
+    # First-match-wins mislabels whenever anchor sets overlap. Coda
+    # chargepointcharge.log: the real b_can channel carries 4 of 5 b_can
+    # anchors, but it also carries ID 0x000, which falls inside c_can's
+    # 0x000-0x019 cell-voltage range -- so c_can was listed first and won,
+    # labelling b_can traffic as c_can. Fraction fixes it: 4/5 = 0.80 for
+    # b_can beats 1/26 = 0.04 for c_can. Fraction rather than raw count
+    # because the anchor sets differ hugely in size (1 id for powertrain,
+    # 26 for c_can). Ties fall back to the declared order.
+    best: dict = {}
     for channel, ids in channel_ids.items():
-        if channel_counts.get(channel, 0) < threshold:
-            mapping[channel] = None
+        scored = []
+        for order, (bus_name, anchors) in enumerate(bus_anchors):
+            hits = len(ids & anchors)
+            if hits:
+                scored.append((hits / len(anchors), hits, -order, bus_name))
+        best[channel] = max(scored)[3] if scored else None
+
+    # Step 2: churn filter, applied ONLY between channels competing for the
+    # same bus. Android T0 captures re-number one physical bus across many
+    # transient channels (vtrux_20260503_171127_T0: a real PT bus at 155k
+    # frames plus 4 more channels that also match powertrain at 2-7k, and a
+    # real OBD bus at 86k plus 5 more matching obd) -- all duplicates of the
+    # same traffic, so the highest-count claimant wins and the rest are
+    # dropped.
+    #
+    # A blanket "under 5% of the busiest channel" rule cannot express that.
+    # It also discarded genuinely separate buses: in that same Coda log the
+    # real c_can channel is only 3.5% of b_can's frame count (cell voltages
+    # are bursty, b_can is continuous) and was being thrown away entirely.
+    # Competing for the same NAME is the signal; relative volume alone is not.
+    claimants: dict = defaultdict(list)
+    for channel, bus_name in best.items():
+        if bus_name is not None:
+            claimants[bus_name].append(channel)
+
+    mapping: dict = {}
+    for bus_name, channels in claimants.items():
+        winner = max(channels, key=lambda c: channel_counts.get(c, 0))
+        for c in channels:
+            mapping[c] = bus_name if c == winner else None
+
+    # Step 3: channels matching no anchor keep the old absolute+relative
+    # floor. Nothing is known about them, so the conservative filter stands.
+    threshold = max(min_frames, int(max_count * min_fraction))
+    for channel in channel_ids:
+        if channel in mapping:
             continue
-        for bus_name, anchors in bus_anchors:
-            if ids & anchors:
-                mapping[channel] = bus_name
-                break
-        else:
-            mapping[channel] = f"ch{channel}"
+        mapping[channel] = (f"ch{channel}"
+                            if channel_counts.get(channel, 0) >= threshold
+                            else None)
     return mapping
 
 
@@ -383,6 +473,113 @@ def estimate_avg_bytes_per_line(path: Path, sample_bytes: int = 100_000) -> floa
     if newlines == 0:
         return 0.0
     return len(sample) / newlines
+
+
+class _Unset:
+    """Sentinel for 'this signal has never been emitted'.
+
+    A plain object() would work, but a named class makes the on-change state
+    readable in a traceback. Must never compare equal to a decoded value --
+    decoded values are ints/floats/strings, so the default identity __eq__ is
+    correct here.
+    """
+    __slots__ = ()
+
+
+_UNSET = _Unset()
+
+MANIFEST_MEASUREMENT = "upload_manifest"
+# Bump when the stored encoding changes in a way that invalidates every existing
+# manifest row (timestamp derivation, line-protocol layout, tag set). A bumped
+# value forces a full re-upload rather than a per-message repair.
+ENCODING_VER = "2026-08-10.1"
+
+_TAG_ESCAPE_RE = re.compile(r'([,= ])')
+_FIELD_STR_ESCAPE_RE = re.compile(r'(["\\])')
+
+
+def escape_field_str(value: str) -> str:
+    """Escape a line-protocol string FIELD value: backslash and double quote."""
+    return _FIELD_STR_ESCAPE_RE.sub(r'\\\1', value)
+
+
+def sha1_file(path: Path, chunk: int = 1 << 20) -> str:
+    """SHA-1 of a log file, streamed."""
+    h = hashlib.sha1()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def policy_hash(profile_exclude, cli_exclude, on_change, heartbeat_s,
+                upload_raw, only_ids) -> str:
+    """Hash of every upload-policy input that changes what gets written.
+
+    Separate from the per-message definition hash: a change here (a new
+    exclusion, a different write policy) invalidates whole files rather than
+    single messages.
+    """
+    blob = json.dumps({
+        "profile_exclude": profile_exclude,
+        "cli_exclude": sorted(cli_exclude or []),
+        "on_change": bool(on_change),
+        "heartbeat_s": float(heartbeat_s),
+        "raw": bool(upload_raw),
+        "only_ids": sorted(only_ids) if only_ids else None,
+    }, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()[:12]
+
+
+def build_manifest_line(*, vehicle, session, path, rel_path, stats, bus_map,
+                        msg_hash_map, policy_h, log_sha1, uploaded_at_ns) -> str:
+    """One line-protocol point recording what an upload actually wrote.
+
+    Tagged (vehicle, session, file) so a session's chunks stay individually
+    addressable -- session alone is too coarse, since 144 chunks can share one
+    session tag.
+
+    `t_start_ns`/`t_end_ns` are the bounds the uploader OBSERVED, not bounds
+    re-derived from the file. Repair deletes by these, and re-deriving them
+    later reintroduces the tz-drift failure the slice test hit.
+    """
+    st = path.stat()
+    keys = sorted(stats["keys"])
+    hashes = {f"{bus}|{cid}": msg_hash_map.get((bus, cid), "") for bus, cid in keys}
+    fields = [
+        f'rel_path="{escape_field_str(rel_path)}"',
+        f'log_sha1="{log_sha1}"',
+        f'log_bytes={st.st_size}i',
+        f'mtime={int(st.st_mtime)}i',
+        f'encoding_ver="{ENCODING_VER}"',
+        f'policy_hash="{policy_h}"',
+        f'msg_hashes="{escape_field_str(json.dumps(hashes, sort_keys=True))}"',
+        f'bus_map="{escape_field_str(json.dumps({str(k): v for k, v in bus_map.items()}, sort_keys=True))}"',
+        f'points={stats["points"]}i',
+        f'values={stats["values"]}i',
+        f't_start_ns={stats["t_start_ns"]}i',
+        f't_end_ns={stats["t_end_ns"]}i',
+        f'uploaded_at={uploaded_at_ns}i',
+    ]
+    prefix = (f"{MANIFEST_MEASUREMENT},file={escape_tag(path.name)},"
+              f"session={escape_tag(session)},vehicle={escape_tag(vehicle)} ")
+    return prefix + ",".join(fields) + f" {uploaded_at_ns}\n"
+
+
+
+def escape_tag(value: str) -> str:
+    """
+    Escape a line-protocol tag key/value: comma, equals and space take a
+    backslash.
+
+    This used to be skipped on the stated invariant that our tag values can
+    never contain those characters. A `--session` override with spaces broke
+    that invariant and wrote a session literally named
+    `generator\\ on\\ then\\ off` into the database -- the backslashes became
+    part of the stored tag value. Escaping here means such a session is stored
+    as `generator on then off`, which is what was meant.
+    """
+    return _TAG_ESCAPE_RE.sub(r'\\\1', value)
 
 
 _EXTENDED_BIT = 0x80000000
@@ -528,7 +725,7 @@ def stream_and_write(
     databases: list,
     vehicle: str,
     session: str,
-    start_epoch: float,
+    start_epoch_ns: int,
     upload_raw: bool,
     bus_map: dict,
     batch_size: int,
@@ -539,6 +736,9 @@ def stream_and_write(
     exclude_bus_signal: set = frozenset(),
     exclude_id: set = frozenset(),
     exclude_bus_id: set = frozenset(),
+    on_change: bool = True,
+    heartbeat_s: float = 1.0,
+    only_ids: set | None = None,
 ) -> int:
     """
     Single streaming pass: decode each frame and write to InfluxDB in
@@ -562,20 +762,57 @@ def stream_and_write(
     is built once per (bus, can_id) pair and cached, so the per-point
     work is just a field-list f-string concat plus a ts_ns concat.
 
-    Tag-value escaping is bypassed by relying on the project's invariants:
-    bus names are alphanumeric+underscore (`powertrain`, `b_can`, `ch20`),
-    can_ids are `0xNNN`, session names come from filename derivation or a
-    user-supplied `--session` (assumed safe), vehicle names are CLI args.
-    None of these can carry the line-protocol special characters
-    `, =` so escaping is unnecessary in this script's context. Field names
-    (signal names from the DBC, plus `dlc`/`bN`) are likewise safe.
+    Tag values ARE escaped (see escape_tag), but only once per (bus, can_id)
+    when the prefix is built and cached -- so the hot loop still pays nothing,
+    while a `--session` containing a space no longer corrupts the stored tag.
+
+    Write policy. With on_change=True (default) a signal is emitted only when
+    its value differs from the last value emitted for that signal, plus a
+    heartbeat point whenever heartbeat_s has elapsed since that signal's last
+    emission. So heartbeat_s is the maximum gap between consecutive points for
+    any signal, which keeps Grafana's last-value-before-window correct and
+    bounds gap length. Measured 3.5x less disk than on_change=False on a
+    52 MB Vtrux log (tools/plans/influx-sync.md, Lever C).
+
+    The forward-fill of an on-change series reconstructs the every-frame
+    series exactly at every original timestamp; that equivalence is what
+    tools/artifacts/on_change_equivalence.py checks.
+
+    Because a frame's signals are now emitted independently, one line may
+    carry a subset of the frame's fields (only the ones that changed). That is
+    normal in line protocol -- fields are independent columns -- and is why
+    the value count falls ~4.8x while the line count only falls ~2.4x.
     """
     id_index = build_id_index(databases)
     can_id_hex_cache: dict[int, str] = {}
     sig_prefix_cache: dict[tuple, str] = {}
     raw_prefix_cache: dict[tuple, str] = {}
     queued = 0
+    values_written = 0
     frames_seen = 0
+
+    # Recorded, never recomputed. The repair path deletes a (file x can_id)
+    # window by these bounds; the slice test showed that re-deriving them from
+    # the file later picks up any config drift (a --tz default put them 7 h off,
+    # the DELETE matched zero rows, and the "repair" silently became an append).
+    # So the uploader reports exactly what it wrote.
+    t_min_ns: int | None = None
+    t_max_ns: int | None = None
+    written_keys: set = set()
+
+    # on-change state, keyed (bus_name, arb_id, signal_name).
+    # last_val: last value EMITTED (not last seen) -- so a signal that flips
+    # away and back between heartbeats still emits both transitions.
+    # last_emit_ns: absolute ns of that signal's last emission. Integer, not
+    # float seconds: comparing `t - last_t < heartbeat` in float made a sample
+    # landing exactly one heartbeat later evaluate as 0.9999999999 < 1.0 and
+    # get skipped, deferring it to the next frame. Rare (6 in 1.2M) and
+    # harmless, but it made the emission rule inexact and untestable.
+    last_val: dict[tuple, object] = {}
+    last_emit_ns: dict[tuple, int] = {}
+    heartbeat_ns = round(heartbeat_s * NS_PER_S)
+    esc_session = escape_tag(session)
+    esc_vehicle = escape_tag(vehicle)
 
     file_size = path.stat().st_size
     avg_bytes_per_line = estimate_avg_bytes_per_line(path)
@@ -588,8 +825,8 @@ def stream_and_write(
         key = (bus_name, can_id_hex)
         cached = sig_prefix_cache.get(key)
         if cached is None:
-            cached = (f"signals,bus={bus_name},can_id={can_id_hex},"
-                      f"session={session},vehicle={vehicle} ")
+            cached = (f"signals,bus={escape_tag(bus_name)},can_id={can_id_hex},"
+                      f"session={esc_session},vehicle={esc_vehicle} ")
             sig_prefix_cache[key] = cached
         return cached
 
@@ -597,8 +834,8 @@ def stream_and_write(
         key = (bus_name, can_id_hex)
         cached = raw_prefix_cache.get(key)
         if cached is None:
-            cached = (f"raw,bus={bus_name},can_id={can_id_hex},"
-                      f"session={session},vehicle={vehicle} ")
+            cached = (f"raw,bus={escape_tag(bus_name)},can_id={can_id_hex},"
+                      f"session={esc_session},vehicle={esc_vehicle} ")
             raw_prefix_cache[key] = cached
         return cached
 
@@ -655,6 +892,14 @@ def stream_and_write(
 
         arb_id = frame.arbitration_id
 
+        # Targeted repair: restrict this pass to specific CAN IDs. Because
+        # can_id is a tag, each message is its own series, so re-uploading one
+        # ID rewrites exactly that series and touches nothing else. Checked
+        # first -- it is the cheapest possible rejection and repair runs
+        # discard the overwhelming majority of frames here.
+        if only_ids is not None and arb_id not in only_ids:
+            continue
+
         if arb_id in exclude_id:
             continue
 
@@ -667,7 +912,13 @@ def stream_and_write(
         if (bus_name, arb_id) in exclude_bus_id:
             continue
 
-        ts_ns = int((start_epoch + frame.timestamp) * 1_000_000_000)
+        # Integer arithmetic throughout: start_epoch_ns is an exact integer and
+        # frame.timestamp is a small float (seconds since log start), so
+        # round(t * 1e9) is exact to the nanosecond. The old
+        # int((start_epoch + t) * 1e9) added a ~1.7e9 float epoch first, which
+        # cost ~0.24 us of mantissa and injected +/-128 ns of noise.
+        t_rel = frame.timestamp
+        ts_ns = start_epoch_ns + round(t_rel * 1_000_000_000)
         can_id_hex = can_id_hex_cache.get(arb_id)
         if can_id_hex is None:
             can_id_hex = f"0x{arb_id:03X}"
@@ -684,12 +935,27 @@ def stream_and_write(
                     continue
                 if (bus_name, sig_name) in exclude_bus_signal:
                     continue
+                if on_change:
+                    key = (bus_name, arb_id, sig_name)
+                    prev_ns = last_emit_ns.get(key)
+                    if (last_val.get(key, _UNSET) == sig_value
+                            and prev_ns is not None
+                            and ts_ns - prev_ns < heartbeat_ns):
+                        continue
+                    last_val[key] = sig_value
+                    last_emit_ns[key] = ts_ns
                 field_parts.append(f"{sig_name}={float(sig_value)}")
             if field_parts:
                 batch.append(
                     f"{signals_prefix(bus_name, can_id_hex)}"
                     f"{','.join(field_parts)} {ts_ns}\n"
                 )
+                values_written += len(field_parts)
+                written_keys.add((bus_name, can_id_hex))
+                if t_min_ns is None or ts_ns < t_min_ns:
+                    t_min_ns = ts_ns
+                if t_max_ns is None or ts_ns > t_max_ns:
+                    t_max_ns = ts_ns
             decoded = bool(signals)
 
         if upload_raw and not decoded:
@@ -703,6 +969,12 @@ def stream_and_write(
                 f"{raw_prefix(bus_name, can_id_hex)}"
                 f"{','.join(field_parts)} {ts_ns}\n"
             )
+            values_written += len(field_parts)
+            written_keys.add((bus_name, can_id_hex))
+            if t_min_ns is None or ts_ns < t_min_ns:
+                t_min_ns = ts_ns
+            if t_max_ns is None or ts_ns > t_max_ns:
+                t_max_ns = ts_ns
 
         if len(batch) >= batch_size:
             flush()
@@ -713,8 +985,16 @@ def stream_and_write(
     if write_error[0]:
         raise write_error[0]
     label = "counted" if dry_run else "written"
-    print(f"  {queued} points {label}          ")
-    return queued
+    policy = f"on-change/{heartbeat_s:g}s" if on_change else "all-frames"
+    print(f"  {queued} points, {values_written} values {label}  "
+          f"[{policy}]          ")
+    return {
+        "points": queued,
+        "values": values_written,
+        "t_start_ns": t_min_ns,
+        "t_end_ns": t_max_ns,
+        "keys": written_keys,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -783,6 +1063,21 @@ Examples:
                    help="Parse and count points but do not write to InfluxDB")
     p.add_argument("--batch-size", type=int, default=5000,
                    help="Points per write batch (default: 5000)")
+    p.add_argument("--write-policy", choices=("on-change", "all-frames"),
+                   default="on-change",
+                   help="on-change (default): write a signal only when its value changes, "
+                        "plus a heartbeat at most every --heartbeat seconds. Measured 3.5x "
+                        "less disk than all-frames. all-frames: write every decoded frame "
+                        "(the pre-2026-08 behaviour).")
+    p.add_argument("--only-id", nargs="+", metavar="CAN_ID",
+                   help="Restrict the upload to these CAN IDs (hex '0x598' or decimal). "
+                        "Used for targeted repair after a DBC message definition changes: "
+                        "drop just that message's series, then re-upload just that ID. "
+                        "Everything else in the log is skipped.")
+    p.add_argument("--heartbeat", type=float, default=1.0, metavar="SECONDS",
+                   help="Maximum gap between consecutive points for a signal under "
+                        "--write-policy on-change (default: 1.0). Bounds gap length so "
+                        "Grafana's last-value-before-window stays correct.")
     p.add_argument("--success-log", metavar="FILE",
                    help="File to append successfully uploaded log paths to (append-only). "
                         "Skips files whose resolved path is already listed. "
@@ -791,15 +1086,26 @@ Examples:
                         "No-op in --dry-run mode.")
     args = p.parse_args()
 
-    # Dependency checks
-    if InfluxDBClient is None:
-        print("Error: influxdb package not installed.  pip install influxdb", file=sys.stderr)
-        sys.exit(1)
-    if requests is None:
-        print("Error: requests package not installed.  pip install requests", file=sys.stderr)
-        sys.exit(1)
+    # Dependency checks. `requests` is only needed when actually writing, so
+    # --dry-run works on a machine with no HTTP client installed (Debian's
+    # PEP 668 blocks `pip install`, and the old check aborted dry-run for a
+    # package it never used).
     if cantools is None:
         print("Error: cantools not installed.  pip install cantools", file=sys.stderr)
+        sys.exit(1)
+
+    only_ids = None
+    if args.only_id:
+        try:
+            only_ids = {int(x, 0) for x in args.only_id}
+        except ValueError as e:
+            print(f"Error: --only-id takes hex ('0x598') or decimal values: {e}",
+                  file=sys.stderr)
+            sys.exit(1)
+        print(f"  restricting to {len(only_ids)} CAN ID(s): "
+              f"{', '.join(f'0x{i:03X}' for i in sorted(only_ids))}")
+    if requests is None and not args.dry_run:
+        print("Error: requests package not installed.  pip install requests", file=sys.stderr)
         sys.exit(1)
 
     # Resolve vehicle profile
@@ -839,25 +1145,54 @@ Examples:
         n_sigs = sum(len(m.signals) for m in db.messages)
         print(f"  {name}: {len(db.messages)} messages, {n_sigs} signals")
 
-    # InfluxDBClient is kept for control-plane queries (DROP SERIES, etc.).
-    # Writes go through a plain requests.Session pointed at /write -- the
-    # per-point custom serializer in stream_and_write was profiled as ~3-5x
-    # faster than the official client's `make_line` once tag-prefix caching
-    # is in place. http_session uses HTTP keepalive, so we get the same
-    # single-TCP-connection behaviour the InfluxDBClient had for writes.
-    client = None
+    # Per-(bus, can_id) definition hashes and the whole-file policy hash. Both
+    # go into every manifest row so a later sync run can tell a changed message
+    # (repair one can_id) from a changed policy (re-upload the file).
+    msg_hash_map = message_hashes(
+        databases, [b for b, _ in bus_anchors],
+        exclude_global=exclude_global, exclude_bus_signal=exclude_bus_signal,
+        exclude_id=exclude_id, exclude_bus_id=exclude_bus_id,
+    )
+    policy_h = policy_hash(profile.get("exclude", []), args.exclude,
+                           args.write_policy == "on-change", args.heartbeat,
+                           args.raw, only_ids)
+    print(f"  {len(msg_hash_map)} (bus,can_id) definition hashes; "
+          f"policy {policy_h}")
+
+    # Everything goes through a plain requests.Session -- both writes and the
+    # control-plane statements (DROP SERIES). The influxdb-python client used
+    # to be imported solely for the latter's two query() calls; DROP SERIES is
+    # a one-line HTTP POST, so the dependency bought nothing and could not be
+    # installed on Debian anyway (PEP 668). Writes were already custom: the
+    # per-point serializer in stream_and_write profiled ~3-5x faster than the
+    # client's `make_line` once tag-prefix caching is in place. HTTP keepalive
+    # gives the same single-TCP-connection behaviour.
     http_session = None
     write_url = None
+    query_url = None
     if not args.dry_run:
-        client = InfluxDBClient(
-            host=args.host, port=args.port,
-            username=args.user, password=args.password,
-            database=args.database,
-        )
         http_session = requests.Session()
         http_session.auth = (args.user, args.password)
         write_url = (f"http://{args.host}:{args.port}/write"
                      f"?db={args.database}&precision=n")
+        query_url = f"http://{args.host}:{args.port}/query"
+
+    def influx_statement(q: str):
+        """POST a control-plane statement (DROP SERIES, ...).
+
+        Must be POST: InfluxDB 1.x accepts these over GET but answers with a
+        'deprecated use ... in a read only context' warning.
+        """
+        resp = http_session.post(query_url, data={"db": args.database, "q": q},
+                                 timeout=120)
+        if resp.status_code >= 300:
+            raise RuntimeError(f"InfluxDB query failed {resp.status_code}: "
+                               f"{resp.text[:300]}")
+        body = resp.json()
+        for result in body.get("results", []):
+            if "error" in result:
+                raise RuntimeError(f"InfluxDB error for {q!r}: {result['error']}")
+        return body
 
     try:
         recording_tz = _parse_tz(args.tz)
@@ -865,6 +1200,9 @@ Examples:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     print(f"Recording timezone: {args.tz}")
+
+    # Shared across all files so each directory is scanned once.
+    timebase = TimebaseIndex()
 
     # Expand positional args:
     #   foo.log              -> use as-is
@@ -927,14 +1265,14 @@ Examples:
               f"{len(unique_sessions)} session(s) before upload ...")
         for sess in unique_sessions:
             print(f"  vehicle={args.vehicle} session={sess}")
-            client.query(
-                f"DROP SERIES FROM signals "
-                f"WHERE \"vehicle\"='{args.vehicle}' AND \"session\"='{sess}'"
-            )
-            if args.raw:
-                client.query(
-                    f"DROP SERIES FROM raw "
-                    f"WHERE \"vehicle\"='{args.vehicle}' AND \"session\"='{sess}'"
+            # Single-quotes inside a tag value would terminate the string
+            # literal and let the rest of the session name run as InfluxQL.
+            esc_sess = sess.replace("\\", "\\\\").replace("'", "\\'")
+            esc_veh = args.vehicle.replace("\\", "\\\\").replace("'", "\\'")
+            for meas in ("signals",) + (("raw",) if args.raw else ()):
+                influx_statement(
+                    f"DROP SERIES FROM {meas} "
+                    f"WHERE \"vehicle\"='{esc_veh}' AND \"session\"='{esc_sess}'"
                 )
 
     for log_path in skipped_done:
@@ -954,10 +1292,11 @@ Examples:
             total_frames = sum(channel_counts.values())
             print(f"  {total_frames} frames across {len(channel_counts)} channel(s)")
 
-            start_epoch = derive_start_epoch(log_path, log_duration, recording_tz)
-            start_dt = datetime.fromtimestamp(start_epoch, tz=timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S UTC"
-            )
+            start_epoch_ns = derive_start_epoch_ns(log_path, log_duration,
+                                                   recording_tz, timebase)
+            start_dt = datetime.fromtimestamp(
+                start_epoch_ns / NS_PER_S, tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M:%S UTC")
             print(f"  anchor  : {start_dt}")
 
             bus_map = identify_buses(channel_ids, channel_counts, bus_anchors)
@@ -965,7 +1304,25 @@ Examples:
                 count = channel_counts.get(ch, 0)
                 n_ids = len(channel_ids.get(ch, set()))
                 if name is None:
-                    print(f"  ch{ch} -> SKIP transient ({count} frames, {n_ids} unique IDs)")
+                    # Say WHY, so backfill.log is an auditable record of every
+                    # bus decision rather than an opaque "SKIP". A channel is
+                    # dropped either because a higher-count channel already
+                    # claims its bus (churn) or because nothing identified it
+                    # and it is below the floor.
+                    ids_here = channel_ids.get(ch, set())
+                    claim = None
+                    for bname, anch in bus_anchors:
+                        if ids_here & anch:
+                            frac = len(ids_here & anch) / len(anch)
+                            if claim is None or frac > claim[1]:
+                                claim = (bname, frac)
+                    if claim:
+                        print(f"  ch{ch} -> SKIP duplicate of {claim[0]} "
+                              f"({count} frames, {n_ids} unique IDs, "
+                              f"{claim[1]:.0%} anchor match)")
+                    else:
+                        print(f"  ch{ch} -> SKIP unidentified "
+                              f"({count} frames, {n_ids} unique IDs)")
                 else:
                     print(f"  ch{ch} -> {name}  ({count} frames, {n_ids} unique IDs)")
 
@@ -973,20 +1330,51 @@ Examples:
             # from file_size and a sniffed avg-bytes-per-line ratio (no frame
             # count needed); the '~' prefix flags it as approximate.
             print(f"  Writing ...")
-            stream_and_write(
+            stats = stream_and_write(
                 log_path, databases, args.vehicle, session,
-                start_epoch, args.raw, bus_map,
+                start_epoch_ns, args.raw, bus_map,
                 args.batch_size, http_session, write_url, args.dry_run,
                 exclude_global=exclude_global,
                 exclude_bus_signal=exclude_bus_signal,
                 exclude_id=exclude_id,
                 exclude_bus_id=exclude_bus_id,
+                on_change=(args.write_policy == "on-change"),
+                heartbeat_s=args.heartbeat,
+                only_ids=only_ids,
             )
 
         except Exception as exc:
             print(f"\n  ERROR uploading {log_path.name}: {exc}", file=sys.stderr)
             failed.append(str(log_path))
             continue
+
+        # Manifest AFTER the data lands, never before: an interrupted upload
+        # must leave no row claiming the file is done, so a re-run replans it.
+        if not args.dry_run and stats["points"]:
+            try:
+                # Relative to the project root, with `..` allowed, so the
+                # Android backup library (a sibling SeaDrive library at
+                # ../../CANLogs) is recorded portably. Storing an absolute path
+                # is what made the old upload_success.txt files useless -- they
+                # hold Windows paths and match nothing on any other machine.
+                rel = os.path.relpath(log_path.resolve(), PROJECT_ROOT).replace(os.sep, "/")
+                line = build_manifest_line(
+                    vehicle=args.vehicle, session=session, path=log_path,
+                    rel_path=rel, stats=stats, bus_map=bus_map,
+                    msg_hash_map=msg_hash_map, policy_h=policy_h,
+                    log_sha1=sha1_file(log_path),
+                    uploaded_at_ns=time.time_ns(),
+                )
+                resp = http_session.post(write_url, data=line.encode(), timeout=60)
+                if resp.status_code >= 300:
+                    raise RuntimeError(f"{resp.status_code}: {resp.text[:200]}")
+                print(f"  manifest: {len(stats['keys'])} message(s), "
+                      f"{stats['t_start_ns']}..{stats['t_end_ns']}")
+            except Exception as exc:
+                print(f"  WARNING: manifest write failed for {log_path.name}: {exc}",
+                      file=sys.stderr)
+                failed.append(str(log_path))
+                continue
 
         if args.success_log and not args.dry_run:
             with open(args.success_log, 'a', encoding='utf-8') as sf:

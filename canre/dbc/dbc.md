@@ -1,11 +1,13 @@
-﻿# canre.dbc Reference
+# canre.dbc Reference
 
+> **Staleness check:** Each section shows a `Source last modified` timestamp. If the `.py` file's mtime is newer than the timestamp shown here, re-read the source before relying on this documentation.
 
 Tools for building, generating, and validating DBC (CAN database) files. All DBC operations depend on the `cantools` library.
 
 ---
 
 ## builder.py — DBC Construction & Editing
+*Source last modified: 2026-02-15 12:40:04*
 
 Programmatic interface for creating and modifying DBC files via `cantools`. Wraps `cantools.database.can.Database` with convenience methods for message and signal management.
 
@@ -56,6 +58,7 @@ Remove a message by frame ID and extended flag. Returns `True` if removed, `Fals
 ---
 
 ## skeleton.py — Skeleton DBC Generation
+*Source last modified: 2026-02-15 12:40:32*
 
 Generates a starter DBC file from observed CAN traffic. Single streaming pass over frames, then builds one message per unique `(bus, arbitration_id)`.
 
@@ -81,6 +84,7 @@ Returns the resolved output `Path`.
 ---
 
 ## validator.py — DBC Validation Against Traffic
+*Source last modified: 2026-02-15 15:02:45*
 
 Validates a DBC file against actual CAN bus traffic, reporting coverage metrics and decode results.
 
@@ -116,3 +120,37 @@ Loads a DBC file and streams through frames, attempting to decode each matched f
 ### `format_validation(results) -> str`
 
 Pretty-prints: summary line, matched IDs with signal ranges and errors, undefined IDs with counts, unobserved defined IDs.
+
+---
+
+## msghash.py — Message Definition Hashes
+*Source last modified: 2026-08-10 01:29:04*
+
+Stable per-message hashes for detecting DBC drift, used by `tools/influx_upload.py` (writes
+them into `upload_manifest`) and by the sync/diff tooling (compares them).
+
+**Why:** comparing uploaded signal *names* against the DBC catches renames, additions and
+removals, but is blind to a scale, offset, bit-position or endianness change — the name is
+identical and only the values differ. A recorded hash closes that gap.
+
+### `message_hashes(databases, buses, *, exclude_global, exclude_bus_signal, exclude_id, exclude_bus_id) -> dict`
+
+Returns `{(bus_name, "0xNNN"): "<12 hex>"}` for every message that would be uploaded.
+
+- `databases` — list of `(name, cantools.Database)` in load order, as
+  `influx_upload.load_databases()` returns. Later DBCs win on signal-name collision,
+  mirroring `decode_frame()`.
+- `buses` — bus names to evaluate, e.g. `["powertrain", "vehicle", "obd"]`.
+- Exclusion sets have the shapes `influx_upload.build_exclude_sets()` produces.
+
+Exclusions are folded into the hash, so the **same CAN ID can hash differently per bus** —
+correct, because the Vtrux gateway means `0x0C9` on `obd` and on `vehicle` carry different
+signal sets.
+
+### `signal_fingerprint(signal) -> tuple`
+
+Hashed: name, start bit, length, byte order, signedness, scale, offset, minimum, maximum,
+multiplexer ids, is_multiplexer.
+
+**Not** hashed: comments, value tables, receiver lists, message name, message comment.
+Editing a `CM_` or renaming a message must not trigger a re-upload of millions of points.

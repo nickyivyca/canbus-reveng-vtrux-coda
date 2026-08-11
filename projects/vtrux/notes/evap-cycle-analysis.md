@@ -1,5 +1,19 @@
 # Vtrux Evap Cycle Analysis
 
+> **READ FIRST (2026-07-19):** The evap-active flag is `0x649` **B4 bit 7**, and the purge progress
+> counter is `0x649` **B2[3:0]:B3**. Sections written before Phase 5 (notably Phase 2D, and passing
+> references in the fuse-pull and flag-persistence sections) describe **B0 bit 7** as the evap flag —
+> that identification is invalidated. B0's role is unresolved. See **Phase 5** at the end of this file.
+>
+> **~~ALSO (2026-07-26):~~ RETRACTED 2026-08-09.** Phase 6 claimed `0x63A` **B7 bit4** was a dedicated
+> purge-in-progress bit. It is not. A purge runs to completion with that bit clear
+> (`vtrux_20260719_190019`). **Use `0x649` B4 bit 7 + `vcm_evap_counter` — the Phase 5 result — as
+> the only evap source.** See **Phase 6** for the retraction and **Phase 7** for the counterexample
+> that settles it: on 2026-07-26 bit4 sets for 329 s with evap provably idle all day. Phase 6 also
+> said the bit "tracks generator power (~40 kW)"; Phase 7 weakens that — bit4 set means a *bounded*
+> ~16–57 kW band, and the highest generator output occurs with bit4 **clear**. Recorded as
+> generator related, not further characterized.
+
 **Log files:** `vtruxevapdrivelog4.log` (part 1, 1462s) + `vtruxevapdrivelog4part2.log` (part 2, 342s)
 
 ## Background
@@ -347,9 +361,9 @@ within four reference windows. Candidates = changed in evap_done, NOT in any con
 
 | Signal | Transition | Time | Notes |
 |--------|-----------|------|-------|
-| Bus1 0x1A1 B1 | 0x04 → 0x00 | t=1388.060s | Unidentified GM message (not in any DBC) |
+| Bus1 0x1A1 B1 | 0x04 → 0x00 | t=1388.060s | Unknown GM message (not in GMLAN DBC) |
 | Bus2 0x1A1 B1 | 0x04 → 0x00 | t=1388.058s | Same message, VCM-forwarded to second bus |
-| Bus1 0x4C1 B2 | 0x86 → 0x85 | t=1388.043s | EPRI engine temperature message |
+| Bus1 0x4C1 B2 | 0x86 → 0x85 | t=1388.043s | Engine_General_Status_4 (GMLAN defined) |
 | Bus2 0x4C1 B2 | 0x86 → 0x85 | t=1388.040s | Same, forwarded |
 | Bus3 0x600 B2+B3 | large jump | t=1388.555s | Already understood: B2-B3 sub-counter pair |
 
@@ -359,8 +373,8 @@ infrequently, or signals where the coincidence window is wide enough that noise/
 
 #### 0x1A1 B1 — Ruled Out (Coincidental Pulse)
 
-**Message identity:** 0x1A1 is an unidentified GM bus message, observed at 80 Hz, DLC=7,
-bridged by VCM to both GM buses.
+**Message identity:** 0x1A1 is not present in the GM PPEI GMLAN DBC (GMW8762) — it is an
+unidentified GM bus message, observed at 80 Hz, DLC=7, bridged by VCM to both GM buses.
 
 **Cross-validation result (2026-03-05):** Extracted 0x1A1 B1 timeseries from the full Part 2 log
 (`anotherevap_p2_0x1a1_b1.csv`). B1 does NOT hold at 0x04 throughout the evap period — it
@@ -386,7 +400,7 @@ transitions only because B1 happened to be in its 0x00 phase during those specif
 The 0x04 oscillation pattern is unrelated to evap — it occurs throughout all engine operation.
 It likely represents a sub-state counter or rolling field within the B1 byte.
 
-**Observed B1 states (empirical):**
+**Known B1 states:**
 - 0x10: engine off (initial cold start / before first run)
 - 0x00: engine running (or post-run idle between pulses)
 - 0x20: seen in first evap drive part 1 (different operating mode)
@@ -396,10 +410,9 @@ It likely represents a sub-state counter or rolling field within the B1 byte.
 
 #### 0x4C1 B2 — Ruled Out (Engine Coolant Temperature)
 
-**Message identity:** 0x4C1 is an EPRI-attributed engine temperature message
-(`EPRI_PPEI_Engine_General_Status_4_04C1` in `epri-obd-bus.dbc`). Faithfully bridged between
-both GM buses (byte-identical). Per the EPRI decompile, B2 encodes `ECM_EngineCoolantTemp` — a
-continuous raw byte (scale 1, offset -40 degC).
+**Message identity:** 0x4C1 = `Engine_General_Status_4` in the GM PPEI GMLAN DBC (BO_ 1217).
+Faithfully bridged between both GM buses (byte-identical). Per the GMLAN spec, B2 (bits 23–16)
+encodes `Engine_Coolant_Temperature` — a continuous raw byte.
 
 **Conclusion:** A single-count drop in coolant temperature (0x86→0x85) coinciding with the evap
 completion window is coincidental. Engine temperature fluctuates ±1 count continuously. Ruled out.
@@ -408,7 +421,7 @@ completion window is coincidental. Engine temperature fluctuates ±1 count conti
 
 Both top candidates from the cluster scan have been ruled out after cross-validation:
 - **0x1A1 B1:** oscillating sub-state counter during all engine operation; evap_done transition was a coincidental last pulse before the engine stopped
-- **0x4C1 B2:** engine coolant temperature single-count drop; coincidental
+- **0x4C1 B2:** Engine_Coolant_Temperature single-count drop; coincidental
 
 **Cross-validation results (2026-03-05):** All remaining candidates checked against
 `vtruxevapdrivelog4part2.log` via `evap_crossval_scan.py`. Every candidate was ruled out:
@@ -451,7 +464,7 @@ Key candidates from timing analysis:
 | Bus3 **0x649 B0** | 0x91 (99.9%) | 0x00 (100%) | t=1386.794s | **EVAP SIGNAL** |
 | Bus3 **0x649 B4** | 0x83 (99.9%) | 0x02 (100%) | t=1386.784s | Related to 0x649 B0 |
 | Bus3 0x649 B5 | 0x1B (94.0%) | 0xFB (100%) | multiple | Complex; linked to 0x649 |
-| Bus1 0x1F5 B3 | 0x04 (98.5%) | 0x09 (99.5%) | n/a | GMLAN gear position (Drive vs Manual) |
+| Bus1 0x1F5 B3 | 0x04 (98.5%) | 0x09 (99.5%) | n/a | **Gear position (Drive vs Manual)** |
 | Bus1 0x1F5 B5 | 0x00 (100%) | 0x02 (99.5%) | n/a | 0x1F5 transmission state byte |
 | Bus3 0x644 B0 | 0xD0 (98.5%) | 0x10 (99.5%) | t=1438.627s | VCU→BMS cmd; fires 46s after engine stop, not at evap |
 | Bus3 0x639 B6 | 0x32 (98.5%) | 0x42 (99.5%) | t=1438.626s | Same ~46s post-engine-stop cluster; not evap |
@@ -467,7 +480,14 @@ engine-off completes its cooldown. Not evap-specific.
 
 ---
 
-### Phase 2D — 0x649 B0 Evap Status Signal (COMPLETE 2026-03-05)
+### Phase 2D — 0x649 B0 Evap Status Signal (COMPLETE 2026-03-05; **INVALIDATED 2026-07-19**)
+
+> **STATUS: The core conclusion of this phase — that `0x649` B0 bit 7 is the evap-active flag — is
+> INVALIDATED. See Phase 5.** A cross-session scan of all 104 Android sessions containing 0x649
+> found B0 bit 7 wrong in 6 of 17 sessions where a purge actually ran. The five logs this phase
+> drew on all happened to have B0 above `0x80`. The correct flag is **B4 bit 7** (17/17). The B0
+> observations below (constant within a session, clearing to `0x00` ~6.1s before engine stop,
+> holding through stalls) are accurate as data; the interpretation of bit 7 as the flag is not.
 
 **Signal:** `0x649 B0` (PT bus; VCU-sourced; part of the 0x639–0x64B VCU cluster)
 
@@ -632,7 +652,7 @@ Bit-level scan across evap vs control (M-mode, pre-engine, post-evap) windows.
 
 | Byte | Role | Notes |
 |------|------|-------|
-| B0 | Evap-active flag byte | Bit 7 SET = evap active; clears to 0x00 at completion (~6s before engine stop). Session-level: set at key-on based on VCM NVM state, not dynamic. |
+| B0 | **UNRESOLVED (see Phase 5)** | Previously read as "bit 7 SET = evap active" — invalidated 2026-07-19 (wrong in 6/17 purge sessions). Still accurate: clears to 0x00 at completion (~6s before engine stop), session-level, set at key-on from VCM NVM, not dynamic. |
 | B1 | Sub-state / sequence counter | Increments by +1 in small steps (~30 per evap session). Not discriminating (also increments in M-mode). |
 | B2[7:4] | **Free-running clock** | Increments by +0x10 per step regardless of engine state — runs during stall, M-mode, everything. Not evap-specific. |
 | B2[3:0] | **Evap counter MSB** | Increments by 1 each time B3 wraps 0xFF->0x00. Frozen during stall. Zero in M-mode and post-evap. |
@@ -1001,7 +1021,7 @@ Key observations:
 
 2. **Counter resets unpredictably.** The counter appears to reset during certain power or module events (confirmed: VCM B-connector disconnect on 2026-03-06 dropped B2 back to 0x01). If the counter resets due to a routine hardware event, the stored reference becomes invalid and the countdown would read incorrectly.
 
-3. **Not a direct display value.** B2 cannot be read directly as "days remaining" — it only becomes meaningful relative to a stored reference. Compare to 0x649 B3 (evap activity counter) which is a direct cycle-completion metric, or 0x649 B0 bit 7 which is a direct "evap active/pending" flag.
+3. **Not a direct display value.** B2 cannot be read directly as "days remaining" — it only becomes meaningful relative to a stored reference. Compare to 0x649 B3 (evap activity counter) which is a direct cycle-completion metric, or the evap active/pending flag (stated here as B0 bit 7; corrected to **B4 bit 7** in Phase 5).
 
 #### Secondary candidates ruled out
 
@@ -1012,5 +1032,305 @@ Key observations:
 
 #### Summary
 
-**0x135 B2 is the best signal found for tracking the 5-day evap window**, but it requires the display app to detect evap completion events and persist a reference value across sessions. Without that infrastructure it cannot drive a countdown directly. The existing 0x649 B0 bit 7 flag remains the only clean binary signal for "evap pending."
-</content>
+**0x135 B2 is the best signal found for tracking the 5-day evap window**, but it requires the display app to detect evap completion events and persist a reference value across sessions. Without that infrastructure it cannot drive a countdown directly.
+
+> **Amended 2026-07-19 (Phase 5):** the clean binary signal for "evap pending" is `0x649` **B4 bit 7**,
+> not B0 bit 7 as stated when this phase was written.
+
+---
+
+## Phase 5 — B0 bit 7 Invalidated; B4 bit 7 Confirmed (COMPLETE 2026-07-19)
+
+**Trigger:** On the 2026-07-19 drive the Android live display showed `EVAP: COMPLETE` for the whole
+trip, then an evap cycle started once SoC fell to 80%. The display reads `vcm_evap_active`, which the
+DBC defined as `0x649` B0 bit 7 per the Phase 2D conclusion.
+
+**Logs:** `../../CANLogs/VtruxLogs/vtrux_20260719_164520_T0..T10.log` (11 chunks, ~2245s)
+**Scripts:** `artifacts/evap_display_mismatch_20260719.py` (single-session timeline),
+`artifacts/evap_b0_history_scan.py` (all 1052 Android sessions)
+**Artifacts:** `artifacts/evap_display_mismatch_20260719.txt`, `artifacts/evap_b0_history_scan.txt`
+
+### The 2026-07-19 session
+
+| Time | Event |
+|------|-------|
+| t=0.004 | `0x649` B0=`0x64`, B4=`0x83` — from the first frame |
+| t=1214 | SoC falls to 80% |
+| t=1248.6 | `0x600` B0: `0x24`->`0x34` — VCM commands generator on |
+| t≈1485–2244 | evap counter `(B2&0x0F)<<8\|B3` climbs `0x000`->`0x218` (536) — real purge |
+| t=2129.8 | `0x649` B0: `0x64`->`0x65` |
+| t=2244.25 | `0x649` B4: `0x83`->`0x82`; generator off 0.16s later |
+
+B0 = `0x64` throughout — **bit 7 clear** — while a genuine evap cycle was pending and then purging.
+B4 bit 7 was set from the first frame and cleared exactly at cycle end.
+
+### Cross-session scan (all 104 Android sessions containing 0x649)
+
+Of 1052 Android sessions, 104 contain `0x649`; 17 of those recorded actual purge activity
+(`evap_counter` > 0).
+
+| Indicator | Correct in purge sessions |
+|-----------|--------------------------|
+| B0 bit 7 | **6 of 17 wrong** (five 2026-04-14 sessions, plus 2026-07-19) |
+| B4 bit 7 | **17 of 17 correct**, and never set spuriously |
+
+**Conclusion: `0x649` B0 bit 7 is NOT the evap-active flag.** The Phase 2D identification
+generalized from five logs that all happened to have B0 above `0x80`. `0x649` B4 bit 7 is the
+correct flag and is the only byte that survives the full history.
+
+### B0 is unresolved — earlier counter reading retracted
+
+An intermediate hypothesis during this investigation — that B0 is a "time since last evap"
+counter that resets to `0x00` at completion, climbs ~20/day, and fires at 100 — was **tested and
+rejected**. It fit the July window but fails against April:
+
+| Session | B0 | Evap pending (B4 b7) | evap_counter max |
+|---------|----|--------------------|------------------|
+| 2026-04-03 | 4 | no | 0 |
+| 2026-04-08 | 138 -> 140 | yes | 0 |
+| 2026-04-11 | 8 | yes | 0 |
+| 2026-04-14 | 8 -> 9 | yes | **141 -> 398 (purging)** |
+| 2026-04-20 | 131 | yes | 398 |
+| 2026-04-25 | 12 -> 18 | no | 0 |
+
+A purge ran to `evap_counter`=398 with B0 at 8, so B0 is not a percentage or a threshold. B0 also
+moves 140 -> 8 -> 9 -> 131 -> 12 with no completion in between, so it is not monotonic.
+
+**What is still supported:** B0 does go to `0x00` at completion in the two sessions that captured
+one (2026-06-10 `0xD5`->`0x00`, 2026-07-14 `0xCD`->`0x00`, both at `evap_counter`=901), and it did
+climb steadily across 2026-07-14 -> 2026-07-19. Beyond that its behavior is unexplained.
+
+**Untested observation for future work:** the April values cluster as either low (4, 8, 9, 12, 13,
+14, 18) or those same lows plus ~128 (131, 138, 139, 140), which would suggest bit 7 is a real flag
+over an independent low-bit counter. The 2026-07-19 value of 100 does not fit that shape, so this
+is recorded as a lead only, not an explanation.
+
+**Consequence for Phase 4:** the suggestion that B0 could serve as a self-resetting countdown source
+(a cleaner alternative to `0x135` B2) is withdrawn pending an explanation of the April data.
+
+### Three-state indicator
+
+The two confirmed signals give the full PENDING / PURGE / COMPLETE spec with no cross-session
+state tracking, which Phase 2D had assumed was required:
+
+| B4 bit 7 | evap_counter | State |
+|----------|--------------|-------|
+| set | 0 | PENDING |
+| set | > 0 | PURGE |
+| clear | — | COMPLETE |
+
+Caveat: the counter freezes during a stall, so a paused purge still reads PURGE rather than
+reverting to PENDING. This is the intended behavior.
+
+DBC updated 2026-07-19: `vcm_evap_active` moved from `7|1@1+` (B0 bit 7) to `39|1@1+` (B4 bit 7),
+and `vcm_evap_counter` added at `19|12@0+`. Android app changes are specified but NOT implemented —
+see `android-app/notes/evap-bug.md`.
+
+---
+
+## Phase 6 — RETRACTED: 0x63A B7 bit4 Is Not a Purge Bit (2026-07-26, retracted 2026-08-09)
+
+> **This phase's conclusion is withdrawn.** `0x63A` B7 bit4 is **not** an evap purge indicator.
+> The original claim and its evidence are preserved below for the record; the retraction and
+> the counter-evidence follow at the end of the phase. **Do not use bit4 for evap.** The
+> Phase 5 result (`0x649` B4 bit 7 + `vcm_evap_counter`) is unaffected and remains correct.
+
+### Original claim (WRONG)
+
+Phase 5 established that PENDING vs PURGE requires pairing `0x649` B4 bit 7 with
+`vcm_evap_counter`, because the flag alone cannot separate them. It was claimed that the VCU
+already broadcast that distinction as a single bit:
+
+> **`0x63A` B7 bit4 (mask `0x10`) = evap purge actually in progress** — 1 when the engine is
+> running AND an evap cycle is active, 0 otherwise.
+
+### Evidence originally offered
+
+Found while scanning the 2026-07-24 trip (8 h, main truck) for latched state. Across the
+whole day `0x63A` B7 took values `04`, `C4`, `D4`, `E4`, `F4`; bit4 (the `D4`/`F4` cases)
+was set exactly once, and it lines up with the purge counter:
+
+| Time (session 162517) | 0x63A B7 bit4 | 0x649 evap_active | evap_counter | generator |
+|-----------------------|---------------|-------------------|--------------|-----------|
+| 16:25:24 key on | 0 | 1 (pending) | 0 | off |
+| 16:31:31 generator starts | 0 | 1 | 0 | on |
+| **16:34:01** | **1** | 1 | begins advancing | on |
+| 16:36 → 17:02 | 1 | 1 | 56 → 875 | on |
+| 17:02:36 cycle completes | 1 | 0 | reset to 0 | on |
+| **17:03:03** | **0** | 0 | 0 | on |
+
+The bit rises when the purge actually starts — 2.5 min after the engine started, not at
+key-on — and falls 27 s after the cycle completes and the counter resets.
+
+### Cross-log checks
+
+| Log | 0x63A B7 bit4 | 0x649 B4 bit 7 | Consistent? |
+|-----|---------------|----------------|-------------|
+| `vtruxgeneratorpumpunplug.log` (generator idling) | set, 100% | ACTIVE, 100% | yes — engine running, purging |
+| `vtrux_ccmscan.log` | clear | ACTIVE, 100% | yes — cycle pending but engine not running |
+| `generator-on-then-off.log` | clear | idle, 100% | yes — no cycle |
+| `vtruxgeneratoroverheattest.log` | set part of the time | ACTIVE part of the time | yes |
+
+The `ccmscan` row is the discriminating one: evap active with the engine off gives bit4
+clear, which is exactly the PENDING-vs-PURGE split.
+
+---
+
+### Retraction (2026-08-09)
+
+The claim was tested against the Android app's own evap regression logs and fails.
+
+**1. A full purge runs to completion with bit4 clear.**
+
+The 2026-07-19 cycle spans two sessions. `vtrux_20260719_164520` ends mid-purge; the cycle
+finishes in `vtrux_20260719_190019`, where the counter resumes at 536, climbs to 901, and
+`vcm_evap_active` goes 1 -> 0 at 19:16:29 (t=969.7s). Across **all 640,380** `0x63A` frames of
+that session, bit4 is **0**. B7 is only ever `0x04`, `0xC4` or `0xE4` — never `0xD4`/`0xF4`.
+365 counts of purge progress accumulated with the bit clear.
+
+That alone falsifies "bit4 = purge in progress."
+
+**2. B7 is a field, not a flag.** Across these sessions B7 takes five values:
+
+| B7 | bits[7:6] | bits[5:4] | |
+|----|-----------|-----------|---|
+| `0x04` | 00 | — | HV / VCM not up |
+| `0xC4` | 11 | 0 | |
+| `0xD4` | 11 | 1 | bit4 set |
+| `0xE4` | 11 | 2 | bit5 set |
+| `0xF4` | 11 | 3 | both set |
+
+All four combinations of bits[5:4] occur, so bits[5:4] is a 2-bit field. Reading bit4 in
+isolation was the original error.
+
+**3. The apparent evap correlation is a generator-power confound.** Pooled over
+`vtrux_20260719_164520`, `_190019`, `vtrux_20260724_162517`, `_172621` and `_211556`:
+
+| bits[5:4] | frames | gen_power median (kW) | `vcm_evap_active` | counter advance |
+|-----------|--------|----------------------|-------------------|-----------------|
+| HV down | 845,917 | -0.01 | 19.1% | 536 |
+| 0 | 860,144 | 4.55 | 7.8% | 751 |
+| 1 | 8,282 | **40.21** | 100.0% | 0 |
+| 2 | 1,118,829 | 0.37 | 1.4% | 150 |
+| 3 | 252,016 | **40.30** | 98.9% | 1437 |
+
+bit4 set (states 1 and 3) means the generator is at ~40 kW. It is *contained within*
+evap-active windows in these logs but does not cover them. On 2026-07-24 — the session the
+original claim was built on — the engine ran specifically to service the purge, so
+"generator in state 1/3" and "purge running" were the same window. That coincidence was the
+entire finding.
+
+`0x63A` is `VCM_GenInitState`; a generator state machine in B7 fits the message identity far
+better than an evap flag does.
+
+**4. The "27 s lag" was also the generator.** In `_164520` bit4 sets at 17:08:42 with
+`gen_power` = 42.23 kW, while `vcm_evap_counter` is still 0 and does not leave 0 until
+17:09:49. That 67 s gap was bit4 following the generator ramp, not the purge starting early.
+
+### Consequences
+
+- `SG_ vcm_evap_purging` removed from `vtrux-powertrain-experimental.dbc`; `0x63A` is a `BO_`
+  stub again (confirmed-signals-only rule).
+- `powertrain-messages.md` section rewritten as an open question.
+- The correction box in `status-bits-cross-log-comparison.md` re-corrected — it had adopted
+  the evap reading.
+- `android-app/notes/evap-bug.md` is **unaffected**: the app never used bit4. Its three-state
+  logic rests on Phase 5 and stands.
+
+### Still open
+
+bits[5:4] of `0x63A` B7 as a **2-bit generator state field** is a real lead and unexplored.
+The gen_power separation (medians 0.37 / 4.55 vs 40.2 / 40.3) is clean enough to be worth
+chasing on its own — but no state has been assigned a meaning, and no session with heavy
+generator use and no evap activity has been found yet to break the remaining confound.
+
+> **Resolved by Phase 7 (2026-08-09).** The confound is now broken and the evap reading of
+> bits[5:4] is falsified by direct counterexample, not merely unsupported.
+
+---
+
+## Phase 7 — Confound Broken: bits[5:4] Is Not Evap-Linked (2026-08-09)
+
+Phase 6 retracted the evap reading of `0x63A` B7 bit4 but could not rule it out, because every
+session examined had evap activity overlapping the high-generator windows. The test it called
+for was a session with heavy generator use and **no** evap activity. The 2026-07-24..26 weekend
+trip supplies it.
+
+### Data
+
+Android auto-backup logs, `../../CANLogs/VtruxLogs/`, 16 sessions / 252 chunks / 11.2 GB:
+`vtrux_20260724_*` (outbound), `vtrux_20260725_*` (at destination), `vtrux_20260726_*` (return).
+
+Two handling notes specific to this capture:
+
+- **Channel numbers are not stable.** The Android logger was unplugged and replugged repeatedly,
+  so the VCU bus appears on channels 2, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 26, 28, 30,
+  32, 34, 36, 38, 42 and 44 across the trip — sometimes several within one chunk. The scan is
+  channel-agnostic and identifies the bus by message content. A renumber is therefore not
+  mistaken for a dropout. Verified that no target ID is ever live on two channels *concurrently*
+  (which would double-count): 0 concurrent duplicates across all 252 chunks, and `0x598` shares
+  the VCU bus in 251/252 chunks.
+- **Absolute time** comes from each chunk's `START DATE AND TIME` header, so sessions sit on a
+  real timeline rather than per-chunk relative time.
+
+### Result — Sunday 2026-07-26 is the counterexample
+
+Evap was provably idle for the whole of Sunday:
+
+| Measure | Value |
+|---|---|
+| `vcm_evap_active` = 0 | 30,871 of 30,876 sampled seconds (5 unknown, **0 active**) |
+| `vcm_evap_counter` | held **0** all day — min 0, max 0, one unique value |
+
+The counter never leaving 0 rules out a *pending* cycle as well as a running purge. Yet bits[5:4]
+reached **state 1 (bit4 set)** for one continuous **329 s** run from 12:50:12, with `gen_power`
+median 16.5 kW.
+
+The per-day contrast is the sharpest statement of it:
+
+| Day | state 1 duration | `vcm_evap_active` during it |
+|---|---|---|
+| Fri 2026-07-24 | 56 s | **100% active** |
+| Sun 2026-07-26 | 331 s | **100% inactive** |
+
+The same state occurs under opposite evap conditions, so bits[5:4] is not evap-determined.
+
+### The generator reading also needs weakening
+
+Phase 6 stated that bit4 set means the generator is at ~40 kW. The weekend data does not support
+that form of it either. Pooled over the weekend, bit4-set states sit at a *moderate* generator
+power and are strictly bounded, while the **highest** generator output occurs with bit4 **clear**:
+
+| bits[5:4] | gen_power median (kW) | samples > 60 kW | max (kW) |
+|---|---|---|---|
+| 0 | 0.5 | 1,375 s | 142.8 |
+| 1 | 19.5 | **0** | 57.4 |
+| 2 | 6.5 | 1,600 s | 138.0 |
+| 3 | 20.5 | **0** | 52.5 |
+
+States 1 and 3 total 2,075 s with **zero** samples above 60 kW; states 0 and 2 spend 8–10% of
+their time above it. At the states 0/2 rate, ~187 s above 60 kW would be expected in states 1/3.
+
+So bit4 set corresponds to a *bounded* generator band (~16–57 kW), not to high generator output.
+No mechanism is assigned — recorded as **generator related, not further characterized**.
+
+### Limitation
+
+Essentially all of the bit4-set-with-evap-inactive evidence is the single 329 s Sunday episode.
+One clean counterexample is sufficient to falsify the evap reading, but it is thin support for
+any positive claim about what bits[5:4] encodes. Further state-1 windows with evap idle, in other
+sessions, would firm this up.
+
+### Artifacts
+
+`notes/artifacts/genstate_63a_weekend.py` (phases 1–3) and its outputs:
+`genstate_63a_weekend_timeseries.csv` (54,789 rows, 1 Hz joint state),
+`genstate_63a_weekend_stats.json`, `genstate_63a_weekend_report.txt`,
+`genstate_63a_saturday_hv_check.txt`.
+
+### Consequences
+
+- `0x63A` remains a `BO_` stub. Its DBC comment is reduced to the neutral statement above; the
+  falsification is recorded here rather than in the DBC.
+- Separately, this scan disproved the "B7 bits[7:6] set together whenever HV is up" claim — see
+  the Saturday cross-check in `status-bits-cross-log-comparison.md`.

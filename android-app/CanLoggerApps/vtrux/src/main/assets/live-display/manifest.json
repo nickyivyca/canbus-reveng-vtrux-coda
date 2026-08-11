@@ -2,115 +2,113 @@
   "comment": "Vtrux live-display subscriptions. Message IDs reference live-display/dbcs/<bus>.dbc.",
   "subscriptions": [
     {
-      "bus": "powertrain",
-      "message_id": 1040,
-      "signals": [
-        "bcm_ibat",
-        "bcm_alarm",
-        "bcm_gfd",
-        "bcm_epo",
-        "bcm_hvil_mon"
-      ],
-      "rate_hz": 5,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 1040,
+      "signals": ["bcm_ibat", "bcm_alarm", "bcm_gfd", "bcm_epo", "bcm_hvil_mon"],
+      "rate_hz": 5, "aggregation": "latest",
       "_note": "0x410 EPRI_BCM_Status"
     },
     {
-      "bus": "powertrain",
-      "message_id": 1056,
-      "signals": [
-        "bcm_dis_max",
-        "bcm_chg_max"
-      ],
-      "rate_hz": 1,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 1056,
+      "signals": ["bcm_dis_max", "bcm_chg_max"],
+      "rate_hz": 1, "aggregation": "latest",
       "_note": "0x420 EPRI_BCM_Limits"
     },
     {
-      "bus": "powertrain",
-      "message_id": 1072,
-      "signals": [
-        "bcm_cell_vmin",
-        "bcm_cell_vmax",
-        "bcm_cell_tmin",
-        "bcm_cell_tmax"
-      ],
-      "rate_hz": 2,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 1072,
+      "signals": ["bcm_cell_vmin", "bcm_cell_vmax", "bcm_cell_tmin", "bcm_cell_tmax"],
+      "rate_hz": 2, "aggregation": "latest",
       "_note": "0x430 EPRI_BCM_Data1"
     },
     {
-      "bus": "powertrain",
-      "message_id": 1088,
-      "signals": [
-        "bcm_balancing",
-        "bcm_balancing_cnt",
-        "bcm_mainc_stat"
-      ],
-      "rate_hz": 2,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 1088,
+      "signals": ["bcm_balancing", "bcm_balancing_cnt", "bcm_mainc_stat"],
+      "rate_hz": 2, "aggregation": "latest",
       "_note": "0x440 EPRI_BCM_Data2"
     },
     {
-      "bus": "powertrain",
-      "message_id": 84,
-      "signals": [
-        "GENE_RotSpd"
-      ],
-      "rate_hz": 10,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 84,
+      "signals": ["GENE_RotSpd"],
+      "rate_hz": 10, "aggregation": "latest",
       "_note": "0x054 generator rpm"
     },
     {
-      "bus": "powertrain",
-      "message_id": 1137,
-      "signals": [
-        "GENE_Mot_Trq"
-      ],
-      "rate_hz": 10,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 1137,
+      "signals": ["GENE_Mot_Trq"],
+      "rate_hz": 10, "aggregation": "latest",
       "_note": "0x471 generator torque"
     },
     {
-      "bus": "powertrain",
-      "message_id": 1145,
-      "signals": [
-        "GENE_ThermInd_pct",
-        "GENE_DrvCoolFlowReq_pct"
-      ],
-      "rate_hz": 1,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 1145,
+      "signals": ["GENE_ThermInd_pct", "GENE_DrvCoolFlowReq_pct"],
+      "rate_hz": 1, "aggregation": "latest",
       "_note": "0x479 generator thermal indicator + cool flow request"
     },
     {
-      "bus": "powertrain",
-      "message_id": 419419827,
-      "signals": [
-        "DCDC_Temperature"
-      ],
-      "rate_hz": 1,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 419419827,
+      "signals": ["DCDC_Temperature"],
+      "rate_hz": 1, "aggregation": "latest",
       "_note": "0x18FFD6B3 EPRI_DCDC -- DCDC_Temperature"
     },
     {
-      "bus": "powertrain",
-      "message_id": 1609,
-      "signals": [
-        "vcm_evap_active"
-      ],
-      "rate_hz": 2,
-      "aggregation": "latest",
-      "_note": "0x649 VCM_EvapControl -- vcm_evap_active"
+      "bus": "powertrain", "message_id": 1609,
+      "signals": ["vcm_evap_active", "vcm_evap_counter"],
+      "rate_hz": 2, "aggregation": "latest",
+      "_note": "0x649 VCM_EvapControl -- vcm_evap_active + vcm_evap_counter (counter 0 = pending, >0 = purging)"
     },
     {
-      "bus": "powertrain",
-      "message_id": 419419584,
-      "signals": [
-        "BELINV_overAllInverterTemperature"
-      ],
-      "rate_hz": 1,
-      "aggregation": "latest",
+      "bus": "powertrain", "message_id": 419419584,
+      "signals": ["BELINV_overAllInverterTemperature"],
+      "rate_hz": 1, "aggregation": "latest",
       "_note": "0x18FFD5C0 BELINV_overallTemperature -- charging-only signal"
+    },
+    {
+      "bus": "powertrain", "message_id": 419420096,
+      "signals": ["BELINV_chargerInputVoltage", "BELINV_chargerInputCurrent",
+                  "BELINV_hvBatteryVoltage", "BELINV_hvBatteryCurrent"],
+      "rate_hz": 2, "aggregation": "latest",
+      "_note": "0x18FFD7C0 BELINV_hvBatteryAndCharger -- AC input V/I, HV battery V/I"
+    },
+    {
+      "bus": "powertrain", "message_id": 419420608,
+      "signals": ["BELINV_maxAvailableChargingCurrent"],
+      "rate_hz": 1, "aggregation": "latest",
+      "_note": "0x18FFD9C0 BELINV_chargeInfo -- J1772 advertised current limit"
+    },
+    {
+      "bus": "powertrain", "message_id": 419420352,
+      "signals": ["BELINV_pilotDuty"],
+      "rate_hz": 1, "aggregation": "latest",
+      "_note": "0x18FFD8C0 BELINV_j1772Info -- control pilot duty cycle"
+    },
+    {
+      "bus": "obd", "message_id": 1217,
+      "signals": ["Engine_Coolant_Temperature"],
+      "rate_hz": 1, "aggregation": "latest",
+      "_note": "0x4C1 engine coolant temp (GMLAN; EPRI byte position was wrong)"
+    },
+    {
+      "bus": "obd", "message_id": 977,
+      "signals": ["Throttle_Position"],
+      "rate_hz": 5, "aggregation": "latest",
+      "_note": "0x3D1 VCM-commanded throttle, best APP proxy on GMLAN"
+    },
+    {
+      "bus": "obd", "message_id": 1098,
+      "signals": ["TRAC_ThermInd_pct", "TRAC_DrvCoolFlowReq_pct"],
+      "rate_hz": 1, "aggregation": "latest",
+      "_note": "0x44A drivetrain thermal indicator + cool flow"
+    },
+    {
+      "bus": "obd", "message_id": 1090,
+      "signals": ["TRAC_TrqFbk"],
+      "rate_hz": 10, "aggregation": "latest",
+      "_note": "0x442 drivetrain torque feedback"
+    },
+    {
+      "bus": "obd", "message_id": 1019,
+      "signals": ["Fuel_Alcohol_Composition"],
+      "rate_hz": 1, "aggregation": "latest",
+      "_note": "0x3FB Engine_Fuel_Status -- ethanol %"
     }
   ]
 }

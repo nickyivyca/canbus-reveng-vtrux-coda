@@ -39,7 +39,10 @@ SPEC: dict[str, dict[str, list[int]]] = {
             0x0649,      # VCM_EvapControl          -- vcm_evap_active
         ],
         "projects/vtrux/BelInverter-v2.dbc": [
-            0x18FFD5C0,  # BELINV_overallTemperature -- BELINV_overAllInverterTemperature
+            0x18FFD5C0,  # BELINV_overallTemperature   -- BELINV_overAllInverterTemperature
+            0x18FFD7C0,  # BELINV_hvBatteryAndCharger  -- AC input V/I, HV battery V/I
+            0x18FFD8C0,  # BELINV_j1772Info            -- BELINV_pilotDuty
+            0x18FFD9C0,  # BELINV_chargeInfo           -- max available charging current
         ],
     },
     "obd": {
@@ -48,6 +51,13 @@ SPEC: dict[str, dict[str, list[int]]] = {
         ],
         "projects/vtrux/vtrux-obd-experimental.dbc": [
             0x0442,      # TRAC_TrqFbk_0442 -- TRAC_TrqFbk
+        ],
+        "projects/vtrux/GMW8762_PPEI_GMLAN.dbc": [
+            0x03D1,      # Engine_General_Status_2 -- Throttle_Position (engine APP proxy per vtrux.md)
+            0x03FB,      # Engine_Fuel_Status -- Fuel_Alcohol_Composition (dual-native; also on Vehicle bus)
+            0x04C1,      # Engine_General_Status_4 -- Engine_Coolant_Temperature. The EPRI DBC's
+                         # definition for this message produced a stuck ~70 C
+                         # reading on the live display; the GMLAN one is used.
         ],
     },
 }
@@ -174,12 +184,26 @@ def _extract_message_attrs(text: str, frame_id: int) -> list[str]:
     return out
 
 
-def distill_bus(bus_name: str, sources: dict[str, list[int]]) -> str:
+def distill_bus(
+    bus_name: str,
+    sources: dict[str, list[int]],
+    skip: tuple[str, ...] = (),
+) -> str:
     pieces = [HEADER.rstrip()]
     pieces.append("")  # blank line after BU_
     attr_pieces: list[str] = []
 
     for src_path, ids in sources.items():
+        # A source DBC may legitimately be unavailable: GMW8762_PPEI_GMLAN.dbc is
+        # generated from a proprietary GM spec and is not distributed with this
+        # repo. Skip it rather than failing, so the tool still produces the other
+        # buses. Supply the spec DBC yourself and it is picked up automatically.
+        if any(s in src_path for s in skip):
+            print(f"  skip (--without): {src_path}")
+            continue
+        if not Path(src_path).is_file():
+            print(f"  skip (not present): {src_path}")
+            continue
         text = _read(Path(src_path))
         for fid in ids:
             block = _extract_message_block(text, fid)
@@ -200,13 +224,40 @@ def distill_bus(bus_name: str, sources: dict[str, list[int]]) -> str:
 
 
 def main() -> None:
-    for out_dir in OUT_DIRS:
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--without",
+        action="append",
+        default=[],
+        metavar="SUBSTR",
+        help="skip any source DBC whose path contains SUBSTR, even if present. "
+             "Use --without GMW8762 to build GMLAN-free assets on a machine that "
+             "does have the spec DBC.",
+    )
+    ap.add_argument(
+        "--out",
+        metavar="DIR",
+        help="write to DIR instead of the app asset folders (leaves the local "
+             "assets untouched).",
+    )
+    args = ap.parse_args()
+    skip = tuple(args.without)
+
+    out_dirs = [Path(args.out)] if args.out else OUT_DIRS
+    for out_dir in out_dirs:
         out_dir.mkdir(parents=True, exist_ok=True)
     for bus, sources in SPEC.items():
-        text = distill_bus(bus, sources)
-        msg_count = sum(len(v) for v in sources.values())
-        src_count = len(sources)
-        for out_dir in OUT_DIRS:
+        used = {
+            p: ids
+            for p, ids in sources.items()
+            if not any(s in p for s in skip) and Path(p).is_file()
+        }
+        text = distill_bus(bus, sources, skip=skip)
+        msg_count = sum(len(v) for v in used.values())
+        src_count = len(used)
+        for out_dir in out_dirs:
             out = out_dir / f"{bus}.dbc"
             out.write_text(text, encoding="utf-8")
             print(f"wrote {out} ({msg_count} msgs from {src_count} source(s))")

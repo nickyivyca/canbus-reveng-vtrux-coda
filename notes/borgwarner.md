@@ -55,6 +55,23 @@ Full enum: 0=OFF, 1=Park, 2=Parked, 3=ParkStalled, 4=Unparking, 5=Unparked, 6=Un
 - Park exit: `0x04` appears ~55 ms after 0x308 pin releases; `0x85` follows ~280 ms later
 - Park entry: `0x01` appears ~65 ms after 0x308 pin engages; `0x42` follows ~270 ms later
 
+### CODACAN display mapping (Coda, 2026-07-26)
+
+Cross-check from the Coda CODACAN bench-replay run (manufacturer LabVIEW decoder;
+see `projects/coda/notes/codacan-replay-verification-queue.md`):
+
+- CODACAN's Driveline-tab park fields — **ParkLock / ParkSensor / DriveSensor** — are
+  the **0x55C** signals (parkLockState / parkSensor / driveSensor above). At key-on
+  stationary they read `ParkLock = StatusOff`, ParkSensor/DriveSensor = off.
+- **0x308 (ParkPinState) has no distinct CODACAN display field.** A byte-sweep of
+  0x308 B0 across `0x00`–`0xF0` moved no Driveline field (the park state shown is
+  driven by 0x55C, not 0x308). So CODACAN neither confirms nor adds to the 0x308 B0
+  `0x20`=Park / `0x40`=NotPark encoding — that rests on the log-analysis + the
+  cross-vehicle Vtrux match documented above, which remains the authority.
+
+This is a CODACAN-method limitation (no displayed field), not evidence against the
+0x308 decode.
+
 ---
 
 ## Investigation: 0x308 B1-B2 Motor Speed Signal

@@ -89,6 +89,7 @@ class DbcParityTest {
             "epri-pt-bus.dbc",
             "epri-obd-bus.dbc",
             "BelInverter-v2.dbc",
+            "GMW8762_PPEI_GMLAN.dbc",
         )
         for (name in names) {
             val text = readResource("/dbcs/$name")

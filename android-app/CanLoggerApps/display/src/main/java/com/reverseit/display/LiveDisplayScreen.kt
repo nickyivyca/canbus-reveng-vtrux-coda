@@ -215,19 +215,22 @@ private fun GeneratorPanel(signals: Map<String, Double>) {
         maxRpm = 4000.0,
         torque = signals["GENE_Mot_Trq"],
         torqueRange = 400.0,
-        throttlePct = if (genRpm != null && genRpm < 400.0) 0.0 else null, // obd throttle source held from publish; re-source from EPRI
+        throttlePct = if (genRpm != null && genRpm < 400.0) 0.0 else signals["Throttle_Position"],
     )
 
-    // EVAP: vcm_evap_active is binary. v1 distinguishes only PURGE (active)
-    // vs COMPLETE (inactive). Distinguishing PENDING from COMPLETE requires
-    // session-level state tracking and is deferred.
+    // EVAP: vcm_evap_active (0x649 B4 bit 7) means "cycle pending or purging";
+    // vcm_evap_counter separates the two -- 0 while pending, non-zero once the
+    // purge is actually running. Both live on 0x649 so they arrive together and
+    // cannot be transiently inconsistent. A missing counter degrades to PENDING.
     val evapActive = signals["vcm_evap_active"]?.toInt()
-    val (evapText, evapBg) = when (evapActive) {
-        1 -> "PURGE" to Color(0xFF00ACC1)
-        0 -> "COMPLETE" to Color(0xFF2E7D32)
-        else -> "—" to Color(0xFF424242)
+    val evapCounter = signals["vcm_evap_counter"]?.toInt()
+    val (evapText, evapBg) = when {
+        evapActive == null -> "—" to Color(0xFF424242)
+        evapActive == 0 -> "COMPLETE" to Color(0xFF2E7D32)
+        (evapCounter ?: 0) > 0 -> "PURGE" to Color(0xFF00ACC1)
+        else -> "PENDING" to Color(0xFF1565C0)
     }
-    val ethanolPct: Double? = null // obd ethanol source held from publish; re-source from EPRI
+    val ethanolPct = signals["Fuel_Alcohol_Composition"]
     val ethanolText = ethanolPct?.let { "%.0f".format(it) } ?: "—"
     // U+1F33D corn emoji, written as a UTF-16 surrogate pair so the source
     // file stays ASCII-only.
@@ -248,7 +251,7 @@ private fun GeneratorPanel(signals: Map<String, Double>) {
 
     ColorBandSlider(
         label = "Engine coolant",
-        markers = listOf(SliderMarker(value = null)), // obd coolant temp source held from publish; re-source from EPRI
+        markers = listOf(SliderMarker(value = signals["Engine_Coolant_Temperature"])),
         min = 0.0,
         max = 130.0,
         bands = engineCoolantBands,
@@ -293,12 +296,7 @@ private fun ModePanel(signals: Map<String, Double>) {
                     ),
                 )
             }
-            DisplayMode.CHARGING -> {
-                Text(
-                    "Charging: J1772 / AC input — (BelInverter DBC not yet bundled)",
-                    color = Color(0xFF888888),
-                )
-            }
+            DisplayMode.CHARGING -> ChargePanel(signals)
             DisplayMode.EXPORT -> {
                 Text(
                     "Export: AC output legs — (BelInverter DBC not yet bundled)",
@@ -310,6 +308,106 @@ private fun ModePanel(signals: Map<String, Double>) {
             }
         }
     }
+}
+
+/**
+ * Charge-mode block, per spec: J1772 advertised current limit, AC input
+ * voltage, present AC input current. HV-side V/I is shown alongside so the
+ * two ends of the charger can be compared at a glance.
+ *
+ * All values come from the BelInverter combi-charger. They are only broadcast
+ * while the charger is awake, so every field degrades to a dash rather than
+ * a zero when the message is absent -- a real 0 A and "no data" must not look
+ * the same on a charging screen.
+ */
+@Composable
+private fun ChargePanel(signals: Map<String, Double>) {
+    val acVolts = signals["BELINV_chargerInputVoltage"]
+    val acAmps = signals["BELINV_chargerInputCurrent"]
+    val pilotDuty = signals["BELINV_pilotDuty"]
+    val dcLimitAmps = signals["BELINV_maxAvailableChargingCurrent"]
+    val hvVolts = signals["BELINV_hvBatteryVoltage"]
+    val hvAmps = signals["BELINV_hvBatteryCurrent"]
+
+    // The EVSE's offer is the pilot duty cycle, not a CAN signal. The Bel's
+    // maxAvailableChargingCurrent is the DC/pack-side limit (it tracks HV
+    // current, not AC draw) and is shown against the HV row instead.
+    val advertised = j1772AdvertisedAmps(pilotDuty)
+
+    // Scale runs to the EVSE offer with headroom, so the bar is mostly green
+    // during a normal charge and the marker only enters red if the charger
+    // draws more than the EVSE advertised.
+    val scaleMax = maxOf(advertised ?: 0.0, acAmps ?: 0.0, 1.0) * 1.25
+    val bands = if (advertised != null) listOf(
+        ColorBand(0.0, advertised, Color(0xFF2E7D32)),
+        ColorBand(advertised, scaleMax, Color(0xFFC62828)),
+    ) else listOf(ColorBand(0.0, scaleMax, Color(0xFF424242)))
+
+    ColorBandSlider(
+        label = "AC input current",
+        markers = listOf(SliderMarker(value = acAmps)),
+        min = 0.0,
+        max = scaleMax,
+        bands = bands,
+        referenceLines = advertised?.let { listOf(ReferenceLine(it, "J1772")) } ?: emptyList(),
+        boundarySuffix = "A",
+    )
+
+    Spacer(Modifier.height(6.dp))
+    ReadoutRow("AC input", fmtPair(acVolts, "V", acAmps, "A"))
+    ReadoutRow("AC power", fmtKw(acVolts, acAmps))
+    ReadoutRow("HV battery", fmtPair(hvVolts, "V", hvAmps, "A"))
+    ReadoutRow("DC power", fmtKw(hvVolts, hvAmps))
+    ReadoutRow(
+        "J1772 offer",
+        buildString {
+            append(advertised?.let { "%.1f A".format(it) } ?: "—")
+            if (pilotDuty != null) append("  (pilot %.0f%%)".format(pilotDuty))
+        },
+    )
+    ReadoutRow("DC limit", dcLimitAmps?.let { "%.1f A".format(it) } ?: "—")
+}
+
+/**
+ * EVSE advertised current from the J1772 control-pilot duty cycle, per SAE
+ * J1772 Table - the EVSE encodes its rating in the pilot PWM rather than
+ * broadcasting it on CAN.
+ *
+ *   10%..85%  ->  amps = duty * 0.6
+ *   85%..96%  ->  amps = (duty - 64) * 2.5
+ *
+ * Below 10% the pilot is signalling "no power available" (or digital comms in
+ * the 3-7% band), and above 96% is not a valid advertisement -- both return
+ * null so the UI shows a dash rather than a fabricated current.
+ */
+private fun j1772AdvertisedAmps(duty: Double?): Double? {
+    if (duty == null) return null
+    return when {
+        duty >= 10.0 && duty <= 85.0 -> duty * 0.6
+        duty > 85.0 && duty <= 96.0 -> (duty - 64.0) * 2.5
+        else -> null
+    }
+}
+
+@Composable
+private fun ReadoutRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+        Text(label, color = Color(0xFFAAAAAA), fontSize = 12.sp)
+        Spacer(Modifier.weight(1f))
+        Text(value, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private fun fmtPair(a: Double?, aUnit: String, b: Double?, bUnit: String): String {
+    if (a == null && b == null) return "—"
+    val left = a?.let { "%.1f $aUnit".format(it) } ?: "—"
+    val right = b?.let { "%.1f $bUnit".format(it) } ?: "—"
+    return "$left  x  $right"
+}
+
+private fun fmtKw(volts: Double?, amps: Double?): String {
+    if (volts == null || amps == null) return "—"
+    return "%.2f kW".format(volts * amps / 1000.0)
 }
 
 // --- helpers --------------------------------------------------------------

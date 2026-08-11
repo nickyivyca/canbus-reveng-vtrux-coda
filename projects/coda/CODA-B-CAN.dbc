@@ -11,6 +11,7 @@ BU_: ACCM BMS CHM DCDC GWM HVAC IPK SRS TEM
 BO_ 80 BMSChargerCmd: 8 BMS
  SG_ HVCurrentCmd : 7|16@0+  (0.1,0) [0|6553.5] "A"  Vector__XXX
  SG_ MaxVoltage   : 23|16@0+ (0.1,0) [0|6553.5] "V"  Vector__XXX
+ SG_ EVSEMaxCurrent : 47|16@0+ (0.1,0) [0|6553.5] "A"  Vector__XXX
 
 BO_ 469 DCDCStatus1: 8 DCDC
  SG_ Master_Fault : 7|1@0+ (1,0) [0|1] "" Vector__XXX
@@ -30,13 +31,11 @@ BO_ 471 BMS_DCDCEnableSet: 8 BMS
 
 BO_ 624 BMS_FaultStatus: 8 BMS
  SG_ BMSFaultSeverity : 7|4@0+ (1,0) [0|6] "" GWM
- SG_ BMSFaultCode : 3|4@0+ (1,0) [0|15] "" GWM
+ SG_ BMSRedLampReq : 1|1@0+ (1,0) [0|1] "" GWM
 
 BO_ 625 GWM_VehFaults: 8 GWM
- SG_ VehFaultSeverity : 7|4@0+ (1,0) [0|15] "" IPK
  SG_ VehicleFaultLampReq : 1|2@0+ (1,0) [0|3] "" IPK
  SG_ VehicleFaultB0Bit2 : 2|1@0+ (1,0) [0|1] "" Vector__XXX
- SG_ VehicleFault : 15|32@0+ (1,0) [0|4294967295] "" Vector__XXX
 
 BO_ 628 ChrgrSysFaultsTemp: 8 CHM
 
@@ -51,7 +50,7 @@ BO_ 629 BMSDriveLimits: 8 BMS
 BO_ 630 HVACStatus: 8 HVAC
  SG_ PTC_PowerConsumption  : 7|8@0+  (0.1,0)      [0|25.5]   "kW"   Vector__XXX
  SG_ ACCM_PowerConsumption : 15|8@0+ (0.1,0)      [0|25.5]   "kW"   Vector__XXX
- SG_ HVACHVDisableStatus   : 23|8@0+ (1,0)        [0|255]    ""     Vector__XXX
+ SG_ HVACHVDisableStatus   : 17|2@0+ (1,0)        [0|3]      ""     Vector__XXX
  SG_ CIntTempRadOutlet     : 31|8@0+ (1,-40)      [-40|215]  "degC" Vector__XXX
  SG_ CIntTempPTCOutlet     : 39|8@0+ (1,-40)      [-40|215]  "degC" Vector__XXX
  SG_ PTCHeaterPWM          : 47|8@0+ (0.392157,0) [0|100]    "%"    Vector__XXX
@@ -79,7 +78,7 @@ BO_ 634 CMSTempStatus: 8 CHM
 BO_ 635 CMSInputValues: 8 CHM
  SG_ ACInVoltage : 7|16@0+ (0.03125,0) [0|2047] "V" Vector__XXX
  SG_ ACInCurrent : 23|16@0+ (0.03125,0) [0|2047] "A" Vector__XXX
- SG_ ACInPower : 39|16@0+ (0.03125,0) [0|2047] "W" Vector__XXX
+ SG_ ACInPower : 39|32@0+ (0.015625,0) [0|67108864] "W" Vector__XXX
 
 BO_ 636 CMSOutputValues: 8 CHM
  SG_ HVOutVoltage : 7|16@0+ (0.03125,0) [0|2047] "V" Vector__XXX
@@ -90,15 +89,15 @@ BO_ 636 CMSOutputValues: 8 CHM
 BO_ 637 CMMInputValues: 8 CHM
  SG_ ACInVoltage : 7|16@0+ (0.03125,0) [0|2047] "V" Vector__XXX
  SG_ ACInCurrent : 23|16@0+ (0.03125,0) [0|2047] "A" Vector__XXX
- SG_ ACInPower : 39|16@0+ (0.03125,0) [0|2047] "W" Vector__XXX
+ SG_ ACInPower : 39|32@0+ (0.015625,0) [0|67108864] "W" Vector__XXX
 
 BO_ 705 BMSDrivingRange: 8 BMS
  SG_ StatusByte       : 7|8@0+  (1,0)         [0|255]      ""  Vector__XXX
- SG_ DrivingRange_Exp : 15|8@0+ (1.17,-17.85) [-17.85|280] "mi" Vector__XXX
+ SG_ DrivingRange_Exp : 15|8@0+ (0.62,0) [0|158] "mi" Vector__XXX
  SG_ Packet_2         : 23|8@0+ (1,0)         [0|255]      ""  Vector__XXX
- SG_ DrivingRange_Max : 31|8@0+ (1.14,-21.0)  [-21|269]    "mi" Vector__XXX
+ SG_ DrivingRange_Max : 31|8@0+ (0.62,0) [0|158] "mi" Vector__XXX
  SG_ Packet_4         : 39|8@0+ (1,0)         [0|255]      ""  Vector__XXX
- SG_ DrivingRange_Min : 47|8@0+ (1.0,-21.58)  [-21.58|234] "mi" Vector__XXX
+ SG_ DrivingRange_Min : 47|8@0+ (0.62,0) [0|158] "mi" Vector__XXX
  SG_ Packet_6         : 55|8@0+ (1,0)         [0|255]      ""  Vector__XXX
  SG_ Packet_7         : 63|8@0+ (1,0)         [0|255]      ""  Vector__XXX
 
@@ -111,11 +110,11 @@ BO_ 888 BattPowermode: 8 BMS
  SG_ BMSmode            : 23|8@0+ (1,0) [0|255] ""  Vector__XXX
 
 BO_ 897 BMSVminVmax: 8 BMS
- SG_ MinCellVoltage : 7|16@0+ (1,0) [2500|3650] "mV" Vector__XXX
+ SG_ AvgCellVoltage : 7|16@0+ (1,0) [2500|3650] "mV" Vector__XXX
  SG_ MaxCellVoltage : 23|16@0+ (1,0) [2500|3650] "mV" Vector__XXX
- SG_ AvgCellVoltage : 39|16@0+ (1,0) [2500|3650] "mV" Vector__XXX
- SG_ VminId : 55|8@0+ (1,0) [0|255] "" Vector__XXX
- SG_ VmaxId : 63|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ MinCellVoltage : 39|16@0+ (1,0) [2500|3650] "mV" Vector__XXX
+ SG_ VmaxId : 55|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ VminId : 63|8@0+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 898 BMSThermal: 8 BMS
  SG_ Cell_T_avg : 7|8@0+  (1,-128) [-128|127] "degC" Vector__XXX
@@ -186,18 +185,28 @@ BO_ 1162 DCDCStatus2: 8 DCDC
  SG_ Thermister_14V : 39|8@0+ (1,-40) [-40|215] "degC" Vector__XXX
  SG_ Heat_Plate_Thermister : 47|8@0+ (1,-40) [-40|215] "degC" Vector__XXX
 
-BO_ 1169 IPK_Status: 8 IPK
- SG_ IPK_FaultLamps : 2|3@0+ (1,0) [0|7] "" Vector__XXX
+BO_ 1169 IPK_Cluster: 8 IPK
+ SG_ Primary_ODO : 7|24@0+ (0.1,0) [0|1677721.5] "km" Vector__XXX
+ SG_ SideLightOn : 28|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ LowBeamOn : 29|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ HighBeamOn : 30|1@0+ (1,0) [0|1] "" Vector__XXX
 
 BO_ 1170 IPK_Echo: 8 Vector__XXX
 
 BO_ 1557 ChrgrSysLimits: 8 CHM
 
 BO_ 1558 ChrgrSysCtrlEcho: 8 CHM
+ SG_ HVCurrentCmd : 7|16@0+  (0.1,0) [0|6553.5] "A"  Vector__XXX
+ SG_ MaxVoltage   : 23|16@0+ (0.1,0) [0|6553.5] "V"  Vector__XXX
+ SG_ EVSEMaxCurrent : 47|16@0+ (0.1,0) [0|6553.5] "A"  Vector__XXX
 
 BO_ 1559 ChrgrSysSts: 8 CHM
- SG_ ChrgrSysBusVoltage : 7|16@0+ (0.1,0) [0|6553.5] "V" Vector__XXX
- SG_ ChrgrSysBusCurrent : 31|8@0+ (0.1,0) [0|25.5]   "A" Vector__XXX
+
+BO_ 1562 CMSHVCmd: 8 CHM
+ SG_ HVCmdVoltage : 7|16@0+ (0.03125,0) [0|2047] "V" Vector__XXX
+ SG_ HVCmdCurrent : 23|16@0+ (0.03125,0) [0|2047] "A" Vector__XXX
+ SG_ ACMaxCurrentAvail : 39|16@0+ (0.03125,0) [0|2047] "A" Vector__XXX
+ SG_ HVCmdEnabled : 55|8@0+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 1568 BMS_Recvd_0x620: 8 Vector__XXX
 
@@ -223,42 +232,50 @@ BO_ 1786 GWM_VIN: 8 GWM
 
 BO_ 1834 BMS_Recvd_0x72A: 1 Vector__XXX
 
-CM_ BO_ 80 "BMS charger command. B4-B5=suspected rolling counter/validation (charger throttles to ~6A when non-baseline; frame likely rejected). B6-B7=unknown. BMS Charger Sys Main Current not cleanly decoded -- may be measured (not commanded) or in B6-B7.";
+CM_ BO_ 80 "BMS charger command. B5-B6=EVSEMaxCurrent (confirmed 2026-07-23). B4 and B7 unknown; B7 toggles 0/1 with charge-active state. The earlier 'B4-B5=suspected rolling counter/validation' reading is superseded for B5, which is the high byte of EVSEMaxCurrent. BMS Charger Sys Main Current not cleanly decoded -- may be measured (not commanded).";
+CM_ SG_ 80 EVSEMaxCurrent "J1772 EVSE advertised station current, FULL station value -- not divided between the two charger modules, and identical in the idle and charging states. Reports the station's OFFER, not the car's capability: at a 208V/40A station it reads 40.2A while the car draws only 33.1A (car ceiling ~6.7kW). Confirmed against three known station ratings (30A ChargePoint, 32A driveway, 40A Marina Airport). Per-module halved copies of the same value appear in 0x054 and 0x61A at 1/32 A/bit. See notes/charging-analysis.md.";
+CM_ BO_ 1558 "CMM echo of the BMS charger command 0x050. Byte-for-byte identical content and identical scaling; echoed at 8.3 Hz against the BMS 50 Hz original.";
+CM_ BO_ 1562 "CMS (charger slave) HV command status, 50 Hz. Same quantities as the BMS command 0x050 but at 1/32 units and expressed PER CHARGER MODULE: ACMaxCurrentAvail is half the station value while charging (HVCmdEnabled=0x02) and the full station value when idle. 0x054 is the CMM counterpart with identical content.";
+CM_ SG_ 1562 ACMaxCurrentAvail "Per-module share of the J1772 EVSE advertised current while charging; full station value when idle. Station total = value x 2 during charging. Use 0x050 EVSEMaxCurrent instead where an unsplit, state-independent figure is wanted.";
 CM_ BO_ 469 "HV-to-14V converter status. Source: DCDC hardware manual.";
 CM_ BO_ 471 "BMS command to DCDC converter. Source: DCDC hardware manual.";
-CM_ BO_ 624 "BMS fault status. B0 high nibble=BMSFaultSeverity (0=No Fault, 1-6 progressively severe), low nibble=BMSFaultCode. VICD: BMS_Recvd 0x270, handler 0x15EF. B6/B7 active but unknown.";
-CM_ BO_ 625 "GWM VehFaults relay on B CAN (1 frame after 0x270 BMS source). B0=fault severity + lamp request + test flag. B1-B4=VehicleFault (32-bit fault code).";
-CM_ SG_ 625 VehFaultSeverity "Encoding 0-6 same as 0x270 BMSFaultSeverity.";
-CM_ SG_ 625 VehicleFaultLampReq "0=OFF, 1=YELLOW, 2=RED, 3=INVALID.";
-CM_ SG_ 625 VehicleFaultB0Bit2 "Set during key-on lamp test and briefly at drive end. NOT set during active faults -- lamp-test-active flag.";
+CM_ BO_ 624 "BMS fault status. B0[7:4]=BMSFaultSeverity (0-6 enum, see VAL_), located by CODACAN inject 2026-07-26: high nibble 0 reads 'No Fault', high nibble 1 reads 'Information Only' -- the LabVIEW 0-6 severity enum lives in this nibble. Natural B0 values only reach 00/01/02/10/11/12, so severity is only ever 0 or 1 in captured data. B0 bit1=BMSRedLampReq (GWM relays to 0x271 ~85ms later). B0 bit0=key-on lamp test. The low nibble does NOT feed CODACAN's severity field -- the RED lamp comes from bit1 via 0x271, a separate path. B6/B7 active but unknown.";
+CM_ SG_ 624 BMSRedLampReq "bit1. BMS request for the RED fault lamp; GWM relays to 0x271 ~85ms later. 100% clean vs 0x271 red outside startup. BMS drives red only, never yellow.";
+CM_ SG_ 624 BMSFaultSeverity "B0[7:4]. 0-6 severity enum (see VAL_). Located by CODACAN inject 2026-07-26. Natural data only reaches severity 0-1; the former 'BMSStateBit4' (bit4) was the LSB of this nibble, not an orthogonal state flag.";
+CM_ BO_ 625 "GWM VehFaults relay on B CAN (1 frame after 0x270 BMS source). Carries the arbitrated lamp COLOUR only -- B1-B7 are zero in all 428,827 corpus frames, so no fault code or source is on the bus. Identifying why the lamp is lit requires a per-module UDS DTC read. See notes/fault-light-investigation.md. Lamp pathways: BMS->red (0x270 bit1); DLCM absence->red (during a reflash); DLCM brake-switch fault->yellow. Formerly carried SG_ VehFaultSeverity (B0 high nibble) and SG_ VehicleFault (B1-B4, 32-bit code); both were zero in every corpus frame and were removed 2026-07-23 (may populate in fault modes not yet captured).";
+CM_ SG_ 625 VehicleFaultLampReq "bits[1:0]. LabVIEW enum OFF/YELLOW/RED/INVALID. Confirmed against 0x270 and known fault/no-fault logs.";
+CM_ SG_ 625 VehicleFaultB0Bit2 "bit2. Recurring pulse across whole drives (NOT a key-on lamp test as previously labelled). Set during the DLCM brake-switch yellow event -- possibly a DLCM-fault marker. Role unconfirmed.";
 CM_ BO_ 628 "LabVIEW: ChrgrSysFaultsTemp (CMM_glb.xml). Signals: ChrgrFaults_0..5 (uint16+uint8) + Chrgr1Temp, Chrgr2Temp (uint8). Byte-level encoding unconfirmed -- LabVIEW cluster exceeds 8 bytes when packed sequentially.";
-CM_ BO_ 629 "BMS battery power limits and measurements. B0=BattSentDischargeLimit/MotorDriveLimit (CODACAN alias, same byte). B1=BattSentChargeLimit. B2-B3=PackCurrent. B4-B5=PackVoltage. B6=BattSentHVACLimits. B7=unidentified, possibly 4th current limit. Note: B4 always=1 in normal LFP operation (pack voltage 312-380V keeps uint16 MSB=1) -- prior 'HVActive' label was a misidentification.";
+CM_ BO_ 629 "BMS battery power limits and measurements. B0=BattSentDischargeLimit/MotorDriveLimit (CODACAN alias, same byte). B1=BattSentChargeLimit. B2-B3=PackCurrent. B4-B5=PackVoltage. B6=BattSentHVACLimits. B7=dead byte, constant 0xDD (CODACAN sweep drives no field; confirmed inert). Note: B4 always=1 in normal LFP operation (pack voltage 312-380V keeps uint16 MSB=1) -- prior 'HVActive' label was a misidentification.";
 CM_ SG_ 629 BattSentDischargeLimit "CODACAN alias: MotorDriveLimit.";
 CM_ SG_ 629 PackCurrent "Positive = charging.";
 CM_ SG_ 629 PackVoltage "B4=0 is a sentinel (triggers ~4V display); normal LFP operation keeps B4=1.";
-CM_ BO_ 630 "HVAC power/thermal status. 10 Hz. Sender: HVAC ECU. B0=PTC power, B1=ACCM power, B2=HV disable status (sub-byte layout unresolved), B3=coolant outlet temp, B4=PTC outlet temp, B5=PTC heater PWM, B6=radiator fan PWM, B7=batt cooling fan PWM. PWM signals use open-drain hardware; CODACAN 'Inverted' label = wire polarity only, not CAN encoding.";
-CM_ SG_ 630 HVACHVDisableStatus "PROVISIONAL encoding: 0=Invalid, 2=enum-3 (no label), 5=All HV Components disabled, 8=All HV Components not disabled. Sub-byte bit layout unresolved.";
+CM_ BO_ 630 "HVAC power/thermal status. 10 Hz. Sender: HVAC ECU. B0=PTC power, B1=ACCM power, B2[1:0]=HVACHVDisableStatus enum (upper bits a separate mode axis, not CODACAN-surfaced), B3=coolant outlet temp, B4=PTC outlet temp, B5=PTC heater PWM, B6=radiator fan PWM, B7=batt cooling fan PWM. PWM signals use open-drain hardware; CODACAN 'Inverted' label = wire polarity only, not CAN encoding.";
+CM_ SG_ 630 HVACHVDisableStatus "B2[1:0] 2-bit enum (see VAL_): 0 Invalid, 1 not-disabled, 2 disabled, 3 unlabeled. Confirmed by CODACAN B2 fine sweep (periodic every 4). The prior decimal 5/8 map was wrong.";
 CM_ BO_ 631 "CMM (master charger module) temperatures.";
 CM_ BO_ 633 "CMM charger output measurements. HVOutVoltage matches pack voltage from C CAN.";
 CM_ BO_ 634 "CMS (slave charger module) temperatures. Same Lear OBC hardware as CMM.";
 CM_ BO_ 635 "CMS charger input measurements. Same Lear OBC hardware as CMM.";
 CM_ BO_ 636 "CMS charger output measurements. CMS is the slave charger module; CMM is master.";
 CM_ BO_ 637 "CMM (master charger module) input measurements.";
-CM_ BO_ 705 "BMS driving range estimates. B0=StatusByte (flips all readings at raw=0x70, likely health/CRC). B1=DrivingRange_Exp, B3=DrivingRange_Max, B5=DrivingRange_Min. B2/B4/B6=0x00 padding. All range signals provisional -- scales ~1.1-1.17, units likely miles.";
-CM_ SG_ 705 DrivingRange_Exp "PROVISIONAL: scale unconfirmed, units likely miles.";
-CM_ SG_ 705 DrivingRange_Max "PROVISIONAL: scale unconfirmed, units likely miles.";
-CM_ SG_ 705 DrivingRange_Min "PROVISIONAL: scale unconfirmed, units likely miles.";
+CM_ SG_ 635 ACInPower "CONFIRMED: 32-bit BE over bytes 4-7, scale 1/64 -- NOT the 16-bit 1/32 pattern used by the other charger fields. Equals ACInVoltage x ACInCurrent exactly (raw = (Vraw*Iraw)>>4), so this is apparent power (VA) computed by the charger, not an independent true-power measurement; it carries no information beyond V and I. See notes/charging-analysis.md.";
+CM_ SG_ 637 ACInPower "CONFIRMED: 32-bit BE over bytes 4-7, scale 1/64 -- NOT the 16-bit 1/32 pattern used by the other charger fields. Equals ACInVoltage x ACInCurrent exactly (raw = (Vraw*Iraw)>>4), so this is apparent power (VA) computed by the charger, not an independent true-power measurement; it carries no information beyond V and I. See notes/charging-analysis.md.";
+CM_ BO_ 705 "BMS driving range estimates. B0=StatusByte (flips all readings at raw=0x70, likely health/CRC). B1=DrivingRange_Exp, B3=DrivingRange_Max, B5=DrivingRange_Min. B2/B4/B6=0x00 padding. Scale = raw x 0.62 mi, offset 0 (miles; native ~1 km/count). Confirmed against the CODA green-screen display / Android decoder (raw 152 -> 94 mi) and rated range; the prior 1.1-1.17 mi scale was ~2x too high, and CODACAN's own km readout is a mis-scale. Min not independently green-screen-verified.";
+CM_ SG_ 705 DrivingRange_Exp "raw x 0.62 mi, offset 0. Green-screen/Android confirmed.";
+CM_ SG_ 705 DrivingRange_Max "raw x 0.62 mi, offset 0. Green-screen/Android confirmed.";
+CM_ SG_ 705 DrivingRange_Min "raw x 0.62 mi, offset 0 (same family as Exp/Max; not independently verified).";
 CM_ BO_ 888 "BMS mode and network management. B0[7:4]=HVPowermode, B0[3:0]=Chargemode, B1[1:0]=KeepWakeNetworkBMS, B1[2]=rolling counter, B1[7:3]=always 0, B2=BMSmode. B3-B7 unused.";
 CM_ SG_ 888 HVPowermode "0=Invalid, 2=HV Off Imminent, 3=HV On Drive (provisional), 4=HV On Drive, 5=HV On Charge, 6=HV On Support (provisional), 7=HV On Support (provisional). Values 8-F show as raw numerics in CODACAN.";
 CM_ SG_ 888 Chargemode "0=Invalid, 1=No Prox, 2=Prox Present (open/wait), 3=Charging, 4=Charge Complete (provisional), 5=Maintenance Charging (provisional), 6=Invalid, 15=Invalid.";
 CM_ SG_ 888 KeepWakeNetworkBMS "Bit0=0 -> Network Alive Request, bit0=1 -> No Network Request. Bit1 is don't-care.";
 CM_ SG_ 888 B1_Counter "1-bit rolling counter, toggles every frame at ~6Hz.";
 CM_ SG_ 888 B1_high "B1[7:3] 5-bit field. Always 0 in available captures. Purpose unknown (possible counter or reserved).";
-CM_ BO_ 897 "BMS cell voltage extremes. B0-B1=min, B2-B3=max, B4-B5=avg. OV cutoff at 3750 mV. B6=VminId, B7=VmaxId (cell indices).";
-CM_ SG_ 897 MinCellVoltage "104-cell LFP pack.";
-CM_ SG_ 897 MaxCellVoltage "OV cutoff at 3750 mV.";
-CM_ SG_ 897 VminId "0-based index.";
-CM_ SG_ 897 VmaxId "0-based index.";
+CM_ BO_ 897 "BMS cell voltage extremes. B0-B1=avg, B2-B3=max, B4-B5=min. OV cutoff at 3750 mV. B6=VmaxId, B7=VminId (cell indices). CORRECTED 2026-07-15: byte order previously had Min<->Avg and VminId<->VmaxId swapped. LabVIEW BMS_Recvd cluster order is Vavg,Vmax,Vmin,VmaxId,VminId; confirmed empirically (avg lies between min and max in 99% of 20k samples; VmaxId pinned to one cell index at charge termination). Index mapping resolved 2026-07-21: VmaxId/VminId are 1-based indices into the C CAN cell array (CODA-C-CAN-cells.dbc Cell0-Cell103); reported id = C CAN index + 1.";
+CM_ SG_ 897 MinCellVoltage "104-cell LFP pack. B4-B5.";
+CM_ SG_ 897 MaxCellVoltage "OV cutoff at 3750 mV. B2-B3.";
+CM_ SG_ 897 AvgCellVoltage "Pack average cell voltage. B0-B1.";
+CM_ SG_ 897 VminId "1-based index of min cell into the C CAN cell array (CODA-C-CAN-cells.dbc): VminId = Cell<N> + 1, range 1-104. B7.";
+CM_ SG_ 897 VmaxId "1-based index of max cell into the C CAN cell array (CODA-C-CAN-cells.dbc): VmaxId = Cell<N> + 1, range 1-104. B6.";
 CM_ BO_ 898 "BMS cell temperature stats. B0=Cell_T_avg, B1=Cell_T_max (provisional), B2=Cell_T_min (provisional), B3=MaxTempId, B4=MinTempId.";
 CM_ SG_ 898 Cell_T_avg "Invalid sentinels: 0x00 (standby), 0x33 (charge stopped).";
 CM_ SG_ 898 Cell_T_max "PROVISIONAL.";
@@ -272,7 +289,7 @@ CM_ BO_ 912 "BMS HV battery temperature zone sensors. B0=FrontInletAirTemp, B1=R
 CM_ SG_ 912 AllowedCellTempDiff "Non-negative temperature delta (no offset, unlike other temp signals).";
 CM_ SG_ 912 AllowedHumidity "PROVISIONAL: scale TBD.";
 CM_ BO_ 913 "HVAC ambient air state. B0=UnderHoodHumidity, B1=UnderHoodTemp, B2=OpAirHumidity, B3=OPAirTemp, B4=ReturnAirTemp, B5=EvapAirOffTemp (not in original CODACAN field list). B6-B7 inactive. Sender: HVAC ECU. Humidity signals may be marked Inverted in CODACAN -- verify direction against real data.";
-CM_ SG_ 913 OPAirTemp "Outside/ambient air temperature.";
+CM_ SG_ 913 OPAirTemp "Outside/ambient air temperature. UNRELIABLE: damped/poorly-calibrated estimate, not a clean thermistor -- reads ~+12 degF high in all conditions (incl. parked at night) and stays stuck high even at highway speed; error varies +5..+20 degF so not offset-calibratable. See coda.md 0x391 section and notes/outside-air-temp-investigation.md.";
 CM_ BO_ 1040 "AC compressor command. Ford AM64-19D623-AB electric scroll compressor. B0=raw command byte (boolean signals observed but bit assignments unresolved).";
 CM_ SG_ 1040 compressor_on_off "~360ms latency before status reports Running.";
 CM_ SG_ 1040 target_compressor_speed "Hardware max 6000 rpm.";
@@ -282,7 +299,7 @@ CM_ SG_ 1081 COMPRESSOR_STATUS "0=Standby (HV available, no run cmd), 1=Running,
 CM_ BO_ 1162 "DCDC secondary status with temperatures. Source: DCDC hardware manual.";
 CM_ BO_ 1557 "LabVIEW: ChrgrSysLimits (CMM_glb.xml). Float signals likely use div32 encoding -- shown as 8-bit placeholder, scale tentative.";
 CM_ BO_ 1558 "LabVIEW: ChrgrSysCtrlEcho (CMM_glb.xml). Echo of charger control commands. Encoding tentative.";
-CM_ BO_ 1559 "Charger system bus measurements. B2=unknown (always 0x00; may be MSB of ChrgrSysBusCurrent uint16). B4=status flags (0x83/0x84, bit0 toggles). B5=0x00. B6=bimodal 0x00/0x1F transient. B7=0x00. LabVIEW names B4-5=ChrgrSys12VSysVoltage, B6-7=ChrgrSys12VSysCurrent but observed values do not match div32.";
+CM_ BO_ 1559 "Charger system status (CMM). No confirmed SG_: the former ChrgrSysBusVoltage/ChrgrSysBusCurrent were removed 2026-07-28 -- CODACAN displays no field for them (solo 0x617 lit nothing) and log values do not match div32. B4=status flags (0x83/0x84, bit0 toggles). B6=bimodal 0x00/0x1F transient. Other bytes 0x00.";
 CM_ BO_ 1568 "VICD: BMS_Recvd 0x620. Sparse decode, cluster unknown.";
 CM_ BO_ 1834 "VICD: BMS_Recvd 0x72A. Simple byte copy, cluster unknown.";
 CM_ BO_ 928 "SRS airbag module + seatbelt switch status. B CAN only, 10 Hz. B0: SRS status bits + seatbelt warning. B1: buckle switches.";
@@ -291,9 +308,9 @@ CM_ SG_ 928 SRS_FaultFlag "Active when SRS DTC present (e.g. B1382/B2505 in part
 CM_ SG_ 928 SeatbeltWarning "B0.bit3. 1=warning active. Cleared when driver buckles. Medium confidence -- needs test with occupied passenger seat to confirm combined vs driver-only semantics.";
 CM_ SG_ 928 DriverBuckle "B1.bit4. 1=unbuckled, 0=buckled. HIGH confidence.";
 CM_ SG_ 928 PassengerBuckle "B1.bit2. 1=unbuckled, 0=buckled. HIGH confidence. Test used unoccupied passenger seat -- driver reached over to buckle it.";
-CM_ BO_ 1169 "IPK instrument cluster fault lamp status on B CAN. B0 is a key-on latch -- set once at key-on, does NOT change during lamp test or mid-drive faults. B0 bits 2-0=fault lamp indicators. B0 bit 3=IPK_B0_Active. B1 bits 4,3,1 set in normal but cleared with active faults -- encoding unknown.";
-CM_ SG_ 1169 IPK_FaultLamps "Which bit maps to which module (ABS/SRS/HVAC) is unresolved.";
-CM_ BO_ 1170 "UNKNOWN: 0x492. All zeros in parts car dataset. Possible IPK echo or secondary status frame.";
+CM_ BO_ 1169 "IPK cluster data on B CAN. B0:B1:B2 = Primary odometer, 24-bit big-endian, 0.1 km/count. Verified across 3 Codas vs known mileage (reference car 547673=54767km/34.0kmi; parts car 999913=99991km/62.1kmi; another Coda 986383=98638km/61.3kmi). B3 = headlight bitfield (bit4 parking/side, bit5 low beam, bit6 high beam; confirmed by CODACAN B3 sweep + driver-inputs stimulus test). B4-B7=0. The former 'IPK_FaultLamps' reading was an othercars inference (fixed-looking bytes differing between cars) -- actually mileage. CODACAN's own 'Primary ODO' GUI field is a mis-scaled partial decode (B0:B1 only); do not use it.";
+CM_ SG_ 1169 Primary_ODO "B0:B1:B2 24-bit BE odometer, 0.1 km/count. Also mirrored on 0x492.";
+CM_ BO_ 1170 "0x492: a second/redundant IPK cluster broadcast that mirrors 0x491 B0:B1:B2 (the odometer). All-zeros in the parts-car dataset = that module was silent, not fault-related.";
 CM_ BO_ 1786 "GWM broadcasts VIN on B CAN at 10 Hz as a 3-frame sequence. B0=VIN_FrameCounter (0/1/2); B1-B7=7 ASCII chars per frame. Frame 0: chars 1-7; Frame 1: chars 8-14; Frame 2: chars 15-17 + padding. Same ID rebroadcast on D CAN.";
 CM_ SG_ 1786 VIN_Frame "Each byte B1-B7 is one raw ASCII character of the VIN.";
 
@@ -301,5 +318,7 @@ VAL_ 888 HVPowermode 0 "Invalid" 2 "HV Off Imminent" 3 "HV On Drive" 4 "HV On Dr
 VAL_ 888 Chargemode 0 "Invalid" 1 "No Prox" 2 "Prox Present Open Wait Active" 3 "Charging" 4 "Charge Complete" 5 "Maintenance Charging" 6 "Invalid" 15 "Invalid" ;
 VAL_ 888 KeepWakeNetworkBMS 0 "Network Alive Request" 1 "No Network Request" 2 "Network Alive Request" 3 "No Network Request" ;
 VAL_ 1081 COMPRESSOR_STATUS 0 "Standby" 1 "Running" 2 "CASS Complete" 3 "Off" ;
-VAL_ 624 BMSFaultSeverity 0 "No Fault" 1 "Information Only, No Limiting" 2 "Minor Performance Limiting" 3 "Limited Performance" 4 "Heavily Limited Performance, Contactors Will Not Close" 5 "Heavily Limited Performance, Operation Should Be Stopped" 6 "ALL HV Components Should Be Disabled, BMS Will Open" 7 "Reserved" 8 "Reserved" 9 "Reserved" 10 "Reserved" 11 "Reserved" 12 "Reserved" 13 "Reserved" 14 "Reserved" 15 "Reserved" ;
+VAL_ 625 VehicleFaultLampReq 0 "OFF" 1 "YELLOW" 2 "RED" 3 "INVALID" ;
+VAL_ 624 BMSFaultSeverity 0 "No Fault" 1 "Information Only No Limiting" 2 "Minor Performance Limiting" 3 "Limited Performance" 4 "Heavily Limited Contactors Will Not Close" 5 "Heavily Limited Operation Should Be Stopped" 6 "All HV Components Should Be Disabled BMS Will Open" ;
+VAL_ 630 HVACHVDisableStatus 0 "Invalid" 1 "All HV Components Not Disabled" 2 "All HV Components Disabled" 3 "enum-3" ;
 
