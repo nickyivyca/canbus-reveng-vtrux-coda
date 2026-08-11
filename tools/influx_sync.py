@@ -87,7 +87,7 @@ LOG_EXTS = {".log", ".asc", ".trc", ".csv"}
 MIN_LOG_BYTES = 2048
 
 HOST, PORT, DB = "localhost", 8086, "canbus-data"
-AUTH = ("claude", "claude")
+AUTH = ("<influx-user>", "<influx-password>")
 
 
 # --------------------------------------------------------------------------
