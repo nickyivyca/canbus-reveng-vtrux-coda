@@ -1,7 +1,7 @@
 """Is BMS alarm TYPE1 a reliable pre-trip warning, or is it common/benign?
 
 The 2025-08-22 mystery failure raised TYPE1 exactly 10.2s before EPO with no other
-signal moving. Truck 3's truck sat in TYPE1 as residue across two logs. This scan asks:
+signal moving. Truck 3 sat in TYPE1 as residue across two logs. This scan asks:
 
   - How often does TYPE1 appear across the log corpus?
   - When it appears, is it followed by EPO/TYPE3? Within how long?
@@ -25,7 +25,7 @@ from fault_signature_compare import iter_watch, decode, MAINC_STAT_16  # noqa: E
 CANDIDATES = [
     "projects/vtrux/logs/full-charge-then-fail.log",
     "projects/vtrux/logs/truck3-logs/truck3-canlog.log",
-    "projects/vtrux/logs/truck3-logs/keithlog2.log",
+    "projects/vtrux/logs/truck3-logs/truck3log2.log",
     "projects/vtrux/logs/truck3-logs/truck3-6_key_and_export.txt",
     "projects/vtrux/logs/vtruxisolationtest.log",
     "projects/vtrux/logs/vtruxinterlocktest.log",

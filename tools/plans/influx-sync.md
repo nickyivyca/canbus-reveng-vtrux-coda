@@ -539,7 +539,7 @@ explicit exclude-path deny-list, and the empty-file filter.
 |---|---|---|
 | Requires opt-in (6 subfolders) | 295 files | 16.0 GB |
 
-Truck 3's truck folder falls out of scope naturally, and is *also* on the hard deny-list so an
+Truck 3 folder falls out of scope naturally, and is *also* on the hard deny-list so an
 explicitly named path cannot bypass it.
 
 **First plan against the empty-manifest state:**
@@ -722,13 +722,13 @@ tools/
 fellow owner's. All are Vtruxes, so the DBC and bus anchors are correct for all of them, but
 the data is not interchangeable.
 
-**Truck 3's truck is excluded** (owner instruction, 2026-08-09). Additional reason: truck3-is a
+**Truck 3 is excluded** (owner instruction, 2026-08-09). Additional reason: truck3-is a
 third party subject to the privacy scrub table in `git-publish.md`, so his name must never
 reach a session tag.
 
 Enforcement is structural: his logs live in `projects/vtrux/logs/truck3-logs/`, and
 `influx_upload.py` expands folders **non-recursively**, so a subfolder is never picked up.
-Five files were moved there on 2026-08-09 (`truck3-canlog.log`, `keithlog2.log`,
+Five files were moved there on 2026-08-09 (`truck3-canlog.log`, `truck3log2.log`,
 `truck3-truck-3.log`, `truck3-truck4-keyoff-on-off-on.log`, `truck3-6_key_and_export.txt`),
 joining the two `candump-2026-08-05_*.log` files already present. All 16 referencing files
 were updated; `git-publish.md` was deliberately left alone (its entries are name patterns,

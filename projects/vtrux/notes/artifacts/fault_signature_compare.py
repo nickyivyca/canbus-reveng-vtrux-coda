@@ -41,7 +41,7 @@ ALARM = {0: "NONE", 1: "TYPE1", 2: "TYPE2", 3: "TYPE3"}
 LOGS = {
     "truck3_1_welded_mainn":  ("projects/vtrux/logs/truck3-logs/truck3-canlog.log",
                              "truck3-round 1 - welded MAINN contactor (CONFIRMED)"),
-    "truck3_2_bad_precharge": ("projects/vtrux/logs/truck3-logs/keithlog2.log",
+    "truck3_2_bad_precharge": ("projects/vtrux/logs/truck3-logs/truck3log2.log",
                              "truck3-round 2 - bad precharge contactor (CONFIRMED)"),
     "truck3_3_bms_powerloss": ("projects/vtrux/logs/truck3-logs/truck3-truck4-keyoff-on-off-on.log",
                              "truck3-round 3 - loose connector, BMS master feed (CONFIRMED)"),

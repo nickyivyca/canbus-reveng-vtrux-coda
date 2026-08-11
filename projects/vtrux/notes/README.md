@@ -122,6 +122,6 @@ Analyses that span more than one vehicle live in the project-root `notes/` folde
 | `artifacts/` | Generated data files (CSVs, JSONs, scripts, survey outputs, reference docs). See `artifacts/README.md` for provenance inventory. |
 | `plots/` | Plots embedded in documentation files only. Exploratory or undocumented plots stay in `artifacts/`. See `plots/README.md`. |
 | `plans/` | Investigation and implementation plan files (including `plan-status-codes.md`). |
-| `specific-trucks/` | Per-truck analyses: charge sessions, precharge failures, fault investigations for owner trucks (main truck, parts truck, Truck 3's truck). See `specific-trucks/README.md`. |
+| `specific-trucks/` | Per-truck analyses: charge sessions, precharge failures, fault investigations for owner trucks (main truck, parts truck, Truck 3). See `specific-trucks/README.md`. |
 | `deprecated/` | Investigation files superseded by later findings or EPRI decompile. Currently: cruise control PT bus investigation (Phases 1-8). See `deprecated/README.md`. |
 | `rpo/` | RPO code sticker photos and analysis for both trucks. See `rpo/README.md`. |

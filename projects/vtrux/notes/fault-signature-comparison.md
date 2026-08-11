@@ -207,7 +207,7 @@ Full state-machine walks with dwell times. `DIFF` = bus DC link = vbus_pos - vbu
 | **Bad precharge** | tracks vbus_pos (13.5 -> 12.0) | 0 -> 0 | negative open, bus never charges |
 
 A `vbus_neg` pinned at 0 during CLOSE_MAINR means the negative contactor is connected
-before it was commanded. This reproduces the welded-MAINN diagnosis on Truck 3's truck
+before it was commanded. This reproduces the welded-MAINN diagnosis on Truck 3
 using a single BMS signal, independently of the AC-compressor bus proxy originally used.
 
 ---
@@ -218,7 +218,7 @@ Recorded so these are not re-tested:
 
 | Variable | Why it fails as a discriminator |
 |---|---|
-| **12V rail sag** | Truck 3's truck completed a **successful** precharge sagging to **9.0 V**; main-orig fails at **11.0 V**. Parts-orig succeeds 79/79 with sags to 10.3 V. |
+| **12V rail sag** | Truck 3 completed a **successful** precharge sagging to **9.0 V**; main-orig fails at **11.0 V**. Parts-orig succeeds 79/79 with sags to 10.3 V. |
 | **Precharge rate** | In one session, the failing attempt precharged to 261.8 V at 55 ms while a **successful** attempt reached only 150.0 V. |
 | **Terminal fault signature** | Identical across all modes (see above). |
 | **`iso_r` dropping to 0** | Happens at every trip — any contactor opening drops HV and reads 0. Only causal when it drops from a *valid* reading simultaneously with the trip (the isolation-fault case). |

@@ -1,4 +1,4 @@
-"""Truck 3's truck 2026-08-05: Bel charger/inverter non-responsive.
+"""Truck 3 2026-08-05: Bel charger/inverter non-responsive.
 
 Phase 1 - full Bel (SA=0xC0) telemetry timeline for the two new logs.
 Phase 2 - same extraction on known-good reference charge / export logs.

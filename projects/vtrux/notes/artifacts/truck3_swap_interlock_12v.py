@@ -17,7 +17,7 @@ DBC = cantools.database.load_file("projects/vtrux/epri-pt-bus.dbc")
 
 LOGS = [
     ("truck3-POST-swap",
-     "projects/vtrux/logs/truck3-logs/keithlog2.log"),
+     "projects/vtrux/logs/truck3-logs/truck3log2.log"),
     ("Normal start (M3_T11)",
      "projects/vtrux/logs/debuglog_M3_T11.log"),
     ("truck3-PRE-swap (welded)",

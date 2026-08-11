@@ -21,7 +21,7 @@ from canre.parsers import parse_file
 DBC = cantools.database.load_file("projects/vtrux/epri-pt-bus.dbc")
 
 NEW_LOG = ("truck3-POST-swap (2026-07)",
-           "projects/vtrux/logs/truck3-logs/keithlog2.log")
+           "projects/vtrux/logs/truck3-logs/truck3log2.log")
 OLD_LOG = ("truck3-PRE-swap (welded MAINN, 2026-05)",
            "projects/vtrux/logs/truck3-logs/truck3-canlog.log")
 NORMAL = ("Normal startup (M3_T11)",

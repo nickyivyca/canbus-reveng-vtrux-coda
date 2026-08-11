@@ -22,7 +22,7 @@ import datetime
 from canre.parsers import parse_file
 
 LOGS = [
-    ("keithlog2      (named 'log 2')",     "projects/vtrux/logs/truck3-logs/keithlog2.log"),
+    ("truck3log2      (named 'log 2')",     "projects/vtrux/logs/truck3-logs/truck3log2.log"),
     ("truck3-truck-3 (named 'log 3')",     "projects/vtrux/logs/truck3-logs/truck3-truck-3.log"),
     ("truck3-truck-4 (drive attempt)",     "projects/vtrux/logs/truck3-logs/truck3-truck4-keyoff-on-off-on.log"),
     ("truck3-6       (key + export)",      "projects/vtrux/logs/truck3-logs/truck3-6_key_and_export.txt"),

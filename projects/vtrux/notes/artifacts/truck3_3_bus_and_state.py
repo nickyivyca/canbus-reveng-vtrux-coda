@@ -1,4 +1,4 @@
-"""Truck 3's truck logs 1-4 analysis (BMS master silent investigation).
+"""Truck 3 logs 1-4 analysis (BMS master silent investigation).
 
 Phase 1: ID-set diff across all of Truck 3's logs -- which modules are on the bus?
 Phase 2: Bus identity check (PT vs Vehicle vs OBD anchors).
@@ -16,7 +16,7 @@ from canre.parsers import parse_file
 
 LOGS = {
     "log1_2026-05-15": "projects/vtrux/logs/truck3-logs/truck3-canlog.log",
-    "log2_2026-07-02": "projects/vtrux/logs/truck3-logs/keithlog2.log",
+    "log2_2026-07-02": "projects/vtrux/logs/truck3-logs/truck3log2.log",
     "log3_2026-07-24": "projects/vtrux/logs/truck3-logs/truck3-truck-3.log",
     "log4_2026-07-24": "projects/vtrux/logs/truck3-logs/truck3-truck4-keyoff-on-off-on.log",
 }

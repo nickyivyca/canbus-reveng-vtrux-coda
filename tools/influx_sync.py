@@ -72,7 +72,7 @@ ROOTS = [
 OPT_IN_SUBFOLDERS: list[dict] = []
 
 # Hard deny-list, checked even when a path is named explicitly on the command
-# line. Truck 3's truck is a fellow owner's vehicle: it is a different physical
+# line. Truck 3 is a fellow owner's vehicle: it is a different physical
 # truck from the main and parts trucks, and he is a third party covered by the
 # privacy scrub in git-publish.md, so his name must never reach a session tag.
 EXCLUDE_PATHS = [
