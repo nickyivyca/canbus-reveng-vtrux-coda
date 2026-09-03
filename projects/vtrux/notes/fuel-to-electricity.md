@@ -176,7 +176,7 @@ quantitatively.**
 Two known contributors to the gauge error:
 
 1. **`Fuel_Total_Capacity` reports the stock 98.4 L.** The EV conversion shrank
-   the fuel tank (`vtrux.md`), so converting level-percent to litres with the
+   the fuel tank (`projects/vtrux/README.md`), so converting level-percent to litres with the
    factory capacity constant overstates volume by an unknown factor. The
    largest single fill-up recorded in `Vtrux Gas.xlsx` is 21.43 gal (81 L) with
    a median of 14.37 gal, suggesting real capacity nearer 81–85 L than 98.4 L —

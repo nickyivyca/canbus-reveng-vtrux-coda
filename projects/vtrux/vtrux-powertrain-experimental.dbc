@@ -42,6 +42,8 @@ BO_ 81 VCM_GenControl_0051: 6 VCM
 BO_ 1041 BMS_SoC_HiRes_0411: 8 BMS
  SG_ bms_soc_hires : 7|14@0+ (0.01,0) [0|100] "%" Vector__XXX
 
+BO_ 1120 BMS_FaultRecords_0460: 8 BMS
+
 BO_ 1136 Unknown_0470: 8 Vector__XXX
  SG_ hv_bus_volt_470 : 8|11@1+ (1,0) [0|2047] "V" Vector__XXX
 
@@ -55,6 +57,8 @@ BO_ 1432 HCU_Power_0598: 8 VCM
  SG_ ess_power : 0|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
  SG_ gen_power : 16|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
  SG_ trac_power : 32|16@1+ (0.01,-327.68) [-327.68|327.67] "kW" Vector__XXX
+
+BO_ 1559 VCM_SysState_0617: 8 VCM
 
 BO_ 1604 VCM_CruiseDiag_0644: 8 VCM
  SG_ cruise_mode : 23|4@0+ (1,0) [0|15] "" Vector__XXX
@@ -87,6 +91,15 @@ BO_ 2289188935 EAC_STATUS2: 4 Vector__XXX
 
 BO_ 2566849312 EMP_PumpStatus_18FF0320: 8 Vector__XXX
 
+BO_ 2565849088 VCU_ChargerCmd_18EFC000: 8 VCM
+ SG_ chgcmd_page M : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ chgcmd_enable m0 : 8|8@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ chgcmd_mode m0 : 16|8@1+ (1,0) [0|4] "" Vector__XXX
+ SG_ chgcmd_p01_b1 m1 : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ chgcmd_p03_sub m3 : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ chgcmd_p09_b1 m9 : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+
+
 
 CM_ BO_ 81 "VCM->GENE MCU composite command. 100 Hz, DLC=6. B0 purpose unknown. B5 = rolling counter 0x00-0x0F.";
 CM_ SG_ 81 gen_torque_cmd "Positive = motoring (engine cranking). Negative = generating. Null at engine off.";
@@ -94,6 +107,8 @@ CM_ SG_ 81 gen_rpm_ref "Null when engine off (raw=0x7FFF). Zone+fine encoding: B
 
 CM_ BO_ 1041 "BMS-sourced (drops when HV battery LV connector unplugged). 16 Hz, DLC=8. High-resolution SoC register. Remaining bytes encode a contactor request signal (changes at startup, not shutdown; not decoded). NOT in EPRI plist.";
 CM_ SG_ 1041 bms_soc_hires "Valid during startup before 0x596 becomes non-zero.";
+
+CM_ BO_ 1120 "BMS-sourced fault-record annunciator (drops when HV battery LV connector unplugged). ~20 Hz, DLC=8, page-multiplexed on B0: page 0x00 carries record counters (B2 = record count), pages 0x01..0x0N each carry up to two 3-byte fault records packed B2-B4/B5-B7, newest record first. Records push at FAULT events only (normal key-off, operator unplug, and charger-internal failures push nothing), survive BMS reboot, and clear on plug-cycle/12V fault-clear. At boot the standing list restores from NVM in stages (first record ~1 s after wake, next +15-35 s) -- a record appearing after boot is usually a restore, not a fresh detection. Discovered 2026-08-26: steady-state charge fault = FC 22 02 (at the TYPE1 instant, all five instances); precharge abort = F0 E0 00; contactor/interlock hardware faults = F6 family; marginal-interlock condition = FC 16 F2; isolation faults push only the generic F0 00 00 + AC 10 xx pair (unnamed). Full code catalog and evidence: notes/battery-fault-codes.md. CAUTION: on multi-bus captures the OBD bus also carries a 0x460 (TRAC MCU, DLC=5, pattern XX 0E FE 01 NN) -- filter to the PT bus or to DLC=8 before decoding. No SG_ entries: record extraction requires the mux walk described in the notes.";
 
 CM_ BO_ 1136 "NOT in EPRI DBC. POST_CONTACTOR HV bus voltage -- drops to ~3V when contactors open (HVAC pull), no further change on HVD pull. Source ECU unknown.";
 CM_ SG_ 1136 hv_bus_volt_470 "Byte layout assumed symmetric with 0x482 -- not independently verified from Ghidra.";
@@ -108,6 +123,8 @@ CM_ BO_ 1432 "VCM/HCU-sourced. ~1 Hz, DLC=8. Power statistics for ESS, generator
 CM_ SG_ 1432 ess_power "Battery pack power. Positive = battery discharging; negative = charging/regen. Active during AC charging; near-zero when the generator fully covers traction load. Encoding corrected from the EPRI app's signed-int16 decode. TIME-AVERAGED, not instantaneous: agreement with measured 0x410 pack V*I peaks at a ~8 s boxcar-equivalent filter (r 0.807 raw -> 0.984 at 8 s). Do not use for energy integration -- use 0x410 pack V*I.";
 CM_ SG_ 1432 gen_power "Near-zero in pure EV mode. Positive = generator providing power to HV bus. Not decoded by the EPRI app at all. INSTANTANEOUS, unlike the other two channels: matches measured 0x482 GENE V*I at r=0.9998 / 209 W mean error against a -5.2..+55.6 kW swing, and any smoothing makes agreement worse. Appears to be a direct passthrough of the 0x482 V*I product. Observed operating range is wider than that validation window: the 2026-07-24..26 weekend trip exercises the signal to 142.8 kW with no sign of saturation or wrap, consistent with a genset rated near 150 kW. Note the channel balance trac_power = ess_power + gen_power breaks transiently by -55..-75 kW during fast ramps -- that is the documented filtering difference (ess/trac are ~8 s rolling averages, gen is instantaneous), not a decode error.";
 CM_ SG_ 1432 trac_power "Drivetrain power. Positive = traction motor consuming power from the HV bus; negative = regen. Large in both EV and hybrid operation. Encoding corrected from the EPRI app's signed-int16 decode. TIME-AVERAGED, not instantaneous: agreement with measured 0x462 TRAC V*I peaks at a ~8 s boxcar-equivalent filter (r 0.794 raw -> 0.916 at 8 s). Do not use for energy integration -- use 0x462 TRAC V*I.";
+
+CM_ BO_ 1559 "VCM-sourced (drops on VCM B-connector disconnect per can-disconnect T3). B0-B5 = 0x00, B6 = 0x50 constant. B7 = 0xC8 + small state enum: 0xC8 normal, 0xC9 secondary operating state (meaning unresolved), 0xCA = FAULT ACTIVE -- sets within ~0.3 s of BMS EPO in every fault mode tested (steady-state charge fault, precharge abort, forced isolation, deliberate interlock, generator isolation) and clears when the condition ends. Cheap single-byte fault classifier; carries no cause code. Found 2026-08-26 by fault_annunciator_sweep.py; see notes/battery-fault-codes.md.";
 
 CM_ BO_ 1604 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz. Cruise control diagnostic -- VCM internal cruise state and speed setpoint. NOTE: NOT a command to the traction inverter (TRAC MCU is on the OBD bus). Signals reflect VCM cruise logic state for diagnostic/monitoring only.";
 CM_ SG_ 1604 cruise_mode "0x8=idle/standby, 0x9=throttle override/auto-disengage, 0xA=active cruise (speed controller running).";
@@ -144,6 +161,14 @@ CM_ BO_ 2566849312 "(SA=0x20). EMP WP29 C20 PE glycol coolant pump. J1939 propri
 
 VAL_ 1604 cruise_mode 8 "idle_standby" 9 "throttle_override" 10 "active";
 
+CM_ BO_ 2565849088 "VCU -> Bel charger command. J1939 PDU1 proprietary-A: PF=0xEF, DA=0xC0 (Bel charger), SA=0x00 (VCU). The ONLY frame on the powertrain bus addressed to the charger. Roughly 20 Hz aggregate: six pages cycle at ~3.3 Hz each (B0 = 0x01, 0x03.02, 0x03.04, 0x03.06, 0x03.07, 0x09), plus event pages (B0 = 0x00, 0x03.00, 0x03.01, 0x03.05) sent as ~20-frame bursts at 20 Hz on change. B0 selects the page; for B0=0x03 the page is further selected by B1. Absent from the EPRI plist and from BelInverter-v2.dbc. Page 0 field names and enums come from the EPRI app decompile (notes/epri-decompile.md); page 0 semantics are independently confirmed from log correlation. OTHER PAGES ARE HYPOTHESES and deliberately have no SG_ entries -- see the CM_ notes below and notes/powertrain-messages.md.";
+CM_ SG_ 2565849088 chgcmd_page "Page selector. For B0=0x03 the page is B0.B1. Observed pages: 0x00, 0x01, 0x03.00-0x03.07, 0x09. The EPRI app also decodes pages 6 and 7 (LED1/LED2 mode); neither has been observed on this vehicle.";
+CM_ SG_ 2565849088 chgcmd_enable "invch_Bdc_cmd_Enable in the EPRI app. 0 = Turn OFF output, nonzero = Turn ON output. Confirmed on the bus: export begins 0.25 s after this goes 0->1 with chgcmd_mode=0 (exportpowerattempt.log t=19.14 -> BELINV_exportEnergy=1 at t=19.39, state 31->30->32).";
+CM_ SG_ 2565849088 chgcmd_mode "INVCH_Bdc_cmd_Mode in the EPRI app, clamped to 0..4. CONFIRMED by two independent methods: the app binary literal pool, and log correlation across charge and export sessions. NOTE FOR ANYONE READING THE DECOMPILE NOTE: an earlier reading of this array gave 1=STBY and 3=DEACTIVATION. Those two were never read from the binary -- they were live-in VFP register values borrowed from the 0x0053 OperationState array -- and both are WRONG. The real strings sit in an unbroken literal run at 0x217d2c-0x217d54 in the ARM64 slice (identical in ARMv7 at 0xdb158-0xdb180), bracketed by the cmd_Enable strings and the cmd_Mode log format. Mode 3 is a LOW POWER mode, not a completion state, which is why the charger holds ~2.2-2.9 A indefinitely in it rather than stopping, and why a 3->1 transition restarts full current.";
+CM_ SG_ 2565849088 chgcmd_p01_b1 "POSITIONAL ONLY, no semantic claim. Page 0x01 byte 1. A signal must exist for every multiplexer id or cantools raises on those frames, which would break influx_sync -- that is the only reason this is declared. HYPOTHESIS for the page as a whole: B1:B2 little-endian = charge voltage limit and B3:B4 little-endian = charge current limit, both 0.05 units per count. Supporting evidence: the voltage field is a constant 8584 counts = 429.20 V = 116 cells x 3.700 V exactly; the current field equals delivered current during the CV hold and sits above it during CC where the charger clamps to its own pilot-derived ceiling; and it scales with the EVSE, 9.70 A on a 26 percent pilot versus 18.80 A on 52 percent. Not corroborated by the app decompile, which does not parse this page, so it is NOT declared as signals.";
+CM_ SG_ 2565849088 chgcmd_p03_sub "Sub-page selector for B0=0x03. Structural, confirmed by observation: sub-pages 0x00 through 0x07 appear as distinct payloads. Standard DBC multiplexing keys on one byte only, so the 0x03.xx sub-pages cannot be expressed as separate multiplexer groups here. Contents are undecoded; 0x03.02 and 0x03.07 change state at the same moment the charger is put into low power mode.";
+CM_ SG_ 2565849088 chgcmd_p09_b1 "POSITIONAL ONLY, no semantic claim -- declared so page 0x09 frames decode without raising. HYPOTHESIS: integer state of charge in percent. It tracks bcm_soc (0x410) one-for-one across whole charge sessions. Not corroborated by the app decompile, so not declared as a named signal.";
+
 VAL_ 1609 vcm_evap_active 0 "not_pending" 1 "pending_or_purging";
 
 VAL_ 1593 shift_lever_pos 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" 4 "Manual_generator_mode";
@@ -151,3 +176,6 @@ VAL_ 1593 shift_lever_pos 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" 4 "Manual_g
 
 VAL_ 1606 via_warn_lamp_state 0 "hv_not_up" 5 "lamp_on" 6 "lamp_off";
 
+VAL_ 2565849088 chgcmd_mode 0 "Export_Power_Mode" 1 "Charger_Mode" 2 "Stand_By" 3 "Charger_Low_Power_Mode" 4 "Invalid";
+
+VAL_ 2565849088 chgcmd_enable 0 "Turn_OFF_output" 1 "Turn_ON_output";

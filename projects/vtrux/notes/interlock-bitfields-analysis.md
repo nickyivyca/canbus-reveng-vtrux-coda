@@ -278,7 +278,7 @@ This confirms 0x644 is **VCU-sourced**, not a BMS status report. It leads 0x410 
 
 ### Parts-Truck-Only Messages (Unexplained)
 
-See `../../vtrux.md` — "Parts-Truck-Only Messages" section.
+See `../README.md` — "Parts-Truck-Only Messages" section.
 
 ## Charge Failure Root Cause
 

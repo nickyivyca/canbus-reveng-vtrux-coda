@@ -723,7 +723,7 @@ Both signals decoded via `FUN_00045af0(uint16, 0x10)` followed by `FixedToFP` an
 **FUN_00045af0(value, 0x10)** = `(int32_t)(int16_t)value` (generic N-bit sign extension;
 reversed 2026-03-27).
 
-**⚠ CORRECTED 2026-06-27 (log data):** the wire values are **offset-binary (excess-32768), zero at raw 0x8000** — NOT plain signed-int16-zero-at-0. A raw-value check of 0x598 B0-B1/B4-B5 (`artifacts/check_0598_signedness.py`) shows both channels sit at ~0x8000 at idle (zero power) and swing around 0x8000 under load, never near 0x0000/0xFFFF. Effective decode is `(raw_u16 − 32768) × 0.01 kW` (matches `powertrain-messages.md` and `Vtrux.md`). Range still ±327.68 kW; positive = power discharged by battery / produced by motor.
+**⚠ CORRECTED 2026-06-27 (log data):** the wire values are **offset-binary (excess-32768), zero at raw 0x8000** — NOT plain signed-int16-zero-at-0. A raw-value check of 0x598 B0-B1/B4-B5 (`artifacts/check_0598_signedness.py`) shows both channels sit at ~0x8000 at idle (zero power) and swing around 0x8000 under load, never near 0x0000/0xFFFF. Effective decode is `(raw_u16 − 32768) × 0.01 kW` (matches `powertrain-messages.md` and `projects/vtrux/README.md`). Range still ±327.68 kW; positive = power discharged by battery / produced by motor.
 
 **⚠ CAUSE ESTABLISHED 2026-08-02 (Ghidra):** the 2026-06-27 note above speculated that the decompile "likely missed a preceding MSB-flip / −0x8000 offset." **It did not — there is no such operation, and the app itself is defective.** The decompile read here was correct all along; only the explanation for the mismatch was wrong.
 
@@ -1306,6 +1306,8 @@ positions; no Ghidra work needed unless the EPRI app uses a different bit mask.
   RESOLVED 2026-03-27: All 4 pages fully decoded. See section above.
   Bonus: discovered 0x18EFC000 (EPRI command/mode message) also parsed by the app
   (SetpointMode, LED1/LED2 mode, cmd_Enable, cmd_Mode). Not in Bel DBC.
+  Now in `../vtrux-powertrain-experimental.dbc` as `VCU_ChargerCmd_18EFC000`;
+  cmd_Mode enum corrected 2026-09-02 (see the correction box above).
 
 **Resolved since last update (2026-03-27):**
 - 0x0053 OperationMode (4 entries) and OperationState (9 entries) string arrays: DONE
@@ -1545,20 +1547,66 @@ The EPRI app parses 0x18EFC000 in `ViaCANbusParser::parseEPRIMessage`. Dispatche
   - `invch_Bdc_cmd_Enable` = B1 (0 = "Turn OFF output", nonzero = "Turn ON output")
   - `INVCH_Bdc_cmd_Mode` = B2, clamped to [0..4], index into 5-entry array:
     - [0] "Export Power Mode"
-    - [1] "STBY"
+    - [1] "Charger Mode"
     - [2] "Stand-By"
-    - [3] "DEACTIVATION"
+    - [3] "Charger Low Power Mode"
     - [4] "Invalid"
   - Log: `"INVCH_Bdc_SetpointMode: %d, invch_Bdc_cmd_Enable: %@, INVCH_Bdc_cmd_Mode: %@"`
+
+> **CORRECTION 2026-09-02 -- slots [1] and [3] were wrong.** They previously read
+> "STBY" and "DEACTIVATION". Those two were never recovered from this array: they
+> were live-in VFP register halves that the original pass matched by analogy
+> against the 0x0053 OperationState array, where the same registers happen to
+> hold those strings. The real values are in an unbroken literal run in
+> `__cstring`, bracketed by the two cmd_Enable strings and the cmd_Mode log
+> format -- i.e. source order of the enum declaration. Identical in both slices:
+>
+> ```
+> ARM64            ARMv7
+> 217d0d  db139    Turn ON output          <- cmd_Enable nonzero
+> 217d1c  db148    Turn OFF output         <- cmd_Enable zero
+> 217d2c  db158    Export Power Mode       <- [0]
+> 217d3e  db16a    Charger Mode            <- [1]
+> 217d4b  db177    Stand-By                <- [2]
+> 217d54  db180    Charger Low Power Mode  <- [3]
+> 217d6b  db197    INVCH_Bdc_Setpoint Mode: %d, invch_Bdc_cmd_Enable = %@, ...
+> ```
+>
+> The interleaving is what proves the index mapping: the two strings this file
+> *did* recover independently, "Export Power Mode" and "Stand-By", land at run
+> positions 0 and 2 -- exactly the indices assigned to them. "Invalid" is a
+> deduplicated common literal at `215e51`, consistent with being the [4] clamp
+> fallback. The borrowed strings live ~3.5 KB away next to each other and next to
+> "OFF" (`216fdc` STBY, `216fec` DEACTIVATION, `217082` OFF), which is the 0x0053
+> neighbourhood -- nowhere near this array.
+>
+> **Independently confirmed on the bus**, all four observed values: mode 0 with
+> enable 1 starts an export session (`exportpowerattempt.log` t=19.14 command ->
+> `BELINV_exportEnergy=1` at t=19.39, charger state 31->30->32); mode 1 is
+> charging at 15 A; mode 2 is the final teardown frame; mode 3 is the ~2.2-2.9 A
+> trickle held indefinitely. **Mode 3 is a low-power mode, not a completion
+> state** -- which is why the charger keeps delivering current in it and why a
+> 3 -> 1 transition restarts full current. See
+> `../vtrux-powertrain-experimental.dbc` (`VCU_ChargerCmd_18EFC000`) and
+> `powertrain-messages.md`.
 
 - **Page 6** -- LED1_mode:
   - Also logs `SetpointMode` (B1 raw integer)
   - `INVCH_Bdc_LED1_mode` = B2, clamped to [0..3], index into 4-entry array:
     - [0] "OFF"
-    - [1] "STBY"
+    - [1] "SOLID"  *(corrected 2026-09-02, see below)*
     - [2] "FLASH"
-    - [3] "DEACTIVATION"
+    - [3] **UNRESOLVED** -- was "DEACTIVATION", same borrowed register, not read
   - Log: `"INVCH_Bdc_Setpoint Mode: %d, INVCH_Bdc_LED1_mode = %@"`
+
+> **CORRECTION 2026-09-02 -- the LED arrays carry the same contamination.**
+> Slots [1] and [3] were filled from the same two live-in registers, which is why
+> "STBY" and "DEACTIVATION" appeared as *LED modes* beside OFF and FLASH. `SOLID`
+> sits at `217d01`/`db12d`, immediately before the cmd_Enable strings and
+> adjacent to `FLASH` -- an OFF/SOLID/FLASH LED enum, which is what an LED enum
+> should look like. Slot [3] could not be resolved from the literal pool and is
+> left unknown rather than guessed. Neither page 6 nor page 7 has ever been
+> observed on this vehicle.
 
 - **Page 7** -- LED2_mode (same array as Page 6):
   - Log: `"INVCH_Bdc_Setpoint Mode: %d, INVCH_Bdc_LED2_mode = %@"`

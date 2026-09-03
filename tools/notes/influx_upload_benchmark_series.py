@@ -1,6 +1,6 @@
 """Benchmark tools/influx_upload.py against the FULL 171127 T0-T12 series.
 
-The 171127 series is the canonical Android churn case (vtrux.md):
+The 171127 series is the canonical Android churn case (projects/vtrux/README.md):
   - T0 = 13.75 MB with 11 channels of bus-number churn (the startup artifact)
   - T1..T12 = stable single-bus captures, ~48 MB each
   - Total ~533 MB / ~12M frames across 13 files

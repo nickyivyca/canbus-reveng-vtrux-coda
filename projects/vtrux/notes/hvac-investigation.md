@@ -366,7 +366,7 @@ monotonic decay (368 → 364 → 360 ...). The BMS reading peaked and began deca
 
 **Guidance:** for timing-sensitive transient analysis, use BMS `bcm_vbus_pos` (0x0440), not EAC.
 EAC is fine for steady-state HV monitoring. Promoted to overview as a behavior:
-`vtrux.md` → Documented Behavior → HV Bus Voltage Measurement Sources. Artifact:
+`projects/vtrux/README.md` → Documented Behavior → HV Bus Voltage Measurement Sources. Artifact:
 `notes/artifacts/truck3-precharge_profile.py` / `truck3-precharge_profile_output.txt`.
 
 **0x0868A047 (EAC_STATUS1) — DLC=6:**

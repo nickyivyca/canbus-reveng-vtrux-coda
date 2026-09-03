@@ -307,6 +307,77 @@ Sign convention: positive = providing energy to HV bus. Generator-active reading
 
 ---
 
+### 0x18EFC000 — VCU → Bel Charger Command (Extended ID)
+
+**The only frame on the powertrain bus addressed to the charger.** J1939 PDU1
+proprietary-A: PF=0xEF, **DA=0xC0** (Bel charger), **SA=0x00** (VCU). Absent from the EPRI
+plist and from `BelInverter-v2.dbc`; now defined in `vtrux-powertrain-experimental.dbc` as
+`VCU_ChargerCmd_18EFC000`.
+
+**Structure.** B0 selects a page; for B0=0x03 the page is further selected by B1. About
+20 Hz aggregate — six pages cycle at ~3.3 Hz each, and event pages are sent as ~20-frame
+bursts at 20 Hz on change.
+
+| Page | Cadence | Payload | Status |
+|------|---------|---------|--------|
+| `00` | event burst | `00 <cmd_Enable> <cmd_Mode> 00…` | **CONFIRMED** |
+| `01` | cyclic | `01 <lo hi> <lo hi> 00 00 00` | hypothesis — CC/CV setpoint |
+| `03.00`, `03.01`, `03.05` | event | `03 0x <0\|1>` | undecoded |
+| `03.02` | cyclic | `03 02 00 <00\|75>` | undecoded; flips with low-power mode |
+| `03.04`, `03.06` | cyclic | constant | undecoded |
+| `03.07` | cyclic | `03 07 <02\|01> 64 04 32` | undecoded; flips with low-power mode |
+| `09` | cyclic | `09 <B1> 00…` | hypothesis — integer SoC % |
+
+#### Page 00 — `cmd_Enable` (B1) and `cmd_Mode` (B2) — CONFIRMED
+
+Field names and the enum come from the EPRI app decompile
+(`epri-decompile.md`, corrected 2026-09-02); the semantics are independently confirmed by
+log correlation. Two independent methods agree on all four observed values.
+
+| `cmd_Mode` | App string | Observed on the bus |
+|---|---|---|
+| 0 | Export Power Mode | with `cmd_Enable`=1, export starts 0.25 s later (`exportpowerattempt.log` t=19.14 → `BELINV_exportEnergy`=1 at t=19.39, charger state 31→30→32) |
+| 1 | Charger Mode | charging at full current (~15 A) |
+| 2 | Stand-By | final teardown frame of a session |
+| 3 | Charger Low Power Mode | ~2.2–2.9 A trickle, held indefinitely |
+| 4 | Invalid | never observed |
+
+`cmd_Enable`: 0 = "Turn OFF output", nonzero = "Turn ON output".
+
+> ⚠ **Mode 3 is a LOW POWER mode, not a completion state.** This matters. The charger keeps
+> delivering a ~2.3 A trickle in mode 3 rather than stopping, and a **3 → 1 transition
+> restarts it at full current** — observed in `vtrux_partstruck_charge`, which sent
+> `00 01 03` at t=31 s and `00 01 01` at t=94 s, after which current returned to −15 A.
+> Reading mode 3 as "charge complete" makes that behaviour look anomalous; it is ordinary.
+
+#### Page 01 — charge setpoint (HYPOTHESIS)
+
+`01 <Vlim lo> <Vlim hi> <Ilim lo> <Ilim hi> 00 00 00`, both little-endian uint16 at
+0.05 units per count. Supporting evidence: `Vlim` is a constant 8584 counts = **429.20 V =
+116 cells × 3.700 V exactly** and is never approached; `Ilim` equals delivered current during
+the CV hold and sits above it during CC, where the charger clamps to its own pilot-derived
+ceiling; and it scales with the EVSE — **9.70 A on a 26 % pilot vs 18.80 A on 52 %**. The
+EPRI app does not parse this page, so this is single-method and is **not** declared as
+signals in the DBC.
+
+Not the binding constraint during CC: `BELINV_maxAvailableChargingCurrent` (0x18FFD9C0,
+charger-sourced, pilot-derived) is. Measured: pilot 26 % → maxAvail 8 A, VCU asks 9.70 A,
+delivered 5.85 A; pilot 52 % → maxAvail 16 A, VCU asks 18.80 A, delivered 14.70 A. **Both
+ends are pilot-aware; the charger is the one that clamps.**
+
+#### Page 09 — state of charge (HYPOTHESIS)
+
+B1 tracks `bcm_soc` (0x410) one-for-one across whole charge sessions. Single-method,
+undeclared in the DBC.
+
+#### Mode-dependent rotation
+
+The cyclic page set depends on what the charger is doing. During an export session only
+page `09` cycles — no page `01` setpoint, consistent with there being no charge current to
+command. One unexplained `B0=0x02` frame appears in `exportpowerattempt.log`.
+
+---
+
 ### 0x18FFD6B3, 0x18EFB3FE, 0x18FFD4B3, 0x18FF0320 — Bel DCDC Converter (Extended IDs)
 
 Source address 0xB3. Same LE signed ×0.05 encoding as Bel Charger (0xC0). All signals active during both charging and driving.

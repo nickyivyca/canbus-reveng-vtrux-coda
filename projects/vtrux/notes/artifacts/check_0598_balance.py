@@ -1,7 +1,7 @@
 """Second, independent discriminator for the 0x598 encoding conflict.
 
 epri-pt-bus.dbc says B0-B1 / B4-B5 are signed int16, offset 0.
-vtrux.md + vtrux-powertrain-experimental.dbc say offset-binary (excess-32768).
+projects/vtrux/README.md + vtrux-powertrain-experimental.dbc say offset-binary (excess-32768).
 
 The two hypotheses make *different* predictions for the known channel balance
     drivetrain = battery + generator

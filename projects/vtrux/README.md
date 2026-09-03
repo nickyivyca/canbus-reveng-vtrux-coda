@@ -127,13 +127,53 @@ The 0x3E9 entry is a **cascade effect** -- VCM masks wheel speed inputs to ECM, 
 
 **Known ECM DTC — P0621:** P0621 (Generator Lamp "L" Control Circuit) is permanently stored in the ECM because the alternator L-terminal was removed during the EV conversion. Classified as a non-emission enhanced diagnostic — not OBD-reportable, no MIL. Standard Mode 03/07/0A returns 0 DTCs even via direct ECM access on the OBD bus. ECM continuously broadcasts P0621 on `0x772` at ~1 Hz (bridged to Vehicle bus ~50ms later). Full DTC record accessible via GM proprietary service 0xA9 (`0x7E0` request, `0x5E8` response). See `notes/threebusinvestigation.md`.
 
-**No APP (accelerator pedal position) magnitude on GMLAN.** The VCM commands engine throttle via
-analog wire to the ECM's APP input pins — this is not on CAN. The GMLAN DBC contains only validity
-flags (`Accelerator_Actual_Position_Validity` in 0x0C9; `Accelerator_Effective_Position_Validity`
-in 0x1C3) with no percentage value. The best available proxy for VCM engine throttle command is
-**TPS** (`Throttle_Position` in `0x3D1` `Engine_General_Status_2`, OBD bus).
-TPS is not driver-controlled — the driver's foot is `0x592 B2-B3` on the PT bus. TPS reflects
-the VCM's commanded engine throttle regardless of driver input.
+**APP (accelerator pedal position) magnitude IS on GMLAN — correction 2026-08-14.** Earlier
+revisions of this file stated there was no APP magnitude on CAN and that only validity flags
+existed. That was an artifact of a broken DBC extraction, not of the vehicle. The deprecated
+`gmlan-info/archive/GMW8762_PPEI_GMLAN.dbc.deprecated` omitted both APP magnitude signals and
+merged 0x0F1 brake-pedal signals into 0x0C9; regenerating the DBC via `gmlan-info/run_extraction.py`
+fixed it. The current `GMW8762_PPEI_GMLAN.dbc` defines both magnitudes, and both are populated
+on the **OBD bus**:
+
+| Signal | Message | Bit layout | Observed in corpus |
+|--------|---------|-----------|--------------------|
+| `Accelerator_Actual_Position` | `0x0C9` `Engine_General_Status_1` | (spec-derived, not reproduced) | 0–99.6%, 494k points across 64 sessions |
+| `Accelerator_Effective_Position` | `0x1C3` | (spec-derived, not reproduced) | 0–99.6%, 430k points |
+
+On the `ch1`/`ch2`/`ch3` fallback channels both read a constant 0 (a few hundred points total) —
+consistent with the dual-native/bridged-copy behaviour described above. Filter to the OBD bus.
+
+**Prefer `Accelerator_Actual_Position` over TPS** as the VCM engine throttle command. Measured on
+session `vtrux_20260724_211556` (994 paired 10 s samples): APP correlates with `Engine_Speed` at
+r=0.968, `Throttle_Position` at r=0.708. With the engine off, APP reads 0 while TPS rests at ~29%.
+`Throttle_Position` (`0x3D1` `Engine_General_Status_2`, OBD bus) is the
+throttle *body* position, which the ECM modulates independently for idle control and torque
+management — it is a derivative of the command, not the command.
+
+Neither APP signal is driver-controlled — the driver's foot is `0x592 B2-B3` on the PT bus. The VCM
+generates the ECM's APP input as an analog voltage via the APP GEN MOD, and the ECM echoes what it
+receives onto CAN. Confirmed by disconnect testing — see `notes/app-gen-mod-investigation.md`.
+
+**Confirmed operating range: 0–66%, not 0–100%.** Verified across the entire InfluxDB corpus —
+494,053 points on the OBD bus spanning 2026-02-17 to 2026-08-02, 161 sessions. The signal is defined
+0–100% and the raw byte does reach 254, but **99.99% of points fall below 65%** and sessions top out
+at 65.5–66.3% (raw counts 167–169). The VCM does not command more than about two-thirds pedal. The
+soft ceiling — three adjacent counts rather than one repeated value — indicates a calibration limit
+rather than a saturating register.
+
+Only 48 points of 494,053 (0.010%) exceed 66%, spread across 6 sessions in handfuls of 1–22; only 17
+exceed 70%. **Readings above ~70% are a fault signature, not driver input.** The only two sessions
+reaching full scale (`vtrux_newcharger_part2`, `rainychargedebug4`, both 99.6%) are stationary
+charging-debug captures where the pedal is at rest, and `vtrux_app_disconnect_test`'s single 71.0%
+point is one of three stray frames in a log where the APP source was unplugged. Treat these as bit
+errors.
+
+Practical consequence: any gauge or plot axis for this signal should be scaled **0–70%**. At 0–100
+the needle never passes two-thirds of scale. See `notes/artifacts/app_range_corpus.py` for the query.
+
+> Caveat on the distribution: Influx point counts are not frame counts (on-change plus 1 s
+> heartbeat), so band *shares* skew toward values that persist. The range and ceiling findings above
+> are unaffected; do not read the shares as fraction-of-driving-time.
 
 For full bus identification methodology and per-log-set bus number mappings, see `notes/threebusinvestigation.md`.
 
@@ -210,7 +250,7 @@ Source history: initial signal data from a previous DBC, with EPRI Ghidra decomp
 | 0x18FFD6C0 | BELINV_inverterOutput | BELINV_leg1Voltage (B0-B1), BELINV_leg2Voltage (B2-B3), BELINV_leg1Current (B4-B5), BELINV_leg2Current (B6-B7) — unsigned 16-bit, 0.05 V or A/count | EPRI-confirmed (`INVCH_Inv_Output`); byte layout exact match with previous DBC. Active during driving and export. |
 | 0x18FFD7C0 | BELINV_hvBatteryAndCharger | BELINV_hvBatteryVoltage (B0-B1, unsigned), BELINV_hvBatteryCurrent (B2-B3, signed), BELINV_chargerInputVoltage (B4-B5, unsigned), BELINV_chargerInputCurrent (B6-B7, unsigned) — 0.05 V or A/count | EPRI-confirmed (`INVCH_Bdc_Ibat`). Signedness corrected: hvBatteryCurrent signed (positive=charging); others unsigned. Charging only. |
 | 0x18FFD8C0 | BELINV_j1772Info | BELINV_system12vBatteryVoltage (B0-B1, 0.02 V/count), BELINV_pilotDuty (B2, uint8), BELINV_pilotFrequency (B3-B4, uint16 Hz), BELINV_chargePilotOnlineTime (B5-B7, 24-bit count) | B0-B1 EPRI-confirmed (`INVCH_Bdc_12Vbat`); B2-B7 from previous DBC only. Charging only. |
-| 0x18FFD9C0 | BELINV_chargeInfo | BELINV_maxAvailableChargingCurrent (B0-B1, signed 16-bit, 0.05 A/count), BELINV_vehicleState (B2, uint8) | Not in EPRI plist. Source: previous DBC only. |
+| 0x18FFD9C0 | BELINV_chargeInfo | BELINV_maxAvailableChargingCurrent (B0-B1, signed 16-bit, 0.05 A/count), BELINV_vehicleState (B2, uint8) | Not in EPRI plist. Source: previous DBC only. **Charger-sourced (SA=0xC0), not a vehicle command** — `notes/specific-trucks/after-battery-swap-charge-fail-analysis.md` calls it the "vehicle charge command", which is wrong. `maxAvailableChargingCurrent` is the charger's own pilot-derived DC ceiling and is what actually limits CC current: measured 8 A at a 26 % pilot and 16 A at 52 %. |
 | 0x18FFDAC0 | BELINV_inverterTemperature | BELINV_dc1Temperature (B0-B1), BELINV_dc2Temperature (B2-B3), BELINV_module1Temperature (B4-B5), BELINV_module2Temperature (B6-B7) — signed 16-bit, 0.1°C/count | Not in EPRI plist. Source: previous DBC only. |
 | 0x18FFDBC0 | BELINV_buckBoostTemperature | BELINV_buckBoostModuleTemperature (B0-B1), BELINV_buckBoostDc1Temperature (B2-B3), BELINV_buckBoostDc2Temperature (B4-B5), BELINV_buckBoostDspTemperature (B6-B7) — signed 16-bit, 0.1°C/count | Not in EPRI plist. Source: previous DBC only. |
 
@@ -226,6 +266,8 @@ For full encoding details, confidence rationale, and source evidence, see **`not
 |--------|---------|-------------|-------|
 | 0x051 | VCM_GenControl_0051 | gen_torque_cmd (B1-B2, LE uint16, centered at 32768, negative=generating), gen_rpm_ref (B3-B4, LE uint16, centered at 32768, rpm) | 100 Hz, DLC=6. B0 purpose unknown; B5 = rolling counter 0x00-0x0F. gen_torque_cmd: r=0.9984 vs feedback (0x471 B0-B1). gen_rpm_ref: null=−1 (raw=32767) when engine off; zone+fine encoding (B4=zone selector, B3=fine RPM within zone); bit-for-bit identical to 0x052 B2-B3. Corrected 2026-03-03 (previously misidentified B3-B4 as traction torque command). |
 | 0x411 | BMS_SoC_HiRes_0411 | bms_soc_hires (14-bit Motorola, 0.01%/count; raw = B0×64 + (B1>>2)) | 16 Hz, DLC=8. BMS-sourced (drops when HV battery LV connector unplugged). Not in EPRI plist. r>0.998 vs 0x596 bms_soc across 5 log types. Other bytes encode contactor request (changes at startup, not shutdown). |
+| 0x617 | VCM_SysState_0617 | (BO_ stub — no SG_) | VCM-sourced. B0-B5=0, B6=0x50 constant. B7 = 0xC8+state: C8 normal, C9 unresolved secondary state, **CA = fault-active** — sets within ~0.3 s of BMS EPO in every fault mode tested, clears when the condition ends. Cheap VCM-side fault flag (no cause code). See `notes/battery-fault-codes.md`. |
+| 0x460 | BMS_FaultRecords_0460 | (BO_ stub — no SG_; page-multiplexed) | ~20 Hz, DLC=8. BMS-sourced **fault-record annunciator** (2026-08-26): B0=page index; page 0 = record count; pages 1-N = two 3-byte fault records each, newest first. Records push when a fault latches, survive BMS reboot, clear with FAULT_LATCHED. Main-orig steady-state charge fault = `FC 22 02`; precharge abort = `F0 E0 00`; truck3-contactor faults = `F6` family. **Caution:** OBD bus has a different 0x460 (TRAC MCU, DLC=5) — filter to PT bus/DLC=8. Full catalog: `notes/battery-fault-codes.md`. |
 | 0x470 | Unknown_0470 | hv_bus_volt_470 (11-bit LE, startbit B1, 1 V/count) | Not in EPRI DBC. Post-contactor HV bus voltage confirmed (drops 387 V to ~3 V when contactors open). r=0.9974 vs DCDC 0x18FFD6B3. Same encoding as GENE_HighPwr_Volt (0x482). Source ECU unknown — most likely GENE MCU (drops at same time, adjacent ID range). See `notes/context-voltage-current.md`. |
 | 0x592 | VCM_Pedals_0592 | throttle_pos (B2-B3, LE uint16, unsigned, 0=no throttle, max ~10000 at full depression) | 100 Hz, DLC=8. VCM-sourced. Brake pedal (B4-B5, scale 0.01%) and switch flags (B0) are in `epri-pt-bus.dbc`. B1 role unconfirmed. Scale to physical % unconfirmed. |
 | 0x596 | BMS_SoC_0596 | bms_soc (B6, uint8, 1%/count) | ~1 Hz. VCM rebroadcast of BMS SoC data (drops when VCM B-connector unplugged, per `notes/can-disconnect.md`). Not in EPRI plist. Integer SoC percent. Use 0x411 for sub-percent resolution. |
@@ -446,6 +488,33 @@ When plugged in during evap purge mode, the VCM enforces a hard 80% SoC ceiling.
 
 See `notes/after-battery-swap-charge-fail-analysis.md` and `notes/evap-cycle-analysis.md`.
 
+### Charge Termination — Two Different Mechanisms (2026-09-02)
+
+The VCU ends a charge by sending `0x18EFC000` page 00 with `cmd_Mode` = 3 (**Charger Low
+Power Mode** — not a completion state; see `notes/powertrain-messages.md`). It does so for
+two quite different reasons, and **the BMS charge-current permission is what tells them
+apart**:
+
+| | genuine top of charge | evap 80 % ceiling |
+|---|---|---|
+| Trigger | `bcm_chg_max` walked to ~0 as `bcm_cell_vmax` approached 3.600 V | VCU's own SoC comparison, 1.2 s after SoC reached 80 |
+| `bcm_chg_max` at the stop | 0–2.75 A | **300 A — never moved** |
+| `bcm_cell_vmax` at the stop | 3590–3594 mV | 3340 mV |
+| Sessions | `vtrux_charge_M1`, `vtrux_partstruck_charge` | `vtruxchargeafterexportchargetest-80pctcv` |
+
+Two consequences worth knowing:
+
+- **The current collapse follows page 00, not the page-01 setpoint.** In the evap session the
+  setpoint still commanded 19.5 A for 155 s *after* the charger had already dropped to
+  −0.7 A. The mode is the stop; the setpoint follows later.
+- **Top-of-charge voltage is controlled by max cell voltage, not pack voltage.** The
+  commanded pack limit (429.2 V) is never reached — `vtrux_partstruck_charge` topped out at
+  417 V. `bcm_cell_vmax` pins at 3.598–3.600 V while `bcm_cell_vmin` climbs and the pack sum
+  rises; `bcm_chg_max` reaches 0 at vmax ≈ 3.59 V regardless of how far apart the cells are.
+
+See `notes/powertrain-messages.md` -> 0x18EFC000. (The interposer bench
+built on this is internal-only.)
+
 ### Cell Balancing Behavior
 
 `bcm_balancing_cnt` (0x440 B7) counts cells currently being bled by the BMS bleed resistors; max is 116 (the full pack balancing simultaneously). Balancing first appears when the leading cells reach ~3400 mV, typically at 93-96% SOC. Initial spread at onset is 8-15 mV; it grows to 23-63 mV as cells traverse the steep LFP CC->CV knee at different times (cells with higher SOC hit the knee first, producing large voltage differences for small SOC differences), then collapses to a 2-3 mV settled equilibrium once cells have been balanced. The failed charge session never reached spread-collapse.
@@ -483,6 +552,8 @@ HV contactors are managed by the A123 BMS. The `hsc_bcm_*` bits (0x0400 B0) refl
 5. `0x410 B0`: 0x09 → 0x19 (interlock confirmed, key-on mode active, t=0)
 
 `bcm_mainc_stat` contactor sequence: 0 → 2 → 5 → 7 → 8 → 9 → **11** (normal running state). Total precharge duration ~6.8 seconds from HVIL closure to charge-ready.
+
+**Correction 2026-09-02 — 11 is the DRIVING steady state; charging sits at 12.** Measured over whole sessions on the 4-bit `bcm_mainc_stat` in 0x0440: `vtrux_charge_M1` is 12 for 8,681 points and `vtruxchargeafterexportchargetest-80pctcv` for 9,180, both reached through the same precharge ladder and both leaving via 14 at shutdown. Any check for "contactors closed" must accept **both 11 and 12**.
 
 **Normal shutdown** — `0x644 B0` steps 0x10 → 0x07 (14–21ms before 0x410 B0 changes). `0x410 B1` settles at 0x8F (fault flag clear). `bcm_mainc_stat`: 11 → 13 → 14 (two-step ordered sequence).
 
@@ -677,7 +748,7 @@ MotoTron P/N: CONFEML054 | Molex P/N: 98944-3002-32 | Woodward P/N: 1635-1771 | 
 
 ```
 projects/vtrux/
-  Vtrux.md                        # This file — project overview & entry point
+  README.md                       # This file — project overview & entry point
   vtrux-powertrain-experimental.dbc  # Self-confirmed PT bus signals not in EPRI data
   vtrux-obd-experimental.dbc         # Self-confirmed OBD bus signals not in EPRI data
   deprecated/
@@ -727,6 +798,8 @@ projects/vtrux/
   CANsmog/                        # Generator control scripts and preliminary DBC (see README.md)
     README.md                     # Directory overview
     preliminary-dbc.dbc           # Initial DBC with 0x051 torque command definition
+  tools/                          # Vtrux-specific CLI analysis tools (see tools/README.md)
+    README.md                     # Tool inventory
 ```
 
 ---

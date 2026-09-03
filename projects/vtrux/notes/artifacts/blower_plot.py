@@ -9,7 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-DBC_SCALE = 0.392157  # Climate_Control_Front_Blower_Fan_Speed pct/count
+DBC_SCALE = 0.392157  # blower fan speed pct/count
 COOLANT_OFFSET = -40  # degC offset (GM convention)
 
 

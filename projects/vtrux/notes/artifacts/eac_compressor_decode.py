@@ -25,7 +25,7 @@ MULTI_BUS_LOG = "projects/vtrux/logs/vtruxanotherevaplogpart2.log"  # has all 3 
 
 # ── Phase 1: GMLAN A/C command bit in a multi-bus log ────────────────────────
 # Background: the Vtrux no longer has the original GM belt-driven A/C compressor.
-# 0x3D1 B4 bit 5 (Air_Conditioning_Compressor_Command) is the ECM/GM-side signal
+# 0x3D1 (Air_Conditioning_Compressor_Command) is the ECM/GM-side signal
 # for the OEM belt-driven unit. It is interesting to check whether:
 #   (a) the GM side still asserts this bit when A/C is requested (e.g. defog mode),
 #   (b) if so, whether the VCM translates it into commands on the EAC compressor IDs.

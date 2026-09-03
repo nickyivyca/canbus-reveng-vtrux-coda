@@ -156,7 +156,7 @@ Expected for data above: DischargeLimit = 200 A (B0=0x64=100, x2), ChargeLimit =
 | DCDC | DCDC | 0x1D5, 0x48A | Any one sufficient |
 | CHM | CHM | 0x054, 0x277 | 0x054 (52 Hz) = CMM keepalive; 0x277 = CMMTempStatus |
 | CHS | CHS | 0x27A, 0x61A | 0x61A (50 Hz) = CMS keepalive |
-| AICM | AlCM | 0x276, 0x410 | Thermal controller. 0x276 = AICM status. 0x410 = compressor command AICM sends to ACCM. Note: AICM and ACCM may be the same physical module -- unconfirmed. |
+| AICM | AlCM | 0x276, 0x391, 0x392, 0x410 | Thermal controller, **B CAN native**. 0x276 = AICM status. 0x410 = compressor command AICM sends to ACCM. All four IDs share one transmit clock (102.90 ms, 4.60 ms jitter) distinct from every other B CAN message (100.00 ms, <1.3 ms) across 113 sessions -- see `artifacts/x276_bus_presence.py` Phase 10. **Hypothesis (strengthened 2026-08-23):** AICM and ACCM are separate modules -- 0x439 (ACCM) sits on the tight 100.00 ms clock, not the AICM one. Not proof: one ECU can run two timer tasks. |
 | ACCM | ACCM | 0x439 | Compressor status frame only |
 | IPK | IPK | 0x491 | **0x491 is the IPK heartbeat.** 0x6FA does NOT trigger indicator. |
 | GWM | GWM | 0x271 | **0x271 is the GWM heartbeat.** 0x248 and 0x2C2 do NOT trigger GWM. |
@@ -200,7 +200,7 @@ loads fast and all modules active from frame 1. Avoid slow key-on logs for basel
 
 ### 5a. Confirmed & Complete
 
-Signal encoding fully confirmed (byte position, scale, offset). Full detail in `coda.md`.
+Signal encoding fully confirmed (byte position, scale, offset). Full detail in `projects/coda/README.md`.
 
 | ID | Name | Encoding summary |
 |----|------|-----------------|
@@ -426,7 +426,7 @@ incomplete (superseded by sweep-based validation for most signals).
 | BMS_FaultStatus | 0x270 | B | Confirmed |
 | GWM_VehFaults | 0x271 | B | Confirmed |
 | BMSDriveLimits | 0x275 | B | Confirmed Phase 5 |
-| HVACStatus | 0x276 | B | Confirmed Phase 5 |
+| HVACStatus | 0x276 | B | Confirmed Phase 5. **B CAN native** (2026-08-23) -- transmits with D CAN asleep; the D CAN copy is a GWM rebroadcast. |
 | BMSDrivingRange | 0x2C1 | B | Partially confirmed |
 | BattPowermode | 0x378 | B | Confirmed Phase 5 |
 | BMSVminVmax | 0x381 | B | Confirmed |
@@ -450,8 +450,21 @@ incomplete (superseded by sweep-based validation for most signals).
 
 ### VICD Dispatch Summary
 
-**DCDC_Recvd:** Fully disassembled. Scale factors 0.1 (HVInputCurrent), 20/255 (14VMonitor),
-x2 (14VCurrentMonitor) confirmed against hardware manual.
+**DCDC_Recvd:** Scale factors 0.1 (HVInputCurrent), 0.078431 (14VMonitor), x2
+(14VCurrentMonitor).
+
+> **Correction 2026-08-24.** This entry previously read "Fully disassembled ... confirmed
+> against hardware manual". Neither half is reproducible as written:
+> `DCDC_Recvd_VICD_code.bin` contains **no** float constants, bit masks or shifts across
+> all 10,864 bytes -- it is an init stub, not the decoder -- and the hardware manual was
+> not in the repo at the time. The 0.1 and 0.078431 constants are real but come from
+> `DCDC_Recvd.xml` (the VI resource), which is silent on an integer x2.
+>
+> The scales are nonetheless **correct**. The primary source is now in the repo --
+> Delphi `U2C Manual Rev03_2-15-2011.pdf` (`notes/dcdc/`) -- and it specifies all three
+> verbatim, plus 0x48A and 0x1D7. Verified by text extraction and by reading the
+> rendered pages, and confirmed independently by an energy balance using the U2C's own
+> reported power loss. See `notes/dcdc/README.md`.
 
 **DLCM_Recvd:** 6 IDs dispatched: 0x1C0, 0x212, 0x241, 0x278, 0x315, 0x418.
 0x208 (ESC) is NOT in DLCM_Recvd -- decoded by a separate unidentified VI.

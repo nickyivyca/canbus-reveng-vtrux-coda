@@ -253,7 +253,7 @@ CM_ SG_ 1154 GENE_HighPwr_Curr "Zero at raw=8192. Byte-swapped (BE) alternative 
 CM_ SG_ 1432 DBL_ESSPwrAvg "Positive = battery discharging.";
 CM_ SG_ 1432 DBL_TracPwrAvg "Positive = traction motor producing power.";
 
-CM_ SG_ 1573 VehicleOdometer "Scale 1 km/count (integer km). See vtrux.md 'How to Tell the Two Trucks Apart'.";
+CM_ SG_ 1573 VehicleOdometer "Scale 1 km/count (integer km). See projects/vtrux/README.md 'How to Tell the Two Trucks Apart'.";
 CM_ SG_ 1573 VehicleConfig "0=K2XX (Silverado/Tahoe-based Vtrux), 1=GMT-600 (Express van Vtrux).";
 
 

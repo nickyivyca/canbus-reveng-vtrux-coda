@@ -40,4 +40,4 @@ Powering up sequence:
 
 4)     If charger works properly, you should see about 10-12 CAN messages transmitting
 
-5)     If it doesn’t work the first time, disconnect the Enable/Disable line from 12V then reconnect it
+5)     If it doesnï¿½t work the first time, disconnect the Enable/Disable line from 12V then reconnect it

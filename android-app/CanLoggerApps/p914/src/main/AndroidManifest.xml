@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- TCP to the replay bridge over `adb reverse` (A4b). Also needed once the USB CDC
+         transport lands, because the log file server in :cancore binds a socket. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+        CHANGE_NETWORK_STATE satisfies Android 14's "any of" requirement for
+        FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE. It is a normal (install-time) permission, so it
+        holds even when the service restarts in a new process before any USB device permission
+        has been exercised. Same reasoning as :vtrux.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <!-- USB host: the VCU's mbed interface MCU is read over CDC-ACM (A6). -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
+    <application
+        android:name=".P914Application"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.Black.NoTitleBar">
+
+        <!--
+            The in-car display is the launcher: tapping the icon, or plugging the VCU in, opens
+            the display. MainActivity is the settings screen behind the cog. Same shape as
+            :vtrux, where LiveDisplayActivity took over the launcher role from MainActivity.
+        -->
+        <activity
+            android:name=".DisplayActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                Declaring USB_DEVICE_ATTACHED with a device filter does two things: Android
+                offers "use by default for this USB device" on the permission dialog (a
+                persistent per-VID/PID grant that requestPermission alone cannot produce), and
+                plugging the VCU in brings this screen up. Both are wanted here. Unlike
+                :vtrux, which trampolines through an invisible activity because it is a
+                background logger, this app is meant to be on screen in the car.
+
+                This filter moved here from MainActivity when the display became the launcher.
+                It must stay attached to whichever activity Android actually launches: the
+                "use by default" checkbox is offered only when the launched activity carries a
+                matching filter, so a filter left behind on a now-backgrounded settings screen
+                silently regresses the persistent grant to a one-shot one. That failure looks
+                like Android nagging for permission on every replug, not like a bug, and it cost
+                a wrong diagnosis once already (A6).
+            -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
+        </activity>
+
+        <!--
+            Settings. Was the launcher and the bring-up screen; the content is unchanged
+            (USB/TCP/Stop, flash firmware, force USB host), it is just reached from the cog now.
+
+            Still exported, with no intent filter, so starting it from a shell with an
+            `autoconnect` boolean extra keeps working for assistant-driven bring-up over wifi adb.
+            (Written out rather than shown as a command line because the adb boolean-extra flag
+            contains a double hyphen, which cannot appear inside an XML comment.)
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="914 settings"
+            android:screenOrientation="portrait" />
+
+        <!--
+            Firmware flashing. A development tool, not part of the in-car display.
+
+            Exported because the intended operator is an assistant session over wifi adb, and
+            `am start` from a shell cannot launch a non-exported component. The abuse this would
+            normally invite is closed off in FlashActivity: an intent supplies a file *name*, which
+            is resolved only inside this app's own external files dir, so a caller can flash
+            nothing it did not already put somewhere only this app can write.
+        -->
+        <!--
+            taskAffinity + singleTop are what make `am start` work, and the reason is not obvious.
+            DisplayActivity is singleTask and owns the default task for this package's affinity
+            (it inherited both from MainActivity when it became the launcher, so this note applies
+            unchanged; only the name of the activity holding the task changed). An
+            activity sharing that affinity, launched from *outside* the app (adb runs as uid 2000,
+            so the start needs NEW_TASK semantics), gets folded into that existing task and the
+            intent is delivered to its singleTask root instead. `am start` then reports "intent
+            has been delivered to currently running top-most instance", the extras land on
+            MainActivity, and no flash happens. Observed exactly that.
+
+            Its own affinity keeps it in its own task, and singleTop routes a repeat launch to
+            onNewIntent rather than stacking duplicates.
+        -->
+        <activity
+            android:name=".FlashActivity"
+            android:exported="true"
+            android:label="Flash VCU firmware"
+            android:launchMode="singleTop"
+            android:taskAffinity="com.reverseit.p914.flash"
+            android:screenOrientation="portrait" />
+
+    </application>
+
+</manifest>

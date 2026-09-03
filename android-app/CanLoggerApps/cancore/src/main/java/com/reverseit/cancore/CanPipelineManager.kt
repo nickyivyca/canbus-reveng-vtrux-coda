@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  * Indices are stable: removing a device does not re-number remaining devices.
  * This matches the Python can_logger.py convention.
  */
-class CanPipelineManager {
+class CanPipelineManager : CanFrameSource {
 
     companion object {
         private const val TAG = "CanCore"
@@ -31,7 +31,7 @@ class CanPipelineManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val _frames = MutableSharedFlow<CanFrame>(extraBufferCapacity = 1024)
-    val frames: SharedFlow<CanFrame> = _frames.asSharedFlow()
+    override val frames: SharedFlow<CanFrame> = _frames.asSharedFlow()
 
     // Maps UsbDevice.deviceId -> (busIndex, GsUsbDevice, read job)
     private val activeDevices = mutableMapOf<Int, Triple<Int, GsUsbDevice, Job>>()
@@ -86,9 +86,9 @@ class CanPipelineManager {
         return true
     }
 
-    fun activeDeviceCount(): Int = activeDevices.size
+    override fun activeDeviceCount(): Int = activeDevices.size
 
-    fun activeBusCount(): Int = nextBusIndex  // total ever assigned (for log header)
+    override fun activeBusCount(): Int = nextBusIndex  // total ever assigned (for log header)
 
     /** Close all devices and cancel the coroutine scope. Call when the app is shutting down. */
     fun shutdown() {

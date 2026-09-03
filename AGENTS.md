@@ -20,8 +20,9 @@ Vehicle-agnostic CAN bus reverse engineering framework. The `canre/` Python pack
 | Utilities (streaming I/O, log merging, session grouping) | `canre/utils/utils.md` | Working with multi-file captures or session discovery |
 | CLI tools (survey, analyze_id, compare, can_logger, can_replayer, status_events, etc.) | `tools/tools.md` | Running or modifying any tool |
 | Vtrux-specific analysis tools (charge failure analysis, session analysis) | `projects/vtrux/tools/README.md` | Doing Vtrux-specific analysis (charging, fault events, etc.) |
-| Vtrux vehicle overview, known signals, DBC status | `projects/vtrux/vtrux.md` | Working on Vtrux |
-| Coda vehicle overview, CAN topology, module inventory, DBC status | `projects/coda/coda.md` | Working on Coda |
+| Vtrux vehicle overview, known signals, DBC status | `projects/vtrux/README.md` | Working on Vtrux |
+| Coda vehicle overview, CAN topology, module inventory, DBC status | `projects/coda/README.md` | Working on Coda |
+| Porsche 914 EV overview + telemetry DBC. **Forward-engineered, not reverse-engineered** — the map is authoritative by design, so most of `canre` does not apply. Stub folder; the authoritative hub is a separate internal SeaDrive folder | `projects/914/README.md` | Working on the 914 or its `:p914` Android module |
 | Vehicle notes folder | `projects/<vehicle>/notes/` | Looking for detailed notes on a specific topic for a certain vehicle
 | Primary Vehicle logs folder | `projects/<vehicle>/logs/` | Looking for a log with a specific role or name
 | Secondary Vehicle Logs folder | `../../CANLogs/<vehicle>Logs/` | Looking for a log that was automatically captured and backed up by Android based logger apps
@@ -50,6 +51,94 @@ Run it with `run_in_background: true`. When it completes you will be notified an
 ### Local Execution
 **Maximize local computation**: Use Python scripts (see Python Rules) to process large log files and produce summarized outputs. Never try to read raw multi-MB/GB log files directly into context.
 
+
+### Simulators, Virtual CAN Buses, and Background Processes
+
+These rules exist because on 2026-09-01 the Vtrux interposer bench flooded the
+house LAN with **66,450 packets/s (13.6 MB/s, ~109 Mbit/s)** for roughly twenty
+minutes and disrupted the user's network. Read them before running any
+multi-process simulator.
+
+#### A virtual CAN bus is not automatically local
+
+`python-can`'s `udp_multicast` transport defaults to **`hop_limit=1`**, and the
+kernel routes `239.0.0.0/8` out the default interface. So every simulated CAN
+frame goes on the real wire:
+
+```
+$ ip route get 239.0.2.1
+multicast 239.0.2.1 dev eno1 src <lan-ip>      <- the LAN NIC, not loopback
+```
+
+Multicast is flooded to every switch port unless IGMP snooping filters it, and
+APs transmit it at the lowest basic rate, so wireless clients suffer worst even
+when the source is wired.
+
+**Always pass `hop_limit=0`.** TTL 0 means the datagram is looped back to local
+sockets and never transmitted on any interface. Delivery between processes on
+the same host is unaffected (verified: 2092 frames/s sent, 2092 received, eno1
+unchanged from idle).
+
+Do **not** also pin `IP_MULTICAST_IF` to loopback. `python-can` joins the group
+with `INADDR_ANY`, which the kernel resolves to the default multicast interface,
+so sending via a different interface means receivers see nothing. TTL 0 alone is
+both necessary and sufficient.
+
+`projects/vtrux/tools/interposer/bus.py` does this correctly and asserts it at
+startup. **`projects/coda/notes/dlcm/flash_sim/bus.py` does NOT** -- it still
+uses the default `hop_limit`. Fix it before running those sims.
+
+> Both simulator folders named above are internal-only and are not part of
+> the public repository. The guidance applies to any multi-process
+> virtual-bus simulator.
+
+#### Measure, do not assume
+
+Before and after any sustained simulator run, check the interface counters:
+
+```bash
+t0=$(cat /sys/class/net/eno1/statistics/tx_packets); sleep 5
+t1=$(cat /sys/class/net/eno1/statistics/tx_packets); echo $(( (t1-t0)/5 )) pps
+```
+
+Idle on `the Linux box` is single-digit pps. Anything in the thousands while a
+sim runs means it is on the wire.
+
+#### Killing background processes -- two traps
+
+1. **`pkill -f <pattern>` matches your own shell.** The Bash tool runs commands
+   through `bash -c '<your command>'`, so the wrapper's command line contains
+   the pattern you are searching for and `pkill -9` kills the shell running your
+   script. Symptoms: exit code 1 or 143 with no output, and later statements in
+   the same command silently never running -- which also means file edits you
+   believed were applied were not. Several edits were lost this way before it
+   was diagnosed.
+
+2. **Anchoring on the bare interpreter name misses subprocesses.** A runner that
+   spawns children via `sys.executable` gives them a command line starting with
+   `/usr/bin/python3.13`, so `pgrep -f '^python3\.13 ...'` never matches them.
+   Six orphaned simulators survived every cleanup this way and kept transmitting
+   long after they were believed dead.
+
+Use this instead -- it matches by path fragment, filters to real interpreter
+processes via `/proc/<pid>/comm`, and cannot match the bash wrapper:
+
+```bash
+for pid in $(pgrep -f 'tools/interposer' || true); do
+  case "$(cat /proc/$pid/comm 2>/dev/null)" in
+    python*) kill -9 "$pid" 2>/dev/null || true ;;
+  esac
+done
+```
+
+Always verify afterwards (`pgrep -af <fragment>`, `ss -uanp | grep <port>`), and
+remember `pgrep`/`pkill` return exit 1 when nothing matches, which aborts the
+rest of the command under `set -e` -- append `|| true`.
+
+#### Run long simulations one at a time
+
+Four concurrent scenario runs multiplied the frame rate by four. Run one, watch
+it, then run the next.
 
 ### Python Rules
 
@@ -129,7 +218,7 @@ Then import with `from canre.parsers import parse_file` — there is no `canre.p
 ## Documentation
 
 ### Maintaining Reference Docs
-**File listing documentation:** Every directory that contains project files **must have an `.md` file describing its contents** — either a dedicated `README.md` or an overview file like `coda.md` (which may contain more than just a file map). A new session should be able to understand what a folder contains and how its files relate by reading that one `.md` file, without having to open individual files. When you create a new directory or move files between directories, update (or create) the relevant `.md` file. Parent directories should reference their children's `.md` files in a file layout section so the documentation chain is navigable top-down.
+**File listing documentation:** Every directory that contains project files **must have an `.md` file describing its contents** — either a dedicated `README.md` or an overview file like `tools/tools.md` (which may contain more than just a file map). A new session should be able to understand what a folder contains and how its files relate by reading that one `.md` file, without having to open individual files. When you create a new directory or move files between directories, update (or create) the relevant `.md` file. Parent directories should reference their children's `.md` files in a file layout section so the documentation chain is navigable top-down.
 **Timestamps:** In the `./tools/` and `./canre` folders, each md file contains a timestamp for each file. This must be updated each time a tool or library file is updated.
 
 ### Use of Memory

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The 914 VCU's mbed interface MCU. VID=0x0D28 (3368), PID=0x0204 (516),
+    reported as "MBED CMSIS-DAP".
+
+    Declaring this filter is what lets Android offer "use by default for this USB device" on the
+    permission dialog, giving a persistent per-VID/PID grant. requestPermission() on its own can
+    only produce a one-shot grant, which is why an unplug previously left the logger waiting on a
+    dialog nobody was there to tap.
+-->
+<resources>
+    <usb-device vendor-id="3368" product-id="516" />
+</resources>

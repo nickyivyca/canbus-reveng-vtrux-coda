@@ -97,7 +97,7 @@ def cross_validate():
 
     # Compute residual after scaling 0x5A2 to 0x442 units
     # 0x442: centered at 32768 (like 0x471)
-    # 0x5A2 B4-B5: also LE uint16 centered at 32768 per Vtrux.md
+    # 0x5A2 B4-B5: also LE uint16 centered at 32768 per projects/vtrux/README.md
     residuals = [a - b for a, b in zip(ref_v, src_v)]
     mean_res = sum(residuals) / len(residuals)
     max_res = max(abs(r) for r in residuals)

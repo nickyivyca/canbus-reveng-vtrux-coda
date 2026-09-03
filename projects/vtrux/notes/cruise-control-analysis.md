@@ -51,7 +51,7 @@ Two distinct cancel paths confirmed in evaplog2 (t=1370-1445s):
 
 ## 0x1E1 B5 — Cruise Button State (VCU Extension, Vehicle Bus)
 
-Non-standard VCU extension to the GMLAN 0x1E1 message (not in GMLAN DBC). Encodes cruise button events as brief pulses — **not a sustained setpoint.** Full tier table in `../Vtrux.md` (Cruise Control section).
+Non-standard VCU extension to the GMLAN 0x1E1 message (not in GMLAN DBC). Encodes cruise button events as brief pulses — **not a sustained setpoint.** Full tier table in `../README.md` (Cruise Control section).
 
 ---
 
@@ -68,4 +68,4 @@ The traction torque command during cruise is **0x041 B1-B2 on the OBD bus** (not
 | `vtrux-powertrain-experimental.dbc` | `CruiseSetpoint_0x644`: CruiseMode + CruiseSpeedSetpoint signals |
 | `traction-inverter-control.md` | Cruise torque command: 0x041 B1-B2 (OBD bus) |
 | `deprecated/cruise-control-pt-bus-investigation.md` | Full investigation history (Phases 1-8); PT bus scans |
-| `../Vtrux.md` | 0x1E1 B5 tier table; Cruise Control section |
+| `../README.md` | 0x1E1 B5 tier table; Cruise Control section |

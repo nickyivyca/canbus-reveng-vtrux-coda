@@ -23,7 +23,7 @@ FRAME = re.compile(
     r"^(\d\d):(\d\d):(\d\d):(\d{4})\s+(\w+)\s+(\d+)\s+0x([0-9A-Fa-f]+)\s+(\w)\s+(\d+)\s*(.*)$"
 )
 
-# Anchor IDs per AGENTS.md / vtrux.md -- bus numbers are arbitrary, identify by content
+# Anchor IDs per AGENTS.md / projects/vtrux/README.md -- bus numbers are arbitrary, identify by content
 PT_ANCHORS = {0x051, 0x410, 0x420, 0x430, 0x440, 0x592}
 OBD_ANCHORS = {0x043, 0x044, 0x441, 0x442, 0x44A, 0x462}
 

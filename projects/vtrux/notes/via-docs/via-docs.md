@@ -629,7 +629,7 @@ Bel's Signal 2 connector (TE 776087-1) maps exactly to VIA's P18 connector (TE 7
 - Operating voltage: 9-16 Vdc (24V jump start capable, 4.5V crank)
 - Woodward P/Ns: 8923-1628, 1751-6454
 
-Note on part suffix: spreadsheet and NewEagle store show **F-M** suffix. Vtrux.md records "C/F" -- F-M is the confirmed variant. The F likely = firmware flash variant (vs C = calibration-only variant).
+Note on part suffix: spreadsheet and NewEagle store show **F-M** suffix. projects/vtrux/README.md records "C/F" -- F-M is the confirmed variant. The F likely = firmware flash variant (vs C = calibration-only variant).
 
 ---
 

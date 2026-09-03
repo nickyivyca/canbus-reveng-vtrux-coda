@@ -20,7 +20,7 @@ Kept for the per-window bus-identification pattern, which is still useful. See
 
 
 A 16-frame, 3.5 s burst of these GM chassis IDs was found on bus 1 of
-truklog_M2_T19.log, ~10 min before that session's TYPE1. Per vtrux.md they belong to
+truklog_M2_T19.log, ~10 min before that session's TYPE1. Per projects/vtrux/README.md they belong to
 the GM buses and should never be on the powertrain bus.
 
 Scans the corpus, identifies the PT bus per file by the 0x051 anchor (never by channel

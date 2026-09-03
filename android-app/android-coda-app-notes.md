@@ -254,9 +254,9 @@ Design rules, carried over from the Vtrux display: sliders and status words rath
 
 ### Signal findings from this phase
 
-**PackCurrent sign convention (verified).** Discharge reads **negative**, charge and regen **positive**. Confirmed on a charge log (100% of samples positive, steady +15.6 A) and a drive log (0% positive under motoring >50 Nm, median -81.7 A; 86% positive under regen, peak +69.1 A — matching the 69.1 A figure already recorded in `coda.md`). Script: `projects/coda/notes/artifacts/packcurrent_sign_check.py`.
+**PackCurrent sign convention (verified).** Discharge reads **negative**, charge and regen **positive**. Confirmed on a charge log (100% of samples positive, steady +15.6 A) and a drive log (0% positive under motoring >50 Nm, median -81.7 A; 86% positive under regen, peak +69.1 A — matching the 69.1 A figure already recorded in `projects/coda/README.md`). Script: `projects/coda/notes/artifacts/packcurrent_sign_check.py`.
 
-**Battery fault display.** Shown only when `0x270` B0 is exactly `0x12` — the known RED-lamp value — as an amber `BATT COLD FAULT`. Matched as a whole byte rather than via the DBC's severity/code nibble split, because that split is disputed (the DBC decodes `0x12` as severity 1 = "Information Only, No Limiting", which contradicts it driving a RED lamp) and is tracked as an open item in `coda.md`. No other `0x270` value has a defined meaning, so nothing else is claimed.
+**Battery fault display.** Shown only when `0x270` B0 is exactly `0x12` — the known RED-lamp value — as an amber `BATT COLD FAULT`. Matched as a whole byte rather than via the DBC's severity/code nibble split, because that split is disputed (the DBC decodes `0x12` as severity 1 = "Information Only, No Limiting", which contradicts it driving a RED lamp) and is tracked as an open item in `projects/coda/README.md`. No other `0x270` value has a defined meaning, so nothing else is claimed.
 
 **Charge limits.** Both the station's J1772 offer (`0x050` EVSEMaxCurrent) and the car's own ~6.7 kW onboard-charger ceiling are drawn as reference lines, with the green band running to whichever is lower — so the display shows which side is binding rather than a permanent phantom gap on a station larger than the car can use. The 6730 W constant is empirical, not a spec figure.
 

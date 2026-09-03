@@ -15,7 +15,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +41,13 @@ data class SliderMarker(
 
 /** Vertical reference tick + optional label beneath it. */
 data class ReferenceLine(val value: Double, val label: String = "")
+
+/** Where a label in the boundary lane wants to sit, as a fraction of bar width. */
+private sealed interface LabelAnchor {
+    object Min : LabelAnchor
+    object Max : LabelAnchor
+    data class At(val t: Double) : LabelAnchor
+}
 
 @Composable
 fun ColorBandSlider(
@@ -141,39 +148,68 @@ fun ColorBandSlider(
         // the right; any reference label is centred at its tick by mapping
         // its value through the same scale used inside the canvas. All
         // share the same font + color so they read as one labelling lane.
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = formatBoundary(min) + boundarySuffix,
-                fontSize = 9.sp,
-                color = Color(0xFF888888),
-                modifier = Modifier.align(Alignment.TopStart),
-            )
-            Text(
-                text = formatBoundary(max) + boundarySuffix,
-                fontSize = 9.sp,
-                color = Color(0xFF888888),
-                modifier = Modifier.align(Alignment.TopEnd),
-            )
+        //
+        // Laid out together rather than as independently-placed children,
+        // because a reference tick close to either end lands on top of the
+        // boundary label and the two render as illegible overstruck text. A
+        // -110 A "regen" tick on a -150..700 A scale sits 5% from the left
+        // edge and did exactly that. Colliding labels drop to a second line;
+        // a slider whose labels do not collide is laid out identically to
+        // before, so this changes nothing for the callers that already fit.
+        val labels = buildList {
+            add(formatBoundary(min) + boundarySuffix to LabelAnchor.Min)
+            add(formatBoundary(max) + boundarySuffix to LabelAnchor.Max)
             for (ref in referenceLines) {
                 if (ref.label.isBlank()) continue
                 if (ref.value < min || ref.value > max) continue
                 val t = ((ref.value - min) / (max - min)).coerceIn(0.0, 1.0)
-                Text(
-                    text = ref.label,
-                    fontSize = 9.sp,
-                    color = Color(0xFF888888),
-                    modifier = Modifier.layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints)
-                        layout(placeable.width, placeable.height) {
-                            val x = (constraints.maxWidth * t).roundToInt() -
-                                placeable.width / 2
-                            placeable.placeRelative(
-                                x.coerceIn(0, constraints.maxWidth - placeable.width),
-                                0,
-                            )
-                        }
-                    },
-                )
+                add(ref.label to LabelAnchor.At(t))
+            }
+        }
+        Layout(
+            content = {
+                for ((text, _) in labels) {
+                    Text(text = text, fontSize = 9.sp, color = Color(0xFF888888))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { measurables, constraints ->
+            val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }
+            val width = constraints.maxWidth
+            val lineHeight = placeables.maxOfOrNull { it.height } ?: 0
+            val gap = 4.dp.roundToPx()
+
+            // Occupied x-intervals per line, so a label only drops down when
+            // it genuinely has nowhere to sit on the line above.
+            val lines = mutableListOf<MutableList<IntRange>>()
+            val placements = ArrayList<Pair<Int, Int>>(placeables.size)
+
+            for ((i, p) in placeables.withIndex()) {
+                val x = when (val anchor = labels[i].second) {
+                    LabelAnchor.Min -> 0
+                    LabelAnchor.Max -> width - p.width
+                    is LabelAnchor.At ->
+                        ((width * anchor.t).roundToInt() - p.width / 2)
+                            .coerceIn(0, (width - p.width).coerceAtLeast(0))
+                }
+                val span = (x - gap)..(x + p.width + gap)
+                var line = 0
+                while (true) {
+                    if (line == lines.size) lines.add(mutableListOf())
+                    val clash = lines[line].any { it.first <= span.last && span.first <= it.last }
+                    if (!clash) {
+                        lines[line].add(x..(x + p.width))
+                        break
+                    }
+                    line++
+                }
+                placements += x to (line * lineHeight)
+            }
+
+            layout(width, lineHeight * lines.size.coerceAtLeast(1)) {
+                for ((i, p) in placeables.withIndex()) {
+                    p.placeRelative(placements[i].first, placements[i].second)
+                }
             }
         }
     }

@@ -123,7 +123,7 @@ Physical access to all three buses via the OBD-II DLC and the Via-added harness:
 
 A standard scan tool on the stock DLC sees only the Vehicle bus and talks to the VCM diagnostic
 gateway -- it cannot directly reach the ECM or TRAC MCU on the OBD bus. The Via harness exposes
-the other two buses on non-standard pins. This corrects a prior note in Vtrux.md that stated the
+the other two buses on non-standard pins. This corrects a prior note in projects/vtrux/README.md that stated the
 OBD DLC was wired to the OBD bus.
 
 ### 5b. OBD-II DTC query results
@@ -211,7 +211,7 @@ A retrospective scan of all 5 DTC interrogation logs was run against the full lo
 (291,892 frames across 5 sessions) using `notes/artifacts/log_response_scan.py`. Key findings:
 
 **IDs seen in 0x700-0x7FF outside expected range:** 0x772, 0x778, 0x780, 0x785, 0x788.
-All are normal Vehicle bus periodic broadcasts (listed in Vtrux.md), not diagnostic
+All are normal Vehicle bus periodic broadcasts (listed in projects/vtrux/README.md), not diagnostic
 responses. No hidden modules.
 
 **VCM OBD-II clean:** `02 43 00 AA...` / `02 47 00 AA...` / `02 4A 00 AA...` confirm
@@ -639,7 +639,7 @@ Items remaining: superseded by section 7f (2026-04-17).
 
 ## Part 7 -- Session 2026-04-17
 
-Tools: `projects/vtrux/tools/vtrux_hcu_probe.py` (new this session), `projects/vtrux/notes/artifacts/identify_obd_module.py`, `projects/vtrux/notes/artifacts/pt_bus_functional_broadcast.py`
+Tools: an HCU probe tool (internal-only), `projects/vtrux/notes/artifacts/identify_obd_module.py`, `projects/vtrux/notes/artifacts/pt_bus_functional_broadcast.py`
 
 Dongles: ixxat on OBD bus (Via P1 pins 10/2), kvaser on PT bus (Via P2 pins 1/9), PCAN on Vehicle bus (DLC pins 6/14).
 
@@ -667,7 +667,7 @@ The GM ECM bridges OBD and Vehicle buses -- identical responses at 0x7E8 on both
 
 ### 7b. Woodward HCU diagnostic endpoint -- not found
 
-A new tool `vtrux_hcu_probe.py` was written to probe all Woodward ISO 15765 MotoHawk services (Mode 09, 0x10, 0x22, 0x19, 0x27, 0x85, 0x31, 0x28, 0x3E). The HCU was searched systematically:
+A new tool (internal-only) was written to probe all Woodward ISO 15765 MotoHawk services (Mode 09, 0x10, 0x22, 0x19, 0x27, 0x85, 0x31, 0x28, 0x3E). The HCU was searched systematically:
 
 | Method | Buses covered | Result |
 |--------|--------------|--------|

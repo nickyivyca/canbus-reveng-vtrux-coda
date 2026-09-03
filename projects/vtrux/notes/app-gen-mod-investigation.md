@@ -11,9 +11,14 @@
 
 ## Background: How Throttle Works on the Vtrux
 
-From `Vtrux.md` (confirmed architecture):
+From `projects/vtrux/README.md` (confirmed architecture):
 
-> The VCM commands engine throttle via analog wire to the ECM's APP input pins — this is not on CAN. The GMLAN DBC contains only validity flags (`Accelerator_Actual_Position_Validity` in 0x0C9; `Accelerator_Effective_Position_Validity` in 0x1C3) with no percentage value.
+> The VCM commands engine throttle via analog wire to the ECM's APP input pins — this is not on CAN.
+
+**Correction 2026-08-14:** this section previously continued "...the GMLAN DBC contains only validity
+flags with no percentage value." That was wrong — an artifact of the deprecated DBC extraction. The
+ECM *does* echo the APP voltage it receives onto CAN as `Accelerator_Actual_Position` (0x0C9, OBD bus), and `Accelerator_Effective_Position` (0x1C3). The VCM→ECM path itself
+is still analog; what is on CAN is the ECM's readback of that analog input. See `projects/vtrux/README.md`.
 
 The GM ECM uses a two-sensor **Accelerator Pedal Position (APP)** input system — standard GM redundant safety design. Both APP sensor circuits must agree within tolerance; if either drops to zero (circuit low), the ECM sets fault codes and the MIL illuminates.
 
@@ -49,6 +54,16 @@ The MIL transition happened within the first second of the scan polling cycle �
 Both codes in **stored, pending, and permanent** memory simultaneously. The permanent flag means a standard scan-tool clear will not extinguish the MIL — a complete OBD drive cycle is required after restoring the module.
 
 **Interpretation:** Both APP sensor circuits read 0 V (low). The ECM's two APP inputs both lost their analog voltage source simultaneously, which is the exact expected result of unplugging the module that generates those voltages.
+
+### CAN-side confirmation (added 2026-08-14)
+
+The DTCs are corroborated on CAN. In `vtrux_app_disconnect_test.log`, `Accelerator_Actual_Position` (0x0C9) reads **0 in 21,868 of 21,868 frames** on the OBD bus while the engine was running (RPM 800–848), with `Accelerator_Actual_Position_Validity` asserting "Valid" throughout. Three stray non-zero frames appear on the second captured channel out of 17,504.
+
+The parts truck, which has no APP GEN MOD at all, shows the same thing — 0x0C9 B4 constant 0 across 3,332 and 4,170 frames in `vtrux_partstruck_testdrive_part3_engine.log`, with the engine idling and TPS swinging to 99.6%.
+
+By contrast, a normal main-truck drive log (`vtruxanotherevaplogpart2.log`) shows 0x0C9 B4 taking 230 distinct values spanning the full 0–254 range (0–99.6%).
+
+**This upgrades the module's role from hypothesis to confirmed:** the APP GEN MOD is what drives the ECM's APP input, and removing it drives that input — and therefore the CAN-reported APP value — to zero. It also gives a non-invasive CAN-only test for the module's health: engine running with APP pinned at 0% means the module or its wiring is not delivering voltage.
 
 ---
 
@@ -96,6 +111,6 @@ Pins 3/4 assignment requires oscilloscope or DMM trace to confirm.
 |------|-----------|
 | `vtrux_app_disconnect_test.log` | Disconnect test log (`projects/vtrux/logs/`) |
 | `artifacts/app_disconnect_obd.txt` | Decoded OBD exchanges from the disconnect log |
-| `Vtrux.md` — "No APP on GMLAN" section | Architecture background: analog throttle path |
+| `projects/vtrux/README.md` — "No APP on GMLAN" section | Architecture background: analog throttle path |
 | `tools/extract_obd.py` | Tool used to decode the OBD scan (`projects/vtrux/tools/`) |
 | `can-disconnect.md` | Other disconnect tests (PE pump, HV battery, VCM) for comparison methodology |

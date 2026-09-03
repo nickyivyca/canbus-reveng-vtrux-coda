@@ -1,7 +1,7 @@
 # Vtrux — Analysis Notes
 
 Research notes and signal findings for the Vtrux CAN bus reverse engineering project.
-Vehicle overview, signal inventory, DBC status, and bus architecture all live in `../Vtrux.md`.
+Vehicle overview, signal inventory, DBC status, and bus architecture all live in `../README.md`.
 
 ---
 
@@ -17,8 +17,8 @@ Vehicle overview, signal inventory, DBC status, and bus architecture all live in
 
 | File | Description |
 |------|-------------|
-| `threebusinvestigation.md` | Three-bus architecture: per-log bus number mappings, OBD passthrough behavior, scanner timing, GM proprietary diagnostics. Bus identification anchor IDs are in `../Vtrux.md`. |
-| ~~`ENGINE-GENERATOR-CORRELATION.md`~~ | Moved to `deprecated/` — analysis body based on wrong byte-order extraction. Key finding (VCM substitutes ~800 RPM synthetic on Vehicle bus; real RPM on OBD bus) is in `../Vtrux.md`. |
+| `threebusinvestigation.md` | Three-bus architecture: per-log bus number mappings, OBD passthrough behavior, scanner timing, GM proprietary diagnostics. Bus identification anchor IDs are in `../README.md`. |
+| ~~`ENGINE-GENERATOR-CORRELATION.md`~~ | Moved to `deprecated/` — analysis body based on wrong byte-order extraction. Key finding (VCM substitutes ~800 RPM synthetic on Vehicle bus; real RPM on OBD bus) is in `../README.md`. |
 | ~~`gmlan-additional-investigation.md`~~ | Moved to `deprecated/` — pre-dates full GMLAN data awareness. VCM stub findings (0x189/0x199/0x19D/0x18E) and ECM/TCM TX/RX ID lists preserved there. |
 
 ## Generator & Status Bit Investigation
@@ -32,10 +32,11 @@ Vehicle overview, signal inventory, DBC status, and bus architecture all live in
 
 | File | Description |
 |------|-------------|
+| **`battery-fault-codes.md`** | **The BMS names its faults.** PT-bus `0x460` decoded (2026-08-26) as the A123 BMS fault-record annunciator: page-multiplexed list of 3-byte fault records pushed at fault events only (key-offs, unplugs, and charger-internal failures push nothing), surviving reboot (staged NVM restore at boot: first record ~1 s, second +15–35 s), cleared with FAULT_LATCHED. Code catalog with per-event evidence: steady-state fault = `FC 22 02` (all five 2025 instances, at TYPE1, never since); precharge abort = `F0 E0 00` (all four); contactor/interlock hardware faults = `F6` family (truck3-rounds 1/2/4 + one main-truck event); gen-inverter lost comms = `FC 16 F2` (**confirmed** against the T4 fuse experiment: pushes ~30 s after boot with the GENE MCU silent, latches until 12V clear — its Apr–Jul 2026 persistence tracks the deliberate gen-fuse pulls); isolation faults are **unnamed** (generics-only). Also: parts-truck record-era timeline, the 2026-06-10 mid-drive interlock flutter and 2026-06-18 `AC 10 01` trip, and the `0x617 B7=0xCA` VCM fault-active flag (no sibling record message exists). OBD-bus 0x460 (TRAC MCU, DLC=5) contamination caveat. |
 | **`fault-signature-comparison.md`** | **START HERE for any HV/BMS fault.** Cross-cutting discriminator table for all known fault modes (contactor weld, bad precharge, BMS master power loss, main-orig precharge fail, main-orig steady-state charge fault, isolation, interlock) plus the operator-unplug confound, contactor-sequence comparison, and a list of variables that do NOT discriminate. Documents the easy-to-misread signals: `vbus_pos`/`vbus_neg` are node voltages (the bus is their difference); TYPE1 is a startup state at wake but a **fault classifier in steady state** (present = internal fault, absent = external disconnect); and the Android-logger blackout confound. |
 | `isolation-fault-analysis.md` | Deliberate isolation fault test (2026-03-06): fault signature, 0x410 B1 state machine, 0x420 B3 countdown, resistor-removal recovery, comparison to charging faults (Phase 2 & 3 in progress). |
 | `specific-trucks/full-charge-then-fail-summary.md` | Summary of the full-charge-then-fail event (key reference log). |
-| `specific-trucks/before-battery-swap-failed-charge-analysis.md` | Pre-battery-swap failed charge analysis: Bel Inverter folder sessions (M0_b, M1_b) plus the 2025-08-22 full-charge-then-fail event. Failure signature confirmed (TYPE1→TYPE3+EPO, ~10s gap), precharge sequence decoded, post-failure stuck-TYPE2 state documented through Sep 2025. **Cell overvoltage is RULED OUT, not established** — the `cell_overvolt` flag never sets anywhere in the log (confirmed 2026-07-26); root cause remains unknown. |
+| `specific-trucks/before-battery-swap-failed-charge-analysis.md` | Pre-battery-swap failed charge analysis: Bel Inverter folder sessions (M0_b, M1_b) plus the 2025-08-22 full-charge-then-fail event. Failure signature confirmed (TYPE1→TYPE3+EPO, ~10s gap), precharge sequence decoded, post-failure stuck-TYPE2 state documented through Sep 2025. **Cell overvoltage is RULED OUT, not established** — the `cell_overvolt` flag never sets anywhere in the log (confirmed 2026-07-26); root cause remains unknown. **2026-08-26:** fault code identified (`0x460` record `FC 22 02`, see `battery-fault-codes.md`); the 2026-08-09 "M0_b self-recovery" claim RETRACTED (chunk-merge timebase artifact — no fault ever clears in place). |
 | `specific-trucks/after-battery-swap-charge-fail-analysis.md` | Post-battery-swap charge failure analysis: five consecutive inverterFault/shutdownSource=3 failures (Feb 16 + Feb 28 2026). Includes J1772 pilot analysis, intermittency catalogue, fault register confirmation, and vtruxchargeafterucsc session. |
 | `specific-trucks/after-fix-charge-sessions.md` | Analysis of post-repair charging sessions. |
 
@@ -52,7 +53,7 @@ Vehicle overview, signal inventory, DBC status, and bus architecture all live in
 |------|-------------|
 | `peak-operating-points.md` | Peak power and torque operating points from evap drive logs. Generator: -144.7 kW generating, +15.8 kW motoring (engine start). Traction: +183.9 kW motoring, -94.2 kW regen, +403.4 Nm peak torque. Includes context and notes on artifacts (feedback spike, reverse vs regen). |
 | ~~`highway-drive-cycle.md`~~ | Moved to `deprecated/` — early Aug 2025 log. 0x053 state machine extracted to `powertrain-messages.md`. |
-| `cruise-control-analysis.md` | Cruise control signal reference — 0x644 B2-B3 speed setpoint (CruiseMode + CruiseSpeedSetpoint, 0.125 km/h/count, confirmed), 0x1E1 B5 button state (see Vtrux.md for tier table), torque command via 0x041 B1-B2 OBD bus. Full PT bus investigation history in `deprecated/`. |
+| `cruise-control-analysis.md` | Cruise control signal reference — 0x644 B2-B3 speed setpoint (CruiseMode + CruiseSpeedSetpoint, 0.125 km/h/count, confirmed), 0x1E1 B5 button state (see projects/vtrux/README.md for tier table), torque command via 0x041 B1-B2 OBD bus. Full PT bus investigation history in `deprecated/`. |
 | `traction-inverter-control.md` | Traction inverter command identification (2026-03-29): 0x041 B1-B2 confirmed as VCM-to-TRAC-MCU torque command (r=0.9994 vs feedback, r=0.9782 vs throttle). Conflicts with epri-obd-bus.dbc: log data shows TRAC torque feedback at 0x442 B0-B1, not 0x451 as the DBC states. Phase 2 (cruise re-investigation) not yet started. |
 | `vtrux-smog-pass.md` | `generator_runner.py` smog-pass session (2026-06-17, `vtrux_20260617_193900`). Characterizes the backdrive↔HCU limit cycle on post-bridge 0x051 (threshold 32420, cap 33110); the ~4945 RPM runaway "oops" traced to experimental script limits (cap 33090 + threshold lowered to 32320, both confirmed on the bus) arrested by VCM throttle-lift→DFCO; TPS/DFCO wind-down; and OBD readiness progression (Catalyst→Fuel→O2 complete, Evap left incomplete = CA pass). Artifacts in `artifacts/smog-test/`. |
 
@@ -105,7 +106,7 @@ Vehicle overview, signal inventory, DBC status, and bus architecture all live in
 | File | Description |
 |------|-------------|
 | `interlock-bitfields-analysis.md` | 0x410 bit-field analysis, interlock status, fault register, shutdown precursors, and message source attribution (BMS vs VCU). |
-| `battery-thermals.md` | Battery pack cooling system. Cooling-active CAN signature (0x508 broadcast, 0x506 B0 bit5) confirmed by a ~+95 A 12V load step; thermal trigger model (~38 °C on / ~36.5 °C off); Peltier-liveness and pack thermal-model tasks. |
+| `battery-thermals.md` | Battery pack cooling system. Cooling-active CAN signature (0x508 broadcast, 0x506 B0 bit5) confirmed by a ~+95 A 12V load step; thermal trigger model (~38 °C on / ~36.5 °C off); conditioning telemetry is pack-specific (parts-orig has it, main-orig does not); 2026-07-24/26 weekend-trip validation on a long drive (peak 41.0 °C, ~80 min cooling, engagement ~1–1.5 °C higher than the 07-14 reference); Peltier-liveness and pack thermal-model tasks. |
 
 ## Cross-Vehicle Topics
 

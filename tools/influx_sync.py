@@ -257,6 +257,34 @@ def current_policy(vehicle, on_change=True, heartbeat=1.0) -> str:
                           heartbeat, False, None)
 
 
+def overlapping_files(id_repairs) -> set:
+    """Files whose recorded windows overlap another file's, per can_id.
+
+    `reupload_ids` deletes a can_id across each file's window before re-writing
+    it, which is only safe while the windows are disjoint. The Android logger
+    can emit a T0 spanning 24 h with the later chunks nested inside it, and then
+    repairing T0 deletes the nested chunks' points as collateral. Callers route
+    the files named here to a whole-file re-upload instead.
+
+    Takes {can_id: [(file, t_start_ns, t_end_ns), ...]}; returns the set of
+    files involved in any overlap.
+    """
+    overlapped = set()
+    for entries in id_repairs.values():
+        spans = sorted((a, b, f) for f, a, b in entries)
+        for (_a0, a1, fa), (b0, _b1, fb) in zip(spans, spans[1:]):
+            # Strictly greater: consecutive chunks normally share a boundary
+            # instant (T0 ends exactly where T1 begins), which is the ordinary
+            # shape here and must not be treated as overlap -- doing so would
+            # send almost every multi-chunk session down the whole-file path.
+            # At worst a shared instant costs one point, and both files carry
+            # the same can_id so they drift together and are repaired in the
+            # same item anyway.
+            if b0 < a1:
+                overlapped.update({fa, fb})
+    return overlapped
+
+
 def build_plan(args) -> list:
     manifest = load_manifest()
     live = l1_sessions()
@@ -303,8 +331,18 @@ def build_plan(args) -> list:
                     reup_files.append(p)
                     continue
                 claimed = json.loads(row.get("msg_hashes") or "{}")
+                # Normalise "no definition" before comparing. A message on an
+                # unidentified channel -- `ch<N>`, the fallback bus name when a
+                # channel matches no anchor set -- is stored with an empty hash,
+                # while current_hashes() only carries the named buses and so
+                # returns None for it. Comparing those two directly made every
+                # such file drift on every run and never converge no matter how
+                # often it was repaired: the 7 vtrux ch1 sessions and the 3 coda
+                # ch2 fragments were stuck in exactly this loop. Nothing is
+                # decoded for those keys either way, so there is nothing to
+                # repair.
                 drift = [k for k, h in claimed.items()
-                         if hashes.get(tuple(k.split("|"))) != h]
+                         if (hashes.get(tuple(k.split("|"))) or "") != (h or "")]
                 for k in drift:
                     _bus, cid = k.split("|")
                     id_repairs[cid].append(
@@ -315,11 +353,32 @@ def build_plan(args) -> list:
                              "session": session,
                              "files": [str(f) for f in new_files],
                              "reason": "not_in_manifest"})
+            # A per-id repair deletes the id across each file's recorded
+            # window. That is only safe while the windows are disjoint. The
+            # Android logger can emit a T0 spanning 24 h with later chunks
+            # nested inside it (coda_20260508_191742: T0 = 24.00 h, T1 = 3.4 min
+            # inside it), and then repairing T0 deletes T1's points too. Route
+            # any session with overlapping windows to a whole-file re-upload,
+            # which needs no window arithmetic.
+            overlapped = overlapping_files(id_repairs)
+            if overlapped:
+                for cid in list(id_repairs):
+                    id_repairs[cid] = [e for e in id_repairs[cid]
+                                       if e[0] not in overlapped]
+                    if not id_repairs[cid]:
+                        del id_repairs[cid]
+                for f in overlapped:
+                    if f not in reup_files:
+                        reup_files.append(f)
+
             if reup_files:
                 work.append({"action": "reupload_file", "vehicle": vehicle,
                              "session": session,
-                             "files": [str(f) for f in reup_files],
-                             "reason": "encoding/policy/size changed"})
+                             "files": [str(f) for f in sorted(reup_files)],
+                             "reason": ("overlapping chunk windows"
+                                        if overlapped and not any(
+                                            f not in overlapped for f in reup_files)
+                                        else "encoding/policy/size changed")})
             for cid, entries in sorted(id_repairs.items()):
                 work.append({"action": "reupload_ids", "vehicle": vehicle,
                              "session": session, "can_ids": [cid],

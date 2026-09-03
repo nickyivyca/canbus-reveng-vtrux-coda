@@ -62,7 +62,7 @@ All three signals analyzed here (0x644, 0x63A, 0x649) are in the **VCM BMS relay
 - Bit 5 high = ready, low = not ready
 - Bit 4 varies with state
 
-**Note — byte 6 only:** This analysis covers 0x644 byte 6 exclusively. Later analyses found additional fields: B0 = VCU-sourced contactor leading indicator (0x07/0x08/0x10/0x17 enum); B2[7:4] = cruise mode; B2[3:0]:B3 = cruise speed setpoint (12-bit Motorola, 0.125 km/h/count). See `vtrux.md` contactor flow and `cruise-control-analysis.md`.
+**Note — byte 6 only:** This analysis covers 0x644 byte 6 exclusively. Later analyses found additional fields: B0 = VCU-sourced contactor leading indicator (0x07/0x08/0x10/0x17 enum); B2[7:4] = cruise mode; B2[3:0]:B3 = cruise speed setpoint (12-bit Motorola, 0.125 km/h/count). See `projects/vtrux/README.md` contactor flow and `cruise-control-analysis.md`.
 
 ---
 
@@ -150,7 +150,7 @@ All three signals analyzed here (0x644, 0x63A, 0x649) are in the **VCM BMS relay
 
 ### 0x649 Byte 7 - Generator Load/Activity Indicator ✅ MAJOR DISCOVERY
 
-**Caveat — drive logs only:** Message content differs between drive and charge modes; do not interpret byte 7 from charge logs. A separate signal found by later analysis: B0 bit 7 = `vcm_evap_active` (1=evap in progress), clears ~6.1s before VCM commands generator stop. See `evap-cycle-analysis.md` and `vtrux.md`.
+**Caveat — drive logs only:** Message content differs between drive and charge modes; do not interpret byte 7 from charge logs. A separate signal found by later analysis: B0 bit 7 = `vcm_evap_active` (1=evap in progress), clears ~6.1s before VCM commands generator stop. See `evap-cycle-analysis.md` and `projects/vtrux/README.md`.
 
 **Distribution across logs:**
 - `0x40`: Idle/generator off (23-100% depending on activity)

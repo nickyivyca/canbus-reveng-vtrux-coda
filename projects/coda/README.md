@@ -90,7 +90,12 @@ See `notes/charging-analysis.md` Goal 2. D CAN gateway rebroadcast behavior char
 **Module naming reconciliation:**
 - **CMM** = CHM master — Labview calls it CMM; topology calls it CHM. Same hardware.
 - **CMS** = CHM slave — second Lear charger unit; Labview has CMS_Recvd.vi (no XML sidecar found). CMS signals inferred to mirror CMM (same Lear OBC hardware, slave vs master role).
-- **ACCM** and **AICM** — may be the same module. Unconfirmed; treat as hypothesis.
+- **ACCM** and **AICM** — likely **separate** modules. Hypothesis, strengthened
+  2026-08-23: the AICM's four messages (0x276, 0x391, 0x392, 0x410) run on a
+  102.90 ms / 4.60 ms-jitter transmit clock across 113 sessions, while 0x439
+  (ACCM status) sits on the tight 100.00 ms / <1.3 ms clock shared with the BMS.
+  A single timebase cannot produce both. Still short of proof — one ECU can run
+  two timer tasks. See `notes/artifacts/x276_bus_presence.py` Phase 10.
 
 ### D CAN (Driveline CAN)
 
@@ -115,6 +120,10 @@ See `notes/charging-analysis.md` Goal 2. D CAN gateway rebroadcast behavior char
 ## Known Signal Sources
 
 ### 1. DCDC Converter — Hardware Manual (Confirmed, B CAN)
+
+Delphi **U2C Universal 2.2 kW Converter** (`U2C-10018134-001`). Primary source:
+`notes/dcdc/U2C Manual Rev03_2-15-2011.pdf`; every 0x1D5 / 0x48A / 0x1D7 field
+re-verified against it 2026-08-24 — see `notes/dcdc/README.md`.
 
 | ID (dec) | ID (hex) | Name              | Direction    | Key Signals |
 |----------|----------|-------------------|-------------|-------------|
@@ -186,7 +195,7 @@ errors on Windows. Use `--quiet --output FILE` when running `labview_xml_extract
 | 0x383 | BMSBattStatus | BMS | SoC, HVBattCharging, ChrgPortOpen, ChargeCableConnected |
 | 0x390 | BMS_HVBattTemp1 | BMS | FrontInletAirTemp, RearInletAirTemp, ReturnAirTempPsg, ReturnAirTempDrv, AllowedCellTempMax, AllowedCellTempMin, AllowedCellTempDiff, AllowedHumidity |
 | 0x271 | GWM_VehFaults | GWM | VehicleFaultLampReq (B0[1:0]: OFF/YELLOW/RED/INVALID), B0 bit2 flag. **VehFaultSeverity/VehicleFault removed** — B1-B4 = 0x00 in every captured car, so no fault code is on the bus |
-| 0x276 | HVACStatus | HVAC | PTC_PowerConsumption, ACCM_PowerConsumption, HVACHVDisableStatus (**B2[1:0]** enum: 0 Invalid/1 not-disabled/2 disabled/3 -), CIntTempRadOutlet, CIntTempPTCOutlet, PTCHeaterPWM, RadiatorFanPWM, BattFanPWM |
+| 0x276 | HVACStatus | HVAC | PTC_PowerConsumption, ACCM_PowerConsumption, HVACHVDisableStatus (**B2[1:0]** enum: 0 Invalid/1 not-disabled/2 disabled/3 -), CIntTempRadOutlet, CIntTempPTCOutlet, PTCHeaterPWM, RadiatorFanPWM, BattFanPWM. **B CAN native** (AICM) — the D CAN copy is a GWM rebroadcast, confirmed 2026-08-23; see `notes/efficiency-calculation.md` Sec.5 |
 | 0x391 | HVACAirState | HVAC | UnderHoodHumidity, UnderHoodTemp, OpAirHumidity, OPAirTemp, ReturnAirTemp, EvapAirOffTemp |
 | 0x274 | ChrgrSysFaultsTemp | CMM | Fault status, Chrgr1Temp, Chrgr2Temp |
 | 0x277 | CMMTempStatus | CMM | CaseTemp confirmed; PFCTemp, HV1/HV2 inconclusive |
@@ -412,7 +421,7 @@ See `logs/README.md` for log file inventory.
 
 ```
 projects/coda/
-  coda.md                         # This file — project overview & entry point
+  README.md                       # This file — project overview & entry point
   CODA-B-CAN.dbc                  # B CAN DBC (35 messages, Motorola byte order)
   CODA-D-CAN.dbc                  # D CAN DBC (22 messages, Motorola byte order)
   CODA-C-CAN-cells.dbc            # C CAN cell voltage/temp DBC (cell frames confirmed; non-cell IDs not yet characterized)
@@ -467,6 +476,7 @@ projects/coda/
       dlcm-torque-limiter-code-trace.md # Modern §10.7 vs old-scheme trace: behavioral verdict (speed-dependent limiter = §10.7) + code caveats (2026-07-08)
       dlcm-second-pass-hypotheses.md # Second-pass investigation angles for the CAL gradient-LUT hunt
     driver-inputs.md              # Throttle, brake, PRND, body electronics, gateway rebroadcast
+    efficiency-calculation.md    # Wh/mile: drivetrain / HVAC / 12 V split (293.6 pack, 365.9 grid); method, validation, capture-coverage caveats
     driving-sequence-investigation.md  # Startup sequence, HVAC, AC compressor signals
     othercars-comparison.md       # Signal comparison with other Coda vehicles
     outside-air-temp-investigation.md  # Outside-temp display dropped — no reliable ambient sensor on CAN

@@ -162,7 +162,7 @@ distribution almost exactly (p50 64 vs 64, 55 vs 55, 18 vs 14 km/h). Validated
 end-to-end on `oghighwaydrive`: integrating `trac_rpm / 62.48` gives 39.13 km
 against 39 km on the truck's own `0x625` odometer.
 
-The previously-noted range of 63–68 rpm/(km/h) in `vtrux.md` is superseded by
+The previously-noted range of 63–68 rpm/(km/h) in `projects/vtrux/README.md` is superseded by
 this direct calibration for the logs tested here.
 
 ### Android-logger sessions
@@ -423,7 +423,7 @@ here.
 ### `0x598` DBL_ESSPwrAvg / DBL_TracPwrAvg — signedness
 
 `epri-pt-bus.dbc` declares these as **signed** 16-bit with offset 0.
-`vtrux.md` and `vtrux-powertrain-experimental.dbc` (`gen_power`) say
+`projects/vtrux/README.md` and `vtrux-powertrain-experimental.dbc` (`gen_power`) say
 **unsigned centered at 32768** (offset -327.68). Tested both interpretations
 against measured V x I:
 

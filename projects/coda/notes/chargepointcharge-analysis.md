@@ -132,7 +132,7 @@ During Phase 1, the max cell reached ~3.774V as the current ramped down (termina
 
 ### 0x382 B0 — Cell_T_avg Temperature (CORRECTION: Previously Misidentified as Charge Stage Counter)
 
-**CORRECTION (2026-03-25):** This section originally interpreted B0 as a charge stage counter. It is not. 0x382 B0 is `Cell_T_avg` — average pack cell temperature, encoded as `T°C = raw − 128`. The progression 0x8B→0x8E was the pack warming from 11→14°C during charging. See `coda.md` 0x382 entry for authoritative decode.
+**CORRECTION (2026-03-25):** This section originally interpreted B0 as a charge stage counter. It is not. 0x382 B0 is `Cell_T_avg` — average pack cell temperature, encoded as `T°C = raw − 128`. The progression 0x8B→0x8E was the pack warming from 11→14°C during charging. See `projects/coda/README.md` 0x382 entry for authoritative decode.
 
 | Transition | Time | SoC at transition | Correct interpretation |
 |---|---|---|---|

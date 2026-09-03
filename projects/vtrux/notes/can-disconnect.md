@@ -8,7 +8,7 @@ disconnected while the dongle captures all three buses.
 - `A` = absent after disconnect (sourced through that path, OR collateral from a wake/enable line on that connector)
 - `?` = not captured in this test or uncertain
 
-**Attribution caveat:** The "Module / Attribution" labels in the ID presence matrix are working hypotheses. Do **not** use these labels as source attribution in other analyses. Only use module attributions that have been confirmed and promoted to `Vtrux.md`.
+**Attribution caveat:** The "Module / Attribution" labels in the ID presence matrix are working hypotheses. Do **not** use these labels as source attribution in other analyses. Only use module attributions that have been confirmed and promoted to `projects/vtrux/README.md`.
 
 **Known errors flagged 2026-06-06 (during trailer-brake Phase 5):**
 - The "ECM / EBCM -- native OBD" row for 0x189, 0x1A6, 0x1DF (and others) is a lumped-bucket label that conflates spec sources. The GM spec does **not** contain 0x189, 0x1A6, or 0x1DF at all; forum reverse-engineering identifies 0x189 as TCM-to-ECM torque request and 0x1A6 as a TCM TX ID (see `notes/deprecated/gmlan-additional-investigation.md`). Other IDs in that row (e.g. 0x2F9, 0x1E9) are EBCM per spec; 0x2C3 is ECM; 0x1E1 / 0x1F1 are gateway.
@@ -326,5 +326,9 @@ the rest of the GENE MCU group.
 ### Correlation with T2/T3
 
 All IDs gated by the gene inv fuse are also absent in T2 (~33s after BMS pull) and absent in
-T3 (VCM B-connector disconnect). This is consistent: the GENE MCU requires both HV bus power
-(via BMS, gated by T2) and VCM enable (via B-connector, gated by T3) to operate.
+T3 (VCM B-connector disconnect). **Interpretation corrected 2026-08-26 (owner-confirmed):**
+the GENE MCU is **12V-powered via the gene inv fuse**, not HV-powered. The T2/T3 silencing
+therefore reflects gating of that switched 12V feed and/or the VCM enable (the MCU powers
+down ~33s after the BMS disappears, and does not run without the VCM), not loss of an HV
+supply. Related: pulling this fuse for >~30s with the BMS awake pushes BMS fault record
+`FC 16 F2` ("gen inverter not communicating") on 0x460 — see `battery-fault-codes.md`.

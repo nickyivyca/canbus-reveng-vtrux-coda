@@ -25,7 +25,7 @@ investigation. "Tab" = CODACAN tab where the ground-truth field is read.
 
 | ID | Byte(s) | Open question | Method | Src |
 |----|---------|---------------|--------|-----|
-| 0x378 | B2 | **BMSmode enum (flagship).** Catalog every value: 0xD2 drive / 0xA9 charge (normal) vs 0xF2-0xF8 (Car 2's + parts car) vs 0xEA (thermal log). One sweep closes an item flagged in 4 notes. | `sweep` B2 0x00-0xFF | coda.md, othercars, thermal-behavior, decode-notes [P1] |
+| 0x378 | B2 | **BMSmode enum (flagship).** Catalog every value: 0xD2 drive / 0xA9 charge (normal) vs 0xF2-0xF8 (Car 2's + parts car) vs 0xEA (thermal log). One sweep closes an item flagged in 4 notes. | `sweep` B2 0x00-0xFF | projects/coda/README.md, othercars, thermal-behavior, decode-notes [P1] |
 | 0x378 | B3-B7 | Never swept. Incl. B6 = DC-link voltage (~19.5 V/LSB?), B0 = HV system mode. | `sweep` bytes 3-7, driving log | decode-notes 5c, driving-sequence [NEW] |
 | 0x275 | B0 | Drives BattSentDischargeLimit and/or MotorDriveLimit? (both read 336 A together). | `inject` distinct B0 | chargepoint [NEW] |
 | 0x275 | B2 | Drops ~4 at limp - pack V / temp / scaled SoC? | `sweep` B2 | bonnydoon, artifacts [NEW] |
@@ -36,7 +36,7 @@ investigation. "Tab" = CODACAN tab where the ground-truth field is read.
 | 0x275 | B7 | Constant 0xDD - does any BMS field respond? | `inject` values | decode-notes [P1] |
 | 0x270 | B0 | **Fault code-vs-severity split unreconciled**: nibble (Severity/Code) vs per-bit (bit1=red lamp, bit4=state, bit0=key-on). Also bit-4 role. | `inject` 00/01/02/10/11/12, read BMS 2 | decode-notes, fault-encoding, fault-light [P1] |
 | 0x270 | B6 | State/mode nibble (ramps 0x10->0x41; fixed 0x40 parts car). | `sweep` B6 | othercars [NEW] |
-| 0x2C1 | B1/B3/B5 | DrivingRange scale/offset (single cal point). Plus parts-car 0xAA-0xAC (sentinel?), Car 2's 0x68-0x69 (beyond 0-99 max). | `sweep`/`inject` | decode-notes, coda.md, othercars [P1] |
+| 0x2C1 | B1/B3/B5 | DrivingRange scale/offset (single cal point). Plus parts-car 0xAA-0xAC (sentinel?), Car 2's 0x68-0x69 (beyond 0-99 max). | `sweep`/`inject` | decode-notes, projects/coda/README.md, othercars [P1] |
 | 0x383 | B4 | 0x66-0x8A, inverse to SoC - BattSentChargeLimit or thermal limit? | `inject`/`sweep` B4 | charging-analysis [NEW] |
 | 0x383 | B0-B1 | Boolean flag bit positions: HVBattCharging, ChrgPortOpen, ChargeCableConnected. | `sweep` B0-B1 | decode-notes [P1] |
 | 0x390 | B0 | Status enum 0x8D->0x8E->0x8F (thermal/degradation stage?); B1/B3/B4 roles. | `sweep` | bonnydoon, charging-analysis, artifacts [NEW] |
@@ -69,7 +69,7 @@ investigation. "Tab" = CODACAN tab where the ground-truth field is read.
 
 | ID | Byte(s) | Open question | Method | Src |
 |----|---------|---------------|--------|-----|
-| 0x410 | B0 | HVAC boolean bit positions (FaultRed/FaultYellow/KeepWakeNetworkHVAC); maybe sweep artefacts. | `sweep` then `inject` to confirm | decode-notes, coda.md [P1] |
+| 0x410 | B0 | HVAC boolean bit positions (FaultRed/FaultYellow/KeepWakeNetworkHVAC); maybe sweep artefacts. | `sweep` then `inject` to confirm | decode-notes, projects/coda/README.md [P1] |
 | 0x276 | B2 | **HVACHVDisableStatus enum** full catalog: 0x01/0x05/0x09/0x0D/0x11/0x21. Specifically 0x09 vs 0x21 (both "cabin heat"?) and 0x0D ("pack heater running"?). | `inject` each value | decode-notes, thermal-behavior, thermal-indicator [P1] |
 | 0x276 | B0/B3/B4 | Temp/energy metrics (uncharacterized). | `sweep` | driver-inputs [NEW] |
 | 0x276 | B1 | Mode knob: face/feet/defog. | `sweep` low nibble | driver-inputs [NEW] |
@@ -128,7 +128,7 @@ Executed by `tools/codacan_autosweep.py` against `sweep_queue_full.json` (86 exp
 `notes/artifacts/cowork-results/autosweep/<name>/`; responder analysis via
 `notes/artifacts/cowork-results/analyze_autosweep.py`.
 
-**These are empirical replay observations, NOT yet promoted to `coda.md` or the DBCs.**
+**These are empirical replay observations, NOT yet promoted to `projects/coda/README.md` or the DBCs.**
 Correlation `r` is CODACAN-field-value vs swept-byte-input across the sweep. Scale/offset
 values still need a linear fit from the per-step JSON before any DBC entry.
 
@@ -137,7 +137,7 @@ values still need a linear fit from the per-step JSON before any DBC entry.
 | ID / byte | Observation | Confidence |
 |-----------|-------------|-----------|
 | 0x241 B1/B2/B3 | **B1 = IGBT, B2 = Rotor, B3 = Stator** temp (r ~ +0.96 each); B0, B4-B7 drive no temp field | High - resolves per-byte assignment |
-| 0x491 B0 / B3 | **B3 = lighting** (Side/Low/High Beam Active all toggle) - High. **B0 = "ODO" is CONTESTED** (coda.md says 0x491 B0/B1 = IPK fault-lamp latch; othercars says B2 = ODO) - see Run 2 cross-check, re-sweep queued | B3 High; B0 contested |
+| 0x491 B0 / B3 | **B3 = lighting** (Side/Low/High Beam Active all toggle) - High. **B0 = "ODO" is CONTESTED** (projects/coda/README.md says 0x491 B0/B1 = IPK fault-lamp latch; othercars says B2 = ODO) - see Run 2 cross-check, re-sweep queued | B3 High; B0 contested |
 | 0x270 B0 | **BMS Fault Severity = linear 0-15, r = +1.00**; BMS Fault Status shows 6 named enum strings (Information Only -> All HV Components Should Be Disabled) | High - severity is a direct value, not a nibble/bit split as the DBC assumed |
 | 0x410 B0 | HVAC FaultRed, FaultYellow, KeepWakeNetworkHVAC **all toggle** with B0 -> genuine B0 booleans, not sweep artefacts | High |
 | 0x276 B0/B1/B3/B4 | B0 = PTC Power, B1 = ACCM Power, B3 = CIntTempRadOutlet, B4 = CIntTempPTCOutlet (each drives its named field) | High (roles); scale TBD |
@@ -172,7 +172,7 @@ values still need a linear fit from the per-step JSON before any DBC entry.
 Run 2 (`sweep_queue_cleanup.json`, `--restart each`, output under
 `autosweep_cleanup/`) re-ran the 4 inconclusive items. Findings were then
 cross-checked against the vehicle notes by category (6 review passes). Still
-empirical / **not promoted** to `coda.md` or the DBCs. The BorgWarner **0x308**
+empirical / **not promoted** to `projects/coda/README.md` or the DBCs. The BorgWarner **0x308**
 park result is recorded in the shared `notes/borgwarner.md` (cross-vehicle with
 Vtrux), not here.
 
@@ -203,7 +203,7 @@ Vtrux), not here.
 - **0x383 B4** charge-limit/inverse-to-SoC hypothesis refuted (not a decoded field); reopen as "unexplained in-log varying byte."
 - **charging-analysis vs DBC** (resolve DBC-favor): 0x1D5 B6 = Current_14V (not "12V voltage"); 0x48A B4/B5 = thermistors (not "12V rail /4").
 - **0x2C1 units**: DBC says "mi", CODACAN ground-truth reads **km** - reconcile.
-- **Stale prose**: fault-encoding/fault-light still describe the 0x270 nibble-split as present, but the DBC is already per-bit; coda.md/decode-notes still list VehFaultSeverity/VehicleFault for 0x271 which the DBC dropped.
+- **Stale prose**: fault-encoding/fault-light still describe the 0x270 nibble-split as present, but the DBC is already per-bit; projects/coda/README.md/decode-notes still list VehFaultSeverity/VehicleFault for 0x271 which the DBC dropped.
 
 **"Negative != meaningless":** the charger negatives (0x050 EVSEMaxCurrent, 0x615 B5 total-AC-current, 0x274 fault flags) are **log-analysis results CODACAN never displayed** - NOT invalidated by a CODACAN negative.
 
@@ -285,7 +285,7 @@ Per-byte re-sweep watching Primary ODO:
 - **B2**: ODO **dead-constant** (1.401821 for all values) -> **B2 is NOT part of ODO**.
 
 Corrects Run-1 ("B0=ODO" - it's the MSB, not the whole field) and **refutes othercars'
-"B2=ODO"**. Still conflicts with coda.md `IPK_FaultLamps` (B0/B1 latch). The ODO scale
+"B2=ODO"**. Still conflicts with projects/coda/README.md `IPK_FaultLamps` (B0/B1 latch). The ODO scale
 implies too small a range for a real odometer over just B0:B1, so the field likely
 extends into higher bytes - **targeted B4-B7 span sweep launched** (`sweep_queue_491span.json`).
 Note: CODACAN has no fault-lamp *field* for 0x491, so the ODO-vs-fault-lamp conflict must
@@ -314,7 +314,7 @@ despite entirely different fault sets, and both are ~61-62k mi - so B0 is the od
 byte, not a fault-lamp latch. B2 is the fine (0.1 km) byte that ticks during a drive (which
 is why othercars saw B0/B1 "fixed" - the odo barely moves in one capture - and why B2
 "varies"). Corrections required (pending approval, NOT yet applied):
-- **coda.md** 0x491 `IPK_FaultLamps` is WRONG -> 0x491 B0:B1:B2 = Primary ODO (24-bit BE, 0.1 km/count).
+- **projects/coda/README.md** 0x491 `IPK_FaultLamps` is WRONG -> 0x491 B0:B1:B2 = Primary ODO (24-bit BE, 0.1 km/count).
 - **othercars-comparison.md** 0x491 B0/B1 "warning-lamp latch" + "3 fault bits in parts car" is WRONG (it is higher mileage). Also its "B2 = ODO" and 0x273-ODO ideas are wrong.
 - Car 2's single logged bus = **B CAN** (native B-CAN IDs + gateway-passthrough D-CAN IDs, no D-CAN-exclusives 0x308/0x312/0x325/0x330/0x580, no C-CAN cells).
 - CODACAN's own "Primary ODO" field is a mis-scaled partial decode (B0:B1 only) - a CODACAN display bug; the true odo needs B0:B1:B2 x 0.1 km.
@@ -330,9 +330,9 @@ downgrade to a `BO_` stub per the confirmed-signals-only policy.
 # Review - Promotion Readiness (all runs, 2026-07-26)
 
 Consolidated state of play across Runs 1-3 + the six cross-check reviews. **Nothing here
-is in `coda.md` or the DBCs yet** - this section is the staging list for your approval.
+is in `projects/coda/README.md` or the DBCs yet** - this section is the staging list for your approval.
 
-## Ready to promote to coda.md / DBC (confirmed role; scale caveats noted)
+## Ready to promote to projects/coda/README.md / DBC (confirmed role; scale caveats noted)
 
 | Signal | Confirmed finding | DBC action |
 |--------|-------------------|-----------|
@@ -358,13 +358,13 @@ is in `coda.md` or the DBCs yet** - this section is the staging list for your ap
 - charging-analysis: 0x1D5 B6 = Current_14V (not "12V voltage"); 0x48A B4/B5 = thermistors (not "12V rail /4").
 - 0x383 B4: charge-limit hypothesis refuted (not a decoded field) -> "unexplained in-log varying byte".
 - fault-encoding / fault-light prose: 0x270 nibble-split described as present, but DBC is per-bit + severity nibble; update.
-- coda.md / decode-notes still list VehFaultSeverity/VehicleFault for 0x271 which the DBC dropped -> reconcile.
+- projects/coda/README.md / decode-notes still list VehFaultSeverity/VehicleFault for 0x271 which the DBC dropped -> reconcile.
 - othercars 0x491 "B2 = ODO" is refuted (B2 not ODO).
 - 0x617 ChrgrSysBusVoltage/Current SG_ -> downgrade to BO_ stub.
 
 ## Open / needs more work
 
-- **0x491 ODO** - RESOLVED by log analysis (see "ODO VERIFIED" section): **0x491 B0:B1:B2 = Primary ODO** (24-bit BE, 0.1 km/count), matched across 3 cars (main ~34.0k, parts ~62.1k, Car 2 ~61.3k mi). **This overturns the fault-lamp reading** - coda.md `IPK_FaultLamps` and othercars 0x491 B0/B1 "warning lamps" are WRONG and need correcting.
+- **0x491 ODO** - RESOLVED by log analysis (see "ODO VERIFIED" section): **0x491 B0:B1:B2 = Primary ODO** (24-bit BE, 0.1 km/count), matched across 3 cars (main ~34.0k, parts ~62.1k, Car 2 ~61.3k mi). **This overturns the fault-lamp reading** - projects/coda/README.md `IPK_FaultLamps` and othercars 0x491 B0/B1 "warning lamps" are WRONG and need correcting.
 - 0x241 -40 C offset fit; the firmware 4th "Inverter" temp.
 - 0x270 higher-severity string map (levels 2-5) from Run-1 per-step JSON.
 

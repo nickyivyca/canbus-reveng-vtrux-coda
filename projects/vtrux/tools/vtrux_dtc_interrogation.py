@@ -103,7 +103,7 @@ DTC_TABLE = {
 }
 
 # ---------------------------------------------------------------------------
-# Bus identification anchor IDs (from Vtrux.md)
+# Bus identification anchor IDs (from projects/vtrux/README.md)
 # ---------------------------------------------------------------------------
 
 PT_BUS_ANCHORS  = frozenset({0x051, 0x054, 0x471, 0x479, 0x482, 0x592, 0x639})

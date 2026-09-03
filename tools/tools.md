@@ -63,6 +63,100 @@ to validate parity.
 
 ---
 
+## slcan_parity_generate.py
+*Source last modified: 2026-08-12 22:49:05*
+*Consumed by: `android-app/CanLoggerApps/cancore/src/test/java/com/reverseit/cancore/SlcanParityTest.kt`*
+
+Generates parity expectations for the Kotlin `SlcanReader`, which reads the
+LAWICEL/SLCAN ASCII stream the 914 VCU emits over USB CDC serial. Holds a
+reference reader in Python; runs it over the 914 capture fixtures, copies those
+fixtures (gzipped, whole) into `cancore/src/test/resources/slcan/`, and writes a
+TSV of expected counters, a frame digest, and sampled frames.
+
+**Fixtures** come from the 914 notes hub, a sibling workspace
+(`../914/notes/artifacts` by default — both live under the same SeaDrive root,
+so the relative path holds across machines):
+
+| Fixture | Role |
+|---------|------|
+| `serial-full-slcan.log.gz` | The one capture with no link damage. Its 1381 checked blocks are an **independent oracle** — the CRCs were computed by the firmware over the bytes it wrote, so a wrong tokenizer cannot make them verify. Declared clean; zero block failures enforced |
+| `serial-dualemit-verify.log.gz` | Carries two real corruption events (one Mode 1 byte insertion, one Mode 2 whole-frame loss). The reader must *detect* them, so its counters are asserted exactly |
+| `serial-slcan-realistic.log.gz` | 226k frames, begins mid-frame, five corruption events. **Integrity frames are BIG-endian** — it predates the firmware's switch to little-endian, so its block counters say nothing about link health and are recorded for parity only |
+
+**Requires:** stdlib only.
+
+**Usage:**
+```
+py -3.12 tools/slcan_parity_generate.py
+```
+
+**Optional flags:**
+```
+  --fixture-dir DIR  where the captures live (default: ../914/notes/artifacts)
+  --output-dir DIR   cancore test resources root
+  --fixtures ...     override the fixture list
+  --samples N        frames sampled from each end (default: 20)
+```
+
+**Output format** (TSV at `cancore/src/test/resources/slcan_parity_cases.tsv`):
+```
+fixture_basename<TAB>key<TAB>value
+```
+Keys are the counter names, `digest` (FNV-1a 64 over every delivered frame in
+order), `expectClean`, and `sample.<index>`.
+
+The generator refuses to write expectations if a fixture declared clean has any
+block failure — that means either the reference reader is wrong or the capture
+is not what it claims, and neither belongs in a test.
+
+Regenerate after changing either reader, then run `:cancore:testDebugUnitTest`.
+
+---
+
+## slcan_bridge.py
+*Source last modified: 2026-08-13*
+*Consumed by: the `:p914` Android app (A4b), and as the replay harness for regression tests*
+
+Serves a 914 VCU SLCAN stream over TCP, from a capture file or a live serial port. Lets a phone
+receive the stream without USB host mode being solved first:
+
+```
+py -3.12 tools/slcan_bridge.py --file <capture.log.gz> --loop
+adb reverse tcp:9000 tcp:9000        # phone's localhost:9000 now reaches this server
+```
+
+Serial mode (`--serial COM3`) is **read-only** — nothing is ever written to the VCU.
+
+**Replay is paced by default** to 6705 B/s in 1024-byte bursts, which is the byte rate and
+delivery granularity measured on the car (verification A2, 2026-08-13). Unpaced replay exercises
+the parser but misrepresents the consumer: on the real link frames arrive in bursts roughly every
+212 ms rather than smoothly, so a display fed an unpaced stream looks better than it will in the
+car. `--rate 0` disables pacing.
+
+**Flags:**
+```
+  --file PATH / --serial PORT   source (mutually exclusive, one required)
+  --port N                      TCP listen port (default 9000)
+  --rate N                      bytes/sec for file replay; 0 = unpaced (default 6705)
+  --chunk N                     bytes per burst (default 1024, the CDC flush size)
+  --loop                        replay repeatedly
+  --selftest                    serve to loopback, verify bytes and pacing, exit
+```
+
+**Use `--loop` for anything that logs.** Without it the server closes the connection after one
+pass, the client reconnects, and `CanLoggingService` starts a *new log session* each time — twelve
+files in 25 seconds during bring-up.
+
+**A looped replay injects one artificial bad integrity block per loop boundary**, because the file
+restarts mid-block and the block spanning the seam comes up short. Expected; do not read it as
+link damage.
+
+**Do not use `--rate 0` when logging.** Unpaced replay delivers faster than the frame flow's
+collector can drain, and `tryEmit` drops silently (see `android-app/notes/outstanding-changes.md`
+Bug 4). Paced replay logs completely.
+
+---
+
 ## can_display_server.py
 *Source last modified: 2026-05-10 16:09:24*
 *Companion files: `can_display_client.py`, `can_display_bus_identity_vtrux.json`, `can_display_server_requirements.txt`*
@@ -114,7 +208,7 @@ py -3.12 tools/can_display_server.py [options]
 ```
 - `anchor_ids` accepts decimal ints, hex-prefixed strings, and `lo-hi` ranges.
 - The shipped `can_display_bus_identity_vtrux.json` covers Vtrux PT/Vehicle/OBD
-  buses as documented in `projects/vtrux/vtrux.md`.
+  buses as documented in `projects/vtrux/README.md`.
 
 **Bus identification:** the server pre-scans the first 2 s of the log,
 counting anchor-ID matches per channel, and assigns each named bus to the
@@ -156,8 +250,32 @@ sum/min/max/mean primitives against known sequences. Run with `py -3.12`.
 ---
 
 ## influx_sync.py
-*Source last modified: 2026-08-10 11:00:24*
+*Source last modified: 2026-08-26 01:10:41*
 *Plan: `tools/plans/influx-sync.md`*
+
+**Changed 2026-08-26 — two bugs that made `reupload_ids` unusable:**
+
+- **Overlapping chunk windows.** A per-id repair deletes the id across each file's
+  recorded window before re-writing it, which is only safe while the windows are
+  disjoint. The Android logger can emit a T0 spanning 24 h with later chunks nested
+  inside it (`coda_20260508_191742`: T0 = 24.00 h, T1 = 3.4 min inside it), so
+  repairing T0 deleted T1's points as collateral. `overlapping_files()` now detects
+  this and routes the affected files to `reupload_file` instead. Comparison is
+  strict (`b0 < a1`): consecutive chunks normally *share* a boundary instant, and
+  treating that as overlap would send almost every multi-chunk session down the
+  whole-file path.
+- **`ch<N>` files never converged.** A message on an unidentified channel is stored
+  in the manifest with an empty hash, while `current_hashes()` carries only the
+  named buses and returns `None` for it. The drift check compared `None != ""` and
+  so re-flagged those files on every run, forever, no matter how often they were
+  repaired — this was the real cause of the 7 chronically-pending vtrux `ch1`
+  sessions and the 3 coda `ch2` fragments, not the manifest bug below. Both sides
+  are now normalised before comparing.
+
+> Note: files whose only channel is skipped as unidentified write **0 points**, and
+> the manifest is only written when points were written. They therefore stay
+> `not_in_manifest` on every plan. The 8 Coda flash/DTC captures are in this state
+> permanently and are expected — they are 22-ID UDS traffic that no DBC decodes.
 
 Keeps InfluxDB in agreement with the local logs and the local DBCs, and drives the backfill.
 Computes a work list, prints it for review, and executes it. No hand-driven folder uploads.
@@ -204,7 +322,30 @@ was recomputed instead of recorded.
 ---
 
 ## influx_upload.py
-*Source last modified: 2026-08-10 01:31:18*
+*Source last modified: 2026-08-26 01:04:38*
+
+**Changed 2026-08-26 — `--only-id` no longer truncates the manifest.** A manifest row
+describes a whole file, but a targeted upload wrote a fresh row claiming the file held
+only the repaired message, under a policy hash carrying the `only_ids` restriction.
+`influx_sync` then read manifest-says-1-message against data-has-20 and scheduled a
+full re-upload of a file that was already current — so every targeted repair guaranteed
+a later full re-upload and the repair path never converged. Observed on the Coda 0x1D7
+precision fix: 126 repaired sessions all came back wanting 6.2 GB of `reupload_file`,
+and the vtrux manifest showed five successive rows each claiming 1-2 messages with a
+different policy hash. `fetch_manifest_row()` + `merge_manifest_fields()` now fold a
+partial upload into the file's existing row — keeping the previous whole-file bounds,
+counts, bus map and untouched message hashes, overlaying the rewritten ones, and
+recording the *base* policy hash. If no previous row exists the old behaviour applies
+and a warning is printed.
+
+**Changed 2026-08-23 (Coda 0x276 bus correction):** the `coda` profile excluded
+0x276 `HVACStatus` on `b_can` as a gateway copy. The AICM is a B CAN module -- it
+transmits 0x276 with D CAN asleep, and D CAN receives the rebroadcast -- so the
+exclusion kept the copy and dropped the original, blanking PTC heater energy for
+every B-only capture. The exclusion now targets `d_can`. This changes the profile
+encoding, so `influx_sync.py --plan` schedules a full `reupload_file` of all 262 Coda
+sessions (20.5 GB) — there is no cheap targeted path, because `--delete` drops a whole
+session regardless of `--only-id`. See `projects/coda/notes/efficiency-calculation.md` Sec.5.
 
 Uploads CAN log data to InfluxDB 1.x for Grafana visualization. Decodes frames against
 per-vehicle DBC sets (cantools) and writes signal values to the `signals` measurement.

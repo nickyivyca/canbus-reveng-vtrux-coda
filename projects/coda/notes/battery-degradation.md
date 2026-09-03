@@ -27,7 +27,7 @@ discharge); the other ~102 cells ≈ the average.
 ## 0. Prerequisite: 0x381 byte-order was mislabeled (corrected 2026-07-15)
 
 The DBC/decode-notes had **Min↔Avg swapped** on 0x381. Corrected mapping (now in
-`CODA-B-CAN.dbc`, `coda.md`, `codacan-signal-decode-notes.md`):
+`CODA-B-CAN.dbc`, `projects/coda/README.md`, `codacan-signal-decode-notes.md`):
 
 | Bytes | Signal |
 |---|---|
@@ -134,10 +134,27 @@ SoC is climbing** — i.e. the derate kicks in earlier (higher SoC) as the cell 
 | 2026-05-07 | ~56% | 3057 mV | 174 A |
 | 2026-07-02 | ~62% | 3055 mV | 174 A |
 | 2026-07-02 | ~56% | 2966 mV | 174 A |
+| 2026-08-18 (`coda_20260818_135227`) | **59.4%** | **3020 mV** | 174 A |
 
-**Trend: derate onset ~50% (Feb) → ~56% (May) → ~56–62% (Jul)** at a roughly constant
-~3000–3050 mV trigger — consistent with the weak cell losing capacity/margin. (Small N:
-~4 solid low-SoC events; deeper drives would sharpen it.)
+**Trend: derate onset ~50% (Feb) → ~56% (May) → ~56–62% (Jul) → 59.4% (Aug)** at a roughly
+constant ~3000–3050 mV trigger — consistent with the weak cell losing capacity/margin.
+(Small N: ~5 solid low-SoC events; deeper drives would sharpen it.)
+
+The 2026-08-18 event is the best-characterised of the set — a 35.1 mi outbound leg that ran
+slow winding roads for 40 min and then joined the highway, so the heavy sustained load
+arrived at the *end*, at low SoC. Onset was at t+68.9 min: limit stepped 396 → 340 A with
+`VminId` = **95** (Cell95, the known weak cell) and pack current −77 A, then clamped to
+174 A for 412 s; min cell reached 2828 mV after onset. The matching return leg two hours
+later was highway essentially throughout but ran 100% → 72% SoC and **never derated**,
+despite hitting the same −119 A peak. Both legs are analysed in
+`artifacts/aug18_roundtrip_analysis.py`.
+
+> **Hypothesis (not confirmed):** the foldback is governed by the weak cell's sagged
+> voltage, not by current or SoC directly — the two legs reached identical peak current and
+> only the low-SoC one derated. The 1 Hz `0x381` summary cannot resolve the instantaneous
+> sag under load (the caveat `bonnydoon-limp-analysis.md` already raises), so this remains
+> a hypothesis; settling it needs the 6.5 Hz per-cell C CAN frame for Cell95 (`0x017` B4-5)
+> through the onset second.
 
 A separate `124 A @ 100% SoC` derate (May 7/24, min cell high ~3303 mV) is a different
 top-of-charge mechanism, not the weak-cell foldback.

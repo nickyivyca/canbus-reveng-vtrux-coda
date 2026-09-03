@@ -1,8 +1,8 @@
 # Three-Bus Investigation: Vtrux CAN Architecture
 
-Most high-level findings from this investigation have been promoted to `../Vtrux.md` (bus identification anchor IDs, quick-check rules, bus roles, module topology, VCM gateway behavior). This file retains the detailed investigation methodology and evidence that informed those conclusions: per-log bus number mappings, frame-level masking evidence, OBD passthrough/scanner timing detail, GM proprietary diagnostic exchange, and common-message inventory.
+Most high-level findings from this investigation have been promoted to `../README.md` (bus identification anchor IDs, quick-check rules, bus roles, module topology, VCM gateway behavior). This file retains the detailed investigation methodology and evidence that informed those conclusions: per-log bus number mappings, frame-level masking evidence, OBD passthrough/scanner timing detail, GM proprietary diagnostic exchange, and common-message inventory.
 
-For confirmed powertrain signals, see `powertrain-messages.md`. For generator activation sequence, see `../Vtrux.md` "Generator Activation Sequence" section.
+For confirmed powertrain signals, see `powertrain-messages.md`. For generator activation sequence, see `../README.md` "Generator Activation Sequence" section.
 
 ## Findings
 
@@ -17,7 +17,7 @@ For confirmed powertrain signals, see `powertrain-messages.md`. For generator ac
 Bus numbers change between sessions (dongles plugged in randomly), so always identify by message content.
 
 **Primary method — exclusive ID fingerprint (no scanner needed):**
-- OBD bus has **0x040–0x044** and does NOT have 0x1E5 or 0x500–0x530. (Do **not** use 0x441–0x464 as an OBD-exclusive anchor — part of that range is GMLAN, e.g. 0x451 = `Gateway_LS_General_Information`, which the VCM bridges to the Vehicle bus, causing false OBD identification. See `Vtrux.md`.)
+- OBD bus has **0x040–0x044** and does NOT have 0x1E5 or 0x500–0x530. (Do **not** use 0x441–0x464 as an OBD-exclusive anchor — part of that range is GMLAN, e.g. 0x451 = `Gateway_LS_General_Information`, which the VCM bridges to the Vehicle bus, causing false OBD identification. See `projects/vtrux/README.md`.)
 - Vehicle bus has **0x1E5, 0x500, 0x514, 0x52A–0x530, 0x778, 0x780, 0x785, 0x788** and does NOT have 0x040–0x044
 - Either exclusive set alone is sufficient; a quick `survey.py --bus N` and check for presence/absence of these IDs settles it
 
@@ -48,7 +48,7 @@ Bus numbers are coincidental — dongles are plugged in randomly each session.
 |----------|---------------------|-----------------|
 | **Powertrain** | 0x051 + extended IDs (0x18xxxxxx) | Via Motors EV control |
 | **Vehicle** | Real sensor data in GMLAN messages; exclusive 0x1E5, 0x500–0x530 | Direct ECU, unfiltered |
-| **OBD** | Masked sensor data; exclusive 0x040–0x044 (NOT 0x441–0x464 — partly GMLAN, VCM-bridged to Vehicle; see `Vtrux.md`); 0x7E0/0x7E8 when scanner active | Filtered; accessible via harness P1 connector only (NOT standard DLC) |
+| **OBD** | Masked sensor data; exclusive 0x040–0x044 (NOT 0x441–0x464 — partly GMLAN, VCM-bridged to Vehicle; see `projects/vtrux/README.md`); 0x7E0/0x7E8 when scanner active | Filtered; accessible via harness P1 connector only (NOT standard DLC) |
 
 ### Powertrain Bus
 
@@ -162,7 +162,7 @@ Both Vehicle and OBD have these GMLAN messages (but with different data quality)
 - 0x1C3, 0x1C5, 0x1C6, 0x1C7 (engine/chassis torque)
 - 0x1F1, 0x1F5 (platform/transmission status)
 - 0x3E9 (vehicle speed)
-- 0x451 (GMLAN `Gateway_LS_General_Information` — airbag/fan flags; the earlier "engine torque status" label was a misidentification, see `Vtrux.md`)
+- 0x451 (GMLAN `Gateway_LS_General_Information` — airbag/fan flags; the earlier "engine torque status" label was a misidentification, see `projects/vtrux/README.md`)
 - Plus ~50 more GMLAN standard messages
 
 ---

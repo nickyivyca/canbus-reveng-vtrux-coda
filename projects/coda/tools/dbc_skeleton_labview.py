@@ -24,7 +24,7 @@ from pathlib import Path
 # -----------------------------------------------------------------------
 # Bus assignment: which clusters go on which CAN bus
 #
-# From coda.md topology:
+# From projects/coda/README.md topology:
 #   B CAN: GWM, TEM, HVAC, ACCM, IPK, SRS, OCS, DCDC, CHM (charger), BMS, FCHM
 #   D CAN: DLCM, TCM, ESC, RCU, PSM/EPS
 #   Motor CAN (private, not OBD): MCM -- relayed through DLCM, so D CAN

@@ -343,7 +343,7 @@ Sample (t=592): 02 C5 16 60 66 09 09 00
 > them. That attribution was an inference with no supporting evidence and it was wrong.
 > Transmitter-clock fingerprinting (below) places 0x050 in the BMS and 0x054/0x61A in the
 > charger modules. The GWM is not involved: **the path is BMS → chargers directly.**
-> The DBC (`BO_ 80 BMSChargerCmd: 8 BMS`), `coda.md`, and the CODACAN presence map all
+> The DBC (`BO_ 80 BMSChargerCmd: 8 BMS`), `projects/coda/README.md`, and the CODACAN presence map all
 > already said BMS; only this file said GWM.
 
 | ID | Rate | Sender | Baseline data | Role |
@@ -765,7 +765,7 @@ BMS declared SoC = 100.0% at **t=4114s (68.6 min)**, when max cell was only ~3.4
 
 ### 0x382 B0 — ~~Confirmed Charge Stage Counter~~ → Cell_T_avg (CORRECTED)
 
-**SUPERSEDED:** 0x382 B0 is **average pack cell temperature** (`Cell_T_avg`, T = raw − 128 °C), not a charge-stage / SoC counter. The "monotonic sequence" below is the pack warming during the charge (0x8B=139 → 11 °C, 0x8E=142 → 14 °C); the 0x33/0x00 at the end are OBD-adapter-removal artifacts. Confirmed in `chargepointcharge-analysis.md`, `coda.md`, and `codacan-signal-decode-notes.md`. The original (incorrect) charge-stage reading is retained below for history.
+**SUPERSEDED:** 0x382 B0 is **average pack cell temperature** (`Cell_T_avg`, T = raw − 128 °C), not a charge-stage / SoC counter. The "monotonic sequence" below is the pack warming during the charge (0x8B=139 → 11 °C, 0x8E=142 → 14 °C); the 0x33/0x00 at the end are OBD-adapter-removal artifacts. Confirmed in `chargepointcharge-analysis.md`, `projects/coda/README.md`, and `codacan-signal-decode-notes.md`. The original (incorrect) charge-stage reading is retained below for history.
 
 Full monotonic sequence observed across 90-minute session:
 

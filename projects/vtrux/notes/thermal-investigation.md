@@ -520,7 +520,7 @@ calibration yet. Physical source (which sensors in the pack) unknown.
 
 #### 0x430 B4/B5 -- Cell T_max / T_min
 
-> **Superseded.** The `raw - 100` formula used in this section is wrong. Correct encoding is `raw * 0.5 - 40 degC` per EPRI decompile (confirmed 2026-03-28). Decoded temperature values below are invalid. See `powertrain-messages.md` 0x430 section and `vtrux.md` for current signal definitions. Correlation evidence and seasonal trend finding (Task V3) remain valid; only the decoded °C numbers are wrong.
+> **Superseded.** The `raw - 100` formula used in this section is wrong. Correct encoding is `raw * 0.5 - 40 degC` per EPRI decompile (confirmed 2026-03-28). Decoded temperature values below are invalid. See `powertrain-messages.md` 0x430 section and `projects/vtrux/README.md` for current signal definitions. Correlation evidence and seasonal trend finding (Task V3) remain valid; only the decoded °C numbers are wrong.
 
 BMS-dependent. PT bus. 20 Hz. 8-byte message.
 
@@ -1581,7 +1581,7 @@ conclusion and close question.
    BMS cluster section with confirmed temperature bytes and Peltier findings
 2. **Update** `vtrux-powertrain.dbc` -- add confirmed battery temp and inverter/motor
    temperature signals (DCDC temperature already added in Phase 1C)
-3. **Update** `Vtrux.md` -- PE Coolant Pump section (pump command confirmed as
+3. **Update** `projects/vtrux/README.md` -- PE Coolant Pump section (pump command confirmed as
    0x18EF2000), Next Steps
 4. **Update** `notes/artifacts/README.md` -- inventory all new artifacts with provenance
 

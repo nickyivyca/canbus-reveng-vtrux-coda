@@ -41,7 +41,7 @@ ART = "projects/vtrux/notes/artifacts/ac-voltage"
 SESSIONS = os.path.join(ART, "sessions.csv")
 
 INFLUX = "http://localhost:8086/query"
-USER, PASSWORD, DB = "claude", "claude", "homeassistant"
+USER, PASSWORD, DB = "<influx-user>", "<influx-password>", "homeassistant"
 V_PANEL = "envoy_202220094881_voltage_net_consumption_ct"
 P_EVSE = "garage_14_50_power_minute_average"
 

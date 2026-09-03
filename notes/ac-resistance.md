@@ -23,7 +23,7 @@ sites at roughly **half** the source impedance of the 240 V residential ones
 ### Signals used (Vtrux)
 
 From `0x18FFD7C0` (`BELINV_hvBatteryAndCharger`), per `projects/vtrux/BelInverter-v2.dbc`
-and `projects/vtrux/vtrux.md`:
+and `projects/vtrux/README.md`:
 
 | Field | Bytes | Encoding |
 |-------|-------|----------|

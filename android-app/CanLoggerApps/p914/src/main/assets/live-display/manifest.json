@@ -1,0 +1,40 @@
+{
+  "comment": "914 live-display subscriptions. Keyed to notes/plans/914-app-ui-spec.md (B1). One bus named 'vcu': the 11-bit/29-bit split already distinguishes real bus traffic from synthetic VCU telemetry, so a second bus name would encode twice what isExtended already carries.",
+
+  "_message_id_convention": "message_id is the id AS IT APPEARS ON THE WIRE, not the raw BO_ number in the DBC. For 29-bit ids the two differ: a DBC BO_ carries the 0x80000000 extended marker, which DbcParser strips (canonicalId) and which SLCAN never transmits. LocalCanDataSource matches sub.messageId against CanFrame.id, so a marked id here matches nothing and the subscription is silently dead -- no error, no log line, just a panel that never updates. BmsStatus is BO_ 2667577344 (0x9F000000) in the DBC and 520093696 (0x1F000000) here; SchemaId is BO_ 2684354558 (0x9FFFFFFE) and 536870910 (0x1FFFFFFE) here. The 11-bit inverter ids (2, 3) are identical either way. This is not a new convention: :vtrux's manifest already subscribes to five 29-bit BelInverter/DCDC messages the same way -- BO_ 2566903475 in powertrain.dbc appears there as 419419827 (0x18FFD6B3) -- and has done so in production since the charge panel was built.",
+
+  "subscriptions": [
+    {
+      "bus": "vcu", "message_id": 520093696,
+      "signals": ["Flt_CellOverVoltage_Latched", "Flt_CellUnderVoltage_Latched",
+                  "Flt_OverTemp_Latched", "Flt_StringImbalance_Latched", "Flt_Pec_Latched"],
+      "rate_hz": 10, "aggregation": "max",
+      "_note": "0x1F000000 BmsStatus -- LATCHED fault bits. aggregation MUST be 'max': a latch has to survive the aggregation window, and 'latest' would let a set bit vanish if the window happened to close on a frame reading 0. Paired with the '_Now' subscription below against the SAME message id but a DIFFERENT aggregation -- that split is deliberate and is the most easily-broken detail in this file."
+    },
+    {
+      "bus": "vcu", "message_id": 520093696,
+      "signals": ["Flt_CellOverVoltage_Now", "Flt_CellUnderVoltage_Now",
+                  "Flt_OverTemp_Now", "Flt_StringImbalance_Now", "Flt_Pec_Now"],
+      "rate_hz": 10, "aggregation": "latest",
+      "_note": "0x1F000000 BmsStatus -- INSTANTANEOUS fault bits. aggregation MUST be 'latest': these have to clear again when the condition goes away. 'max' here would turn them into a second, worse latch that never releases, destroying the whole point of carrying both bit sets."
+    },
+    {
+      "bus": "vcu", "message_id": 3,
+      "signals": ["InvId", "InvIq", "InvIfw"],
+      "rate_hz": 10, "aggregation": "latest",
+      "_note": "0x003 InverterFoc -- motor current gauge. 0.1 A/bit signed. Real bus traffic, so absent whenever the inverter is unpowered; markers collapse rather than reading zero."
+    },
+    {
+      "bus": "vcu", "message_id": 2,
+      "signals": ["InvOpmode", "InvSts_UdcBelowUdcSw", "InvSts_EmcyStop", "InvSts_WaitStart"],
+      "rate_hz": 10, "aggregation": "latest",
+      "_note": "0x002 InverterState -- opmode word plus the three status lights. One subscription because they share a message and an aggregation."
+    },
+    {
+      "bus": "vcu", "message_id": 536870910,
+      "signals": ["SchemaMajor", "SchemaMinor", "SchemaHash"],
+      "rate_hz": 1, "aggregation": "latest",
+      "_note": "0x1FFFFFFE SchemaId -- compared against the SCHEMA_HASH= stamp in the CM_ file comment of vcu.dbc. The only frame with a fixed, mode-independent cadence: its emit counter divides by the live scan rate (BmsThread.cpp:1167), so it stays 1 Hz whether or not the car is charging."
+    }
+  ]
+}

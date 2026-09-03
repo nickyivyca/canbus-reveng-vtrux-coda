@@ -173,7 +173,6 @@ VEHICLE_PROFILES = {
             {"can_id": 0x240,  "bus": "b_can"},  # System state (D CAN native)
             {"can_id": 0x241,  "bus": "b_can"},  # Motor thermal data (D CAN native)
             {"can_id": 0x248,  "bus": "b_can"},  # Mode flags / exterior lights (D CAN native)
-            {"can_id": 0x276,  "bus": "b_can"},  # HVAC status (D CAN native; confirmed Part 2)
             {"can_id": 0x278,  "bus": "b_can"},  # Drive keepalive / HV ready (D CAN native)
             {"can_id": 0x315,  "bus": "b_can"},  # DLCM status: brake switch, Batt_Volt (D CAN native)
             {"can_id": 0x370,  "bus": "b_can"},  # Death counter batch (D CAN native)
@@ -184,6 +183,15 @@ VEHICLE_PROFILES = {
             {"can_id": 0x383,  "bus": "d_can"},  # State of Charge (B CAN native)
             {"can_id": 0x1D5,  "bus": "d_can"},  # DCDC Status1 (B CAN native)
             {"can_id": 0x491,  "bus": "d_can"},  # IPK status (IPK is B CAN module)
+            # 0x276 was excluded on b_can until 2026-08-23 on the belief that HVAC status
+            # was D CAN native. It is not: in codapumprunningwhencaroffthenturningoncar.log
+            # and DCDCRUNNingwithoutkeyon-then-key-on.log the AICM transmits 0x276 on B CAN
+            # from +0.07 s with D CAN asleep, and it reaches D CAN only when D CAN wakes
+            # (+23.1 s / +41.9 s), 65-94 ms ahead of D CAN's own 0x308/0x312. Excluding it
+            # on b_can discarded the original to keep the copy, and blanked PTC heater
+            # energy for every B-only capture -- all charge sessions and 100% of March
+            # miles. See notes/efficiency-calculation.md Sec.5.
+            {"can_id": 0x276,  "bus": "d_can"},  # HVAC status (AICM is a B CAN module)
             {"can_id": 0x6FA,  "bus": "d_can"},  # GWM VIN broadcast (GWM is the gateway; primary on B CAN, rebroadcast to D CAN)
         ],
     },
@@ -334,7 +342,7 @@ def scan_log(path: Path) -> tuple[dict, dict, float]:
                         filename-date both fail to parse.
 
     Per-channel frame counts let identify_buses filter out the Android-logger
-    startup churn described in projects/vtrux/vtrux.md ("Bus number churn in
+    startup churn described in projects/vtrux/README.md ("Bus number churn in
     Android T0"): T0 captures can carry 20+ transient channel numbers, each
     with only a handful of frames, before settling on a stable bus number.
 
@@ -373,7 +381,7 @@ def identify_buses(
 ) -> dict:
     """
     Map channel integers to named bus strings using anchor ID sets, with
-    Android-logger churn filtering (see projects/vtrux/vtrux.md "Bus number
+    Android-logger churn filtering (see projects/vtrux/README.md "Bus number
     churn in Android T0").
 
     A channel is kept only if its frame count is BOTH >= min_frames absolute
@@ -532,7 +540,8 @@ def policy_hash(profile_exclude, cli_exclude, on_change, heartbeat_s,
 
 
 def build_manifest_line(*, vehicle, session, path, rel_path, stats, bus_map,
-                        msg_hash_map, policy_h, log_sha1, uploaded_at_ns) -> str:
+                        msg_hash_map, policy_h, log_sha1, uploaded_at_ns,
+                        merged=None) -> str:
     """One line-protocol point recording what an upload actually wrote.
 
     Tagged (vehicle, session, file) so a session's chunks stay individually
@@ -546,6 +555,10 @@ def build_manifest_line(*, vehicle, session, path, rel_path, stats, bus_map,
     st = path.stat()
     keys = sorted(stats["keys"])
     hashes = {f"{bus}|{cid}": msg_hash_map.get((bus, cid), "") for bus, cid in keys}
+    points, values = stats["points"], stats["values"]
+    t_start, t_end = stats["t_start_ns"], stats["t_end_ns"]
+    if merged is not None:
+        hashes, policy_h, bus_map, points, values, t_start, t_end = merged
     fields = [
         f'rel_path="{escape_field_str(rel_path)}"',
         f'log_sha1="{log_sha1}"',
@@ -555,16 +568,88 @@ def build_manifest_line(*, vehicle, session, path, rel_path, stats, bus_map,
         f'policy_hash="{policy_h}"',
         f'msg_hashes="{escape_field_str(json.dumps(hashes, sort_keys=True))}"',
         f'bus_map="{escape_field_str(json.dumps({str(k): v for k, v in bus_map.items()}, sort_keys=True))}"',
-        f'points={stats["points"]}i',
-        f'values={stats["values"]}i',
-        f't_start_ns={stats["t_start_ns"]}i',
-        f't_end_ns={stats["t_end_ns"]}i',
+        f'points={points}i',
+        f'values={values}i',
+        f't_start_ns={t_start}i',
+        f't_end_ns={t_end}i',
         f'uploaded_at={uploaded_at_ns}i',
     ]
     prefix = (f"{MANIFEST_MEASUREMENT},file={escape_tag(path.name)},"
               f"session={escape_tag(session)},vehicle={escape_tag(vehicle)} ")
     return prefix + ",".join(fields) + f" {uploaded_at_ns}\n"
 
+
+
+def fetch_manifest_row(statement_fn, vehicle, session, filename):
+    """Latest `upload_manifest` row for one file, or None.
+
+    Used only by the --only-id path, to merge rather than replace. Reads the
+    newest row by time: the tag set is (vehicle, session, file) and each upload
+    writes a fresh point at its own `uploaded_at`, so a file accumulates rows
+    and the last one is the current truth.
+    """
+    def q_esc(v):
+        return str(v).replace("\\", "\\\\").replace("'", "\\'")
+
+    try:
+        body = statement_fn(
+            f"SELECT * FROM {MANIFEST_MEASUREMENT} "
+            f"WHERE \"vehicle\"='{q_esc(vehicle)}' "
+            f"AND \"session\"='{q_esc(session)}' "
+            f"AND \"file\"='{q_esc(filename)}' "
+            f"ORDER BY time DESC LIMIT 1"
+        )
+    except Exception:
+        return None
+    for result in body.get("results", []):
+        for series in result.get("series", []) or []:
+            cols = series.get("columns", [])
+            for vals in series.get("values", []) or []:
+                return dict(zip(cols, vals))
+    return None
+
+
+def merge_manifest_fields(prev_row, *, msg_hash_map, stats, policy_h, bus_map):
+    """Fold a partial (--only-id) upload into the file's existing manifest row.
+
+    A manifest row describes a WHOLE FILE. `--only-id` uploads one message, so
+    writing a fresh row would claim the file contains only that message, with a
+    policy hash carrying the only_ids restriction. `influx_sync` then reads
+    manifest-says-1-message against data-has-20 and schedules a full re-upload
+    of a file that is actually current -- so every targeted repair guaranteed a
+    later full re-upload and the repair path never converged. (Observed
+    2026-08-25 on the Coda 0x1D7 precision fix: 126 repaired sessions all came
+    back wanting 6.2 GB of reupload_file.)
+
+    So merge instead: keep the previous row's whole-file facts (bounds, counts,
+    bus map, and the hashes of every message we did NOT touch) and overlay the
+    hashes we just rewrote. The policy hash must be the *base* one -- with the
+    file's non-repaired messages still on disk from the earlier full upload, the
+    row now again describes a full upload under the base policy.
+
+    Returns (msg_hashes_dict, policy_hash, bus_map, points, values,
+    t_start_ns, t_end_ns), or None if there is no usable previous row -- in
+    which case the caller must fall back to writing what it actually uploaded.
+    """
+    if not prev_row:
+        return None
+    try:
+        merged = json.loads(prev_row.get("msg_hashes") or "{}")
+        prev_bus = json.loads(prev_row.get("bus_map") or "{}")
+    except (ValueError, TypeError):
+        return None
+    if not merged:
+        return None
+    for bus, cid in stats["keys"]:
+        merged[f"{bus}|{cid}"] = msg_hash_map.get((bus, cid), "")
+    prev_bus.update({str(k): v for k, v in bus_map.items()})
+    t0, t1 = prev_row.get("t_start_ns"), prev_row.get("t_end_ns")
+    if t0 is None or t1 is None:
+        return None
+    return (merged, policy_h, prev_bus,
+            int(prev_row.get("points") or stats["points"]),
+            int(prev_row.get("values") or stats["values"]),
+            int(t0), int(t1))
 
 
 def escape_tag(value: str) -> str:
@@ -904,7 +989,7 @@ def stream_and_write(
             continue
 
         # bus_map[chan] is None for transient/churn channels (see Vtrux T0
-        # Android startup behaviour, vtrux.md "Bus number churn in Android T0").
+        # Android startup behaviour, projects/vtrux/README.md "Bus number churn in Android T0").
         bus_name = bus_map.get(frame.bus)
         if bus_name is None:
             continue
@@ -1156,6 +1241,12 @@ Examples:
     policy_h = policy_hash(profile.get("exclude", []), args.exclude,
                            args.write_policy == "on-change", args.heartbeat,
                            args.raw, only_ids)
+    # The hash the manifest should carry once a --only-id upload is merged back
+    # into the file's existing row: the row then again describes a full upload
+    # under the base policy. See merge_manifest_fields.
+    base_policy_h = policy_hash(profile.get("exclude", []), args.exclude,
+                                args.write_policy == "on-change", args.heartbeat,
+                                args.raw, None)
     print(f"  {len(msg_hash_map)} (bus,can_id) definition hashes; "
           f"policy {policy_h}")
 
@@ -1358,18 +1449,33 @@ Examples:
                 # is what made the old upload_success.txt files useless -- they
                 # hold Windows paths and match nothing on any other machine.
                 rel = os.path.relpath(log_path.resolve(), PROJECT_ROOT).replace(os.sep, "/")
+                merged = None
+                if only_ids:
+                    prev = fetch_manifest_row(influx_statement, args.vehicle,
+                                              session, log_path.name)
+                    merged = merge_manifest_fields(
+                        prev, msg_hash_map=msg_hash_map, stats=stats,
+                        policy_h=base_policy_h, bus_map=bus_map)
+                    if merged is None:
+                        print(f"  WARNING: no previous manifest row for "
+                              f"{log_path.name}; writing a partial row, which "
+                              f"will schedule a full re-upload", file=sys.stderr)
                 line = build_manifest_line(
                     vehicle=args.vehicle, session=session, path=log_path,
                     rel_path=rel, stats=stats, bus_map=bus_map,
                     msg_hash_map=msg_hash_map, policy_h=policy_h,
                     log_sha1=sha1_file(log_path),
-                    uploaded_at_ns=time.time_ns(),
+                    uploaded_at_ns=time.time_ns(), merged=merged,
                 )
                 resp = http_session.post(write_url, data=line.encode(), timeout=60)
                 if resp.status_code >= 300:
                     raise RuntimeError(f"{resp.status_code}: {resp.text[:200]}")
-                print(f"  manifest: {len(stats['keys'])} message(s), "
-                      f"{stats['t_start_ns']}..{stats['t_end_ns']}")
+                if merged is not None:
+                    print(f"  manifest: {len(stats['keys'])} message(s) merged "
+                          f"into {len(merged[0])} for the file")
+                else:
+                    print(f"  manifest: {len(stats['keys'])} message(s), "
+                          f"{stats['t_start_ns']}..{stats['t_end_ns']}")
             except Exception as exc:
                 print(f"  WARNING: manifest write failed for {log_path.name}: {exc}",
                       file=sys.stderr)

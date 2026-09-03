@@ -1,6 +1,6 @@
 """Survey Android Vtrux T0 logs for the bus-number churn artifact.
 
-Per projects/vtrux/vtrux.md "Bus number churn in Android T0": each USB
+Per projects/vtrux/README.md "Bus number churn in Android T0": each USB
 reconnect on the Android logger spawns a new bus number that briefly
 carries a few frames. T0 captures from such sessions show many distinct
 bus numbers; only the one with sustained high frame counts is the real

@@ -8,7 +8,7 @@ This measures actual coverage from frame timestamps (exact, independent of any
 signal), then uses the PT-bus odometer to say what the truck was doing across
 each gap:
 
-  0x625 B0-B2   VehicleOdometer, 24-bit BE, 1 km/count (per vtrux.md)
+  0x625 B0-B2   VehicleOdometer, 24-bit BE, 1 km/count (per projects/vtrux/README.md)
 
 1 km/count is coarse -- at highway speed that is roughly 36 s per tick -- so the
 odometer cannot resolve short gaps. It can still answer the question that

@@ -285,7 +285,7 @@ B CAN signal slot assignments (B3 = SRAM slot, B4 = home bus):
 
 **B3 on D CAN (B2=0x01) = processing sub-type (group flag, not a slot index):**
 - `B3=1, B4=4` (5 entries: 0x0591, 0x0592, 0x0593, 0x0603, 0x0745): Not in DBC; proprietary D CAN protocol IDs the gateway monitors (B4=4 = D CAN origin)
-- `B3=2, B4=4` (12 entries: 0x0052, 0x0080, 0x01C0, 0x0200, 0x0208, 0x0210, 0x0212, 0x0215, 0x0240, 0x0241, 0x0418, 0x0600): Native D CAN signals the gateway subscribes to and rebroadcasts onto B CAN. All confirmed D CAN IDs per coda.md (EPS, DLCM, ESC, RCU, TCM, etc.). B4=4 = D CAN origin.
+- `B3=2, B4=4` (12 entries: 0x0052, 0x0080, 0x01C0, 0x0200, 0x0208, 0x0210, 0x0212, 0x0215, 0x0240, 0x0241, 0x0418, 0x0600): Native D CAN signals the gateway subscribes to and rebroadcasts onto B CAN. All confirmed D CAN IDs per projects/coda/README.md (EPS, DLCM, ESC, RCU, TCM, etc.). B4=4 = D CAN origin.
 - `B3=4, B4=2` (8 entries: 0x0051, 0x0168, 0x0275, 0x0276, 0x0383, 0x01D5, 0x0491, 0x0643): B CAN signals the gateway publishes onto D CAN for driveline modules to consume (BMSDriveLimits, HVACStatus, BMSBattStatus, DCDCStatus1, IPK_Status, etc.). B4=2 = B CAN origin.
 
 **B3 on UDS req (B2=0x05):** B3 appears to be an ECU priority/type group:
@@ -373,15 +373,15 @@ Each entry is two 32-bit words. Entries 1–15 and 18–19 are pairs of valid SR
 **Evidence for Bus A = B CAN:**
 
 The B CAN slot table (B3 = SRAM slot index, all B2=0x02 entries) is composed of:
-- **B4=2 entries (B CAN origin, gateway receives):** 0x0378 BattPowermode (BMS), 0x0275 BMSDriveLimits (BMS), 0x0383 BMSBattStatus (BMS), 0x0270 BMS_FaultStatus (BMS), 0x01D5 DCDCStatus1 (DCDC), 0x0276 HVACStatus (HVAC), 0x0410 AC_Compressor_Command, 0x0491 IPK_Status (IPK) — all confirmed B CAN modules per `coda.md`.
-- **B4=4 entries (D CAN origin, gateway rebroadcasts onto B CAN):** 0x0278 DLCM_Keepalive (DLCM), 0x0052 ParkingBrake_Crank (misc_Recvd), 0x0215 misc_0x215 — all confirmed D CAN signals per `coda.md` "also rebroadcast to B CAN by the GWM gateway."
+- **B4=2 entries (B CAN origin, gateway receives):** 0x0378 BattPowermode (BMS), 0x0275 BMSDriveLimits (BMS), 0x0383 BMSBattStatus (BMS), 0x0270 BMS_FaultStatus (BMS), 0x01D5 DCDCStatus1 (DCDC), 0x0276 HVACStatus (HVAC), 0x0410 AC_Compressor_Command, 0x0491 IPK_Status (IPK) — all confirmed B CAN modules per `projects/coda/README.md`.
+- **B4=4 entries (D CAN origin, gateway rebroadcasts onto B CAN):** 0x0278 DLCM_Keepalive (DLCM), 0x0052 ParkingBrake_Crank (misc_Recvd), 0x0215 misc_0x215 — all confirmed D CAN signals per `projects/coda/README.md` "also rebroadcast to B CAN by the GWM gateway."
 
 **Evidence for Bus B = D CAN:**
 
 The B3=2 subscribe list (D CAN native signals the gateway monitors) is an exact match for D CAN modules:
-0x0080 EPS_Steering, 0x01C0 MCM_Telemetry, 0x0210 ThrottlePedalPos, 0x0212 DLCM_TorqueRequest, 0x0241 MCM_Thermal, 0x0418 DLCM_Globals, 0x0600 TPMS_Pressure — all confirmed D CAN per `coda.md`.
+0x0080 EPS_Steering, 0x01C0 MCM_Telemetry, 0x0210 ThrottlePedalPos, 0x0212 DLCM_TorqueRequest, 0x0241 MCM_Thermal, 0x0418 DLCM_Globals, 0x0600 TPMS_Pressure — all confirmed D CAN per `projects/coda/README.md`.
 
-The B3=4 publish list (B CAN signals the gateway forwards onto D CAN): 0x0275 BMSDriveLimits, 0x0276 HVACStatus, 0x0383 BMSBattStatus, 0x01D5 DCDCStatus1, 0x0491 IPK_Status — all confirmed B CAN per `coda.md`.
+The B3=4 publish list (B CAN signals the gateway forwards onto D CAN): 0x0275 BMSDriveLimits, 0x0276 HVACStatus, 0x0383 BMSBattStatus, 0x01D5 DCDCStatus1, 0x0491 IPK_Status — all confirmed B CAN per `projects/coda/README.md`.
 
 **Diag CAN is the UDS routing layer:**
 

@@ -14,7 +14,7 @@ import com.reverseit.coda.CodaConstants.MOTOR_TORQUE_ZERO_RAW
 /**
  * Decodes B CAN frames into Coda display state.
  *
- * All signal IDs, byte positions, and scales come from CODA-B-CAN.dbc and coda.md.
+ * All signal IDs, byte positions, and scales come from CODA-B-CAN.dbc and projects/coda/README.md.
  * Call [update] on every incoming frame (IO thread). Call [buildState] at 10 Hz (main thread).
  *
  * Thread safety: update() and buildState() may be called from different threads.

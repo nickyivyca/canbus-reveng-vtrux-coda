@@ -11,7 +11,7 @@ whether the bottleneck is parsing, decoding, line-protocol serialization,
 or the network.
 
 The test log is vtrux_20260503_171127_T0.log -- the canonical Android
-startup churn case (per projects/vtrux/vtrux.md), 13.75 MB / 271k frames /
+startup churn case (per projects/vtrux/README.md), 13.75 MB / 271k frames /
 11 channels. It exercises both the churn filter and a representative
 upload volume.
 

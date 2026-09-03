@@ -494,7 +494,101 @@ corner gradient).
 
 ---
 
+## Weekend-Trip Validation — 2026-07-24/26 (added 2026-08-14)
+
+First test of the model against a **long multi-day drive** rather than a charge-centred
+session. Question asked: cell temp appeared to cross the conditioning threshold on the
+trip — did it, and did conditioning actually engage and run?
+
+**Both yes.** Artifacts: `artifacts/weekend_trip_cooling.py` (Phase A parse cached to
+`weekend_trip_cooling_samples.csv`; re-run with `--repair` after an interrupted parse),
+full output in `artifacts/weekend_trip_cooling_out.txt`. Trip narrative in
+`weekend-trip-2026-07-24.md`.
+
+All ten sessions were parsed from the raw Android logs (~11 GB); `0x506` is present in
+**every** session (1,325–138,402 frames), so the seven sessions that show no cooling are
+genuine negatives, not missing telemetry. Pack is `parts-orig`, which carries the
+conditioning group.
+
+### Temperatures reached
+
+| Session (local) | Peak `cell_tmax` | s ≥38 °C | s ≥40 °C | Cooling |
+|---|---:|---:|---:|---|
+| Fri 16:03 / 16:25 / 17:26 | 22.5 / 32.5 / 37.5 °C | 0 | 0 | no |
+| **Fri 21:15** (night climb) | **38.5 °C** | 790 | 0 | **yes** |
+| Sat 10:27 / 17:00 | 20.5 / 27.0 °C | 0 | 0 | no |
+| Sun 12:42 (−1,103 m descent) | 34.0 °C | 0 | 0 | no |
+| **Sun 14:26** | **41.0 °C** | 2,882 | 25 | **yes** |
+| **Sun 16:09** | **41.0 °C** | 3,066 | 91 | **yes** |
+| Sun 19:19 (arrive + charge) | 37.0 °C | 0 | 0 | no |
+
+Note `bcm_cell_tmax` = 87.0 °C is the raw `0xFE` sentinel (`raw × 0.5 − 40`) and must be
+filtered before taking a max — an unfiltered InfluxDB `max()` returns 87.0 for most of
+these sessions.
+
+### Cooling ran ~80 minutes across the trip
+
+Envelope taken from `0x508` presence (a ~8.7 Hz beacon broadcast only while cooling is
+active), 30 s gap tolerance:
+
+| Session | Cooling total | Shape |
+|---|---:|---|
+| Fri 21:15 | 295 s | 9 short bursts, longest 101 s, all in the 37.5–38.5 °C band |
+| Sun 14:26 | **2,142 s** | **one continuous 35.7 min run**, 15:22:49 → 15:58:31 |
+| Sun 16:09 | 2,382 s | 22 runs; final one **20.9 min continuous**, 17:38:40 → 17:59:34 |
+
+`0x506` B0 bit5 vs `0x508` presence agree at **99.6% / 100.0% / 97.3%**, consistent with
+the 99.9% agreement found in the 30-session scan above.
+
+**The 12 V step is present in all three**, confirming the package physically energised
+rather than merely being flagged (`DCDC_LV_Curr` medians, regulated ~14.3 V):
+
+| Session | Cooling OFF | Cooling ON | Step |
+|---|---:|---:|---:|
+| Fri 21:15 | 60.7 A | 152.8 A | **+92 A** |
+| Sun 14:26 | 65.5 A | 170.7 A | **+105 A** |
+| Sun 16:09 | 58.6 A | 144.8 A | **+86 A** |
+
+Sessions that never triggered sit at 3.7–70.4 A throughout. The per-edge 12 V values in
+the Phase B2 table look inverted — an ON edge samples *before* the step lands, an OFF edge
+samples *before* the drop — so the medians above are the correct comparison.
+
+Both long runs coincide with the trip's hardest climbs: Sun 14:26 latched on right after
+the two GEN-CLIMB segments (+83 m, +168 m), and Sun 16:09 latched at 17:38:40 during the
++418 m climb, holding through the 17:41 summit and into the descent.
+
+### Engagement point ran ~1–1.5 °C higher than the 2026-07-14 reference
+
+P(cooling | `cell_tmax`), HV active, whole trip:
+
+| tmax | ≤37.0 | 37.5 | 38.0 | 38.5 | 39.0 | 39.5 | 40.0–41.0 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| P(cooling) | 0% | 9% | 39% | 90% | 100% | 97% | 100% |
+
+The Cross-Session Validation above records **77% at 37.0 °C** for driving; this trip gives
+**0% across 2,148 samples** at 37.0 °C, and does not reach 90% until 38.5 °C. Recorded as
+a **measured difference, not a revised threshold** — one summer trip is not enough to
+recalibrate, and the confounds are unresolved (ambient, and the 07-14 sessions entered
+their drives with hysteresis state carried over from a preceding charge).
+
+**This trip does not test the ~40 °C charging threshold at all.** It never charged while
+hot — the only charge session (Sun 19:19) peaked at 37.0 °C. It tests driving behaviour
+only.
+
+### Corroborates the "cooling is thermally limited when most needed" finding
+
+In **both** long runs the pack kept heating while cooling was already running
+continuously — 38.0 → 41.0 °C in each case. Cooling was on and could not arrest the rise
+under sustained climb load.
+
+This is independent support for the Actionable takeaway in *Lumped Model — Results &
+Peltier Test*: the system's own heat sink is hot exactly when cooling is demanded. That
+finding was drawn from a charge session; this shows the same behaviour on a drive, which
+is the more demanding case.
+
+---
+
 ## Related
 - `notes/via-docs/via-docs.md` — LV fuse/relay inventory (cooling actuators)
 - `notes/hvac-investigation.md` — separate cabin HVAC blower (0x451 B4), unrelated
-- `vtrux.md` — 0x410/0x430/0x440 BMS signal encodings (`epri-pt-bus.dbc`)
+- `projects/vtrux/README.md` — 0x410/0x430/0x440 BMS signal encodings (`epri-pt-bus.dbc`)

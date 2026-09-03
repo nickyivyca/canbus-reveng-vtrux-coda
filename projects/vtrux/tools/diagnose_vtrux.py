@@ -5,6 +5,14 @@ Decodes all known fault/status signals from a Vtrux PT-bus log and produces a
 timeline of state changes with fault tagging, plus initial/final state snapshots
 and a fault summary.
 
+Includes the 0x460 BMS fault-record annunciator (added 2026-08-26): the record
+stack is assembled from the page-multiplexed rotation, standing records are shown
+in the initial/final snapshots, record pushes appear in the timeline with their
+catalog names (steady-state charge fault FC 22 02, precharge abort F0 E0 00,
+contactor/interlock F6 family, ...), and boot-time NVM restores are labeled as
+such. Also decodes the 0x617 VCM fault-active flag. Catalog and evidence:
+projects/vtrux/notes/battery-fault-codes.md.
+
 Not focused on charging -- covers any log type: battery reconnect, drive, idle,
 fault investigation, etc.
 
@@ -42,7 +50,9 @@ PT_TARGETS = {
     0x430,   # A123 BMS data1: cell voltages, temps, 12V battery
     0x440,   # A123 BMS data2: contactor state sequence, vbus rails
     0x411,   # BMS SoC hi-res
+    0x460,   # A123 BMS fault-record annunciator (page-multiplexed record list)
     0x592,   # HCU sensor inputs: ignition, EVSE switch, export
+    0x617,   # VCM system-state flag (B7: 0xC8 normal / 0xCA fault-active)
     0x065B,  # HCU DTC code dispatcher
 }
 
@@ -124,6 +134,60 @@ DTC_TABLE = {
     0xC111: "inAbstrCanBecm_u0111LostRx",
     0xC296: "inAbstrCanBdc_u0296LostRx",
 }
+
+# ---------------------------------------------------------------------------
+# 0x460 BMS fault-record annunciator
+#
+# Page-multiplexed on B0: page 0x00 = counters (B2=record count), pages
+# 0x01..0x0N carry up to two 3-byte fault records each (B2-B4 / B5-B7),
+# newest record first. Records push at FAULT events only (key-offs, unplugs,
+# and charger-internal failures push nothing), survive BMS reboot (staged NVM
+# restore: first record ~1s after wake, next +15-35s -- a record appearing
+# shortly after a BMS boot is usually a RESTORE, not a fresh detection), and
+# clear on plug-cycle/12V fault-clear. Catalog and evidence:
+# projects/vtrux/notes/battery-fault-codes.md
+#
+# CAUTION: the OBD bus carries a different 0x460 (TRAC MCU, DLC=5); this tool
+# only accumulates PT-bus frames and additionally filters to DLC=8.
+# ---------------------------------------------------------------------------
+
+X460_RECORD_NAMES = {
+    (0xFC, 0x22, 0x02): "STEADY-STATE CHARGE FAULT (main-orig 2025 mystery)",
+    (0xF0, 0xE0, 0x00): "PRECHARGE ABORT (CLOSE_MAINN fault)",
+    (0xF6, 0xC0, 0x01): "contactor fault (common record)",
+    (0xF6, 0xC3, 0x02): "contactor fault: welded-MAINN scenario",
+    (0xF6, 0xC5, 0x03): "contactor fault: bad-precharge-contactor scenario",
+    (0xF6, 0xCF, 0x00): "INTERLOCK OPENED WHILE HV UP (trip)",
+    (0xFC, 0x16, 0xF2): "GEN INVERTER NOT COMMUNICATING (~30s timeout; latches until 12V clear)",
+    (0xFB, 0xB6, 0xE4): "standing record, identity unknown (service-era residue)",
+    (0xF0, 0x00, 0x00): "fault shutdown (generic, universal at fault EPOs)",
+    (0xFB, 0xC0, 0x00): "charger went away during charge mode (pushed within ~0.1s of Bel shutdown; hypothesis)",
+    (0xFC, 0xB0, 0x00): "(meaning unknown; steady-state cascade only)",
+    (0xFB, 0xE0, 0x00): "(meaning unknown; repeated interlock-test EPOs)",
+    (0xFB, 0xE0, 0x02): "(meaning unknown; repeated interlock-test EPOs)",
+    (0xFB, 0xE0, 0x03): "(meaning unknown; repeated interlock-test EPOs)",
+    (0xF7, 0x00, 0x00): "12V-loss/reset record (hypothesis)",
+    (0xF8, 0x00, 0x00): "12V-loss/reset record (hypothesis)",
+    (0xDE, 0xE0, 0x03): "truck3-truck standing record (identity unknown)",
+}
+
+
+def x460_record_name(rec):
+    """Human label for a 3-byte fault record tuple."""
+    if rec in X460_RECORD_NAMES:
+        return X460_RECORD_NAMES[rec]
+    if rec[0] == 0xAC and rec[1] == 0x10:
+        return f"EPO executed (param={rec[2]:02X})"
+    return "UNKNOWN RECORD -- not in catalog, worth investigating"
+
+
+def x460_fmt(rec):
+    return ' '.join(f"{b:02X}" for b in rec)
+
+
+# Records whose appearance right after a BMS boot is normally an NVM restore,
+# and whose standing presence is not itself an active fault event.
+X460_BENIGN_STANDING = {(0xF7, 0x00, 0x00), (0xF8, 0x00, 0x00)}
 
 # ---------------------------------------------------------------------------
 # Frame collection -- single pass
@@ -344,6 +408,15 @@ def decode_0x065B(data):
     }
 
 
+def decode_0x617(data):
+    """VCM system-state flag. B7 = 0xC8 + state enum; 0xCA = fault-active."""
+    if len(data) < 8:
+        return None
+    b7 = data[7]
+    name = {0xC8: 'NORMAL', 0xC9: 'STATE_C9', 0xCA: 'FAULT_ACTIVE'}.get(b7, f"0x{b7:02X}")
+    return {'vcm_sysstate': name}
+
+
 DECODERS = {
     0x053:  decode_0x053,
     0x054:  decode_0x054_or_0x044,
@@ -355,6 +428,7 @@ DECODERS = {
     0x440:  decode_0x440,
     0x411:  decode_0x411,
     0x592:  decode_0x592,
+    0x617:  decode_0x617,
     0x065B: decode_0x065B,
 }
 
@@ -373,6 +447,7 @@ TIMELINE_FIELDS = {
     # fault_mon intentionally excluded: pulses HIGH 100ms/s as a BMS health signal;
     # not a fault indicator, just noise in the timeline.
     0x592:  ['evse_switch', 'export_power', 'ignition'],
+    0x617:  ['vcm_sysstate'],
     0x065B: ['dtc_name'],
 }
 
@@ -385,7 +460,9 @@ MSG_LABELS = {
     0x420:  'BMS_LIMITS ',
     0x430:  'BMS_DATA1  ',
     0x440:  'BMS_DATA2  ',
+    0x460:  'BMS_FAULTREC',
     0x592:  'HCU_SENSOR ',
+    0x617:  'VCM_SYS    ',
     0x065B: 'HCU_DTC    ',
 }
 
@@ -437,6 +514,9 @@ def fault_tag(aid, field, old_val, new_val):
     if aid == 0x440:
         if field == 'mainc_idx' and new_val in MAINC_STAT_FAULT_IDX:
             return f'  *** CONTACTOR FAULT STATE ({MAINC_STAT_16[new_val]}) ***'
+    if aid == 0x617:
+        if field == 'vcm_sysstate' and new_val == 'FAULT_ACTIVE':
+            return '  *** VCM FAULT-ACTIVE FLAG (0x617) ***'
     return ''
 
 
@@ -498,6 +578,151 @@ def build_events(accumulated):
         prev_decoded[aid] = dec
 
     return events, prev_decoded
+
+
+# ---------------------------------------------------------------------------
+# 0x460 fault-record stack tracking
+# ---------------------------------------------------------------------------
+
+def x460_boot_times(accumulated):
+    """Times when 0x410 B1 enters the fresh-boot state 0x3F (BMS wake)."""
+    times = []
+    prev = None
+    for t, data in accumulated.get(0x410, []):
+        if len(data) < 2:
+            continue
+        b1 = data[1]
+        if b1 == 0x3F and prev != 0x3F:
+            times.append(t)
+        prev = b1
+    return times
+
+
+def x460_stack_series(accumulated):
+    """Reconstruct the fault-record stack over time.
+
+    Returns list of (t, stack) at each change, where stack is an ordered tuple
+    of 3-byte record tuples, newest first. Pages absent from the rotation for
+    >1.5s are treated as dropped (the list shrank).
+    """
+    PAGE_TTL = 1.5
+    pages = {}      # page_idx -> (t_last_seen, (rec1, rec2))
+    series = []
+    prev_stack = None
+    for t, data in accumulated.get(0x460, []):
+        if len(data) != 8:
+            continue   # OBD-bus TRAC MCU 0x460 is DLC=5 -- contamination guard
+        pg = data[0]
+        if pg != 0x00:
+            pages[pg] = (t, (tuple(data[2:5]), tuple(data[5:8])))
+        stack = []
+        for idx in sorted(pages):
+            tp, recs = pages[idx]
+            if t - tp > PAGE_TTL:
+                continue
+            for rec in recs:
+                if rec != (0, 0, 0):
+                    stack.append(rec)
+        stack = tuple(stack)
+        if stack != prev_stack:
+            series.append((t, stack))
+            prev_stack = stack
+    return series
+
+
+def x460_settle_series(series, settle=0.6):
+    """Coalesce stack changes closer together than one page rotation.
+
+    When a record is pushed, existing records shift between page slots over
+    ~(N+1)x50ms; the raw assembly passes through transient mid-shift states
+    that would read as spurious clear/re-push pairs. Keep only stacks that
+    held stable for `settle` seconds, timestamped at the start of each burst.
+    """
+    settled = []
+    i = 0
+    n = len(series)
+    while i < n:
+        j = i
+        while j + 1 < n and series[j + 1][0] - series[j][0] < settle:
+            j += 1
+        settled.append((series[i][0], series[j][1]))
+        i = j + 1
+    return settled
+
+
+def build_x460_events(accumulated):
+    """Timeline events for fault-record additions/removals.
+
+    Returns (events, initial_stack, final_stack). Events use the same tuple
+    schema as build_events(). The first ~2s of the record rotation is treated
+    as initial assembly (captured in the initial snapshot, not the timeline),
+    matching the tool's convention for other messages. Additions within 40s of
+    a BMS boot are labeled as probable NVM restores of standing records rather
+    than fresh fault pushes (staged restore: first record ~1s after wake, next
+    +15-35s -- see notes/battery-fault-codes.md) -- unless they coincide with
+    an EPO assertion, which always marks a fresh push.
+    """
+    series = x460_settle_series(x460_stack_series(accumulated))
+    if not series:
+        return [], (), ()
+    boots = x460_boot_times(accumulated)
+
+    # EPO assertion times: an addition coinciding with an EPO (+/-2s) is always a
+    # fresh fault push, even right after a boot (e.g. a precharge abort seconds
+    # after a plug-cycle clear).
+    epo_times = []
+    prev_epo = None
+    for te, data in accumulated.get(0x410, []):
+        if len(data) < 1:
+            continue
+        e = (data[0] >> 1) & 1
+        if prev_epo == 0 and e == 1:
+            epo_times.append(te)
+        prev_epo = e
+
+    t_first = series[0][0]
+    ASSEMBLY_END = t_first + 2.0
+
+    initial = ()
+    events = []
+    prev = None
+    for t, stack in series:
+        if t <= ASSEMBLY_END:
+            initial = stack
+            prev = stack
+            continue
+        prev_set = set(prev or ())
+        cur_set = set(stack)
+        near_epo = any(abs(t - te) <= 2.0 for te in epo_times)
+        near_boot = (not near_epo) and any(0.0 <= t - bt <= 40.0 for bt in boots)
+        for rec in stack:
+            if rec in prev_set:
+                continue
+            name = x460_record_name(rec)
+            if near_boot:
+                events.append((t, 0x460, 'fault_record',
+                               '(boot)', f"{x460_fmt(rec)} restored -- {name}", ''))
+            else:
+                events.append((t, 0x460, 'fault_record',
+                               '(none)', f"{x460_fmt(rec)} -- {name}",
+                               f'  *** BMS FAULT RECORD PUSHED: {name} ***'))
+        removed = [rec for rec in (prev or ()) if rec not in cur_set]
+        if removed:
+            events.append((t, 0x460, 'fault_record',
+                           ' '.join(x460_fmt(r) for r in removed), '(cleared)', ''))
+        prev = stack
+    final = series[-1][1]
+    return events, initial, final
+
+
+def x460_stack_lines(label, stack):
+    """Snapshot formatter for a record stack."""
+    if not stack:
+        return [f"  {label:<14s}  (empty -- no standing fault records)"]
+    lines = [f"  {label:<14s}  {len(stack)} record(s), newest first:"]
+    for rec in stack:
+        lines.append(f"                  {x460_fmt(rec)}  {x460_record_name(rec)}")
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -645,8 +870,13 @@ def format_state(snap):
 # Fault summary
 # ---------------------------------------------------------------------------
 
-def build_fault_summary(first_snap, events):
+def build_fault_summary(first_snap, events, x460_initial=()):
     faults = []
+
+    # Standing 0x460 fault records at log start (excluding the benign F7/F8 pair)
+    standing = [r for r in x460_initial if r not in X460_BENIGN_STANDING]
+    for rec in standing:
+        faults.append(f"Standing BMS fault record at log start: {x460_fmt(rec)} -- {x460_record_name(rec)}")
 
     # Check initial state for persistent faults
     d = first_snap.get(0x410)
@@ -741,6 +971,9 @@ def print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel
             hvil_ever_closed = True
             break
 
+    # 0x460 fault-record stack (assembled from the page-multiplexed rotation)
+    x460_events, x460_initial, x460_final = build_x460_events(accumulated)
+
     w(SEP)
     w("INITIAL STATE")
     w(SEP)
@@ -749,12 +982,16 @@ def print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel
     w()
     for line in format_state(first_snap):
         w(line)
+    if accumulated.get(0x460):
+        for line in x460_stack_lines("BMS_FAULTREC", x460_initial):
+            w(line)
     w()
 
     # -----------------------------------------------------------------------
     # Build event timeline
     # -----------------------------------------------------------------------
     events, _ = build_events(accumulated)
+    events = sorted(events + x460_events, key=lambda e: e[0])
 
     w(SEP)
     w(f"SYSTEM EVENTS TIMELINE  ({len(events)} state changes)")
@@ -807,6 +1044,14 @@ def print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel
     w()
     for line in format_state(last_snap):
         w(line)
+    if accumulated.get(0x460):
+        for line in x460_stack_lines("BMS_FAULTREC", x460_final):
+            w(line)
+        w()
+        w("  NOTE: 0x460 fault records survive BMS reboot until a plug-cycle/12V")
+        w("        fault-clear -- a post-mortem capture still carries the codes.")
+        w("        Records appearing within ~40s of a BMS boot are NVM restores of")
+        w("        standing records, not fresh faults. See notes/battery-fault-codes.md.")
     w()
 
     # -----------------------------------------------------------------------
@@ -816,7 +1061,7 @@ def print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel
     w("FAULT SUMMARY")
     w(SEP)
 
-    faults = build_fault_summary(first_snap, events)
+    faults = build_fault_summary(first_snap, events, x460_initial)
 
     if not faults:
         w("  No fault indicators detected.")

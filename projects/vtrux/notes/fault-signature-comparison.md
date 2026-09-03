@@ -71,9 +71,15 @@ Four of five instances fall within 94 ms (10.165–10.259 s), and the delay is
 One outlier (`truklog_M2`, 8.810 s) is unexplained and is not data loss. Full detail and
 the ruled-out variable list: `specific-trucks/before-battery-swap-failed-charge-analysis.md`.
 
-**The trigger does not appear to be broadcast.** An exhaustive byte-level sweep of
-0x300–0x5FF (every ID, every byte, all five escalations) finds nothing that distinguishes
-the trip, and nothing changes at the TYPE1 instant. Scope note: this covers what the
+**The trigger does not appear to be broadcast** — but its **name** is (2026-08-26): at
+the TYPE1 instant the BMS pushes fault record `FC 22 02` onto its 0x460 fault-record
+annunciator, byte-identical in all five instances and seen nowhere else in the corpus.
+The precharge fault pushes a different code (`F0 E0 00`) and Truck 3's contactor faults a
+third family (`F6 xx yy`) — the fault-record readout is now the fastest classifier for
+any new BMS trip. See `battery-fault-codes.md`. The value-domain result stands: an
+exhaustive byte-level sweep of 0x300–0x5FF (every ID, every byte, all five escalations)
+finds nothing that distinguishes the trip *before* TYPE1, and no measured quantity
+changes at the TYPE1 instant. Scope note: this covers what the
 main-orig pack **does** broadcast. That pack does not publish the conditioning-module
 group (`0x370`–`0x375`, `0x506`, `0x507`, `0x50F` — see `battery-thermals.md`), so that
 tier is **untested rather than cleared**. Note also that on packs which do publish it,
@@ -156,9 +162,18 @@ separated by a bus-wide silence, the interval is unmeasured, not measured-and-lo
 | **Interlock fault** | running | `MAIN_PN_CLOSED_DRIVE` | **0 — clears first** | `0xBF->0xFF->0xCF` | 200 ms |
 | **main-orig steady-state charge fault** (5 instances, incl. 2025-08-22) | running (charge) | `MAIN_P_CLOSED_CHARGE` | 1 (**stays closed**) | `0x7F->0xFF->0xCF` | **8.8–10.3 s** (TYPE1 lead) |
 | **Operator EVSE unplug** (not a fault — confound) | running (charge) | `MAIN_P_CLOSED_CHARGE` | **0 — drops first, causes trip** | `->0xCF` | none (**no TYPE1**) |
+| **Interlock trip while HV up** (truck3-2026-08-05) | running (charge) | `P_CLOSED_CHARGE` | **0 — opens first, +253 ms** | `0xBF->0xFF->0xCF` | none |
+| **Mid-drive interlock flutter** (main-orig 2026-06-10) | running (drive) | flaps `PN_CLOSED_DRIVE<->ALL_OPEN_SHUTDOWN`, recovers | **bounces 6x in 350 ms** | stays `0xBF` | **no EPO at all** |
+| **Drive-mode EPO trip, unexplained** (main-orig 2026-06-18) | running (drive) | `SHUTDOWN_REQUEST` | 1 (**stays closed**) | `0xBF->0xCF` direct (no 0xFF) | none; 0x460 pushes `AC 10 01` |
 
 ### Fastest way to classify a new fault
 
+0. **Read the 0x460 fault-record list first** (`battery-fault-codes.md`). It names the
+   steady-state charge fault (`FC 22 02`), the precharge abort (`F0 E0 00`), and the
+   contactor/interlock hardware faults (`F6` family) — and it survives BMS reboot until
+   a plug-cycle/12V clear, so a post-mortem capture still carries the code. Isolation
+   faults are the notable gap (generics-only). `0x617 B7 = 0xCA` is a fast VCM-side
+   fault-active cross-check (all modes, ~0.3 s).
 1. **Is the BMS master block (0x400/0x410/0x411/0x412/0x420/0x430/0x440/0x460) present at all?**
    If absent while pack section boards (0x370-0x375, 0x506, 0x50F) still broadcast ->
    **BMS master power/wake failure**. There is no fault event to find; the absence is

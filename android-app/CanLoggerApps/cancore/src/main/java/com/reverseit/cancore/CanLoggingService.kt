@@ -141,7 +141,7 @@ class CanLoggingService : Service() {
     }
 
     /** Set by the hosting app via binder after the service starts. Triggers logging if trigger is active. */
-    var pipeline: CanPipelineManager? = null
+    var pipeline: CanFrameSource? = null
         set(value) {
             field = value
             // Only start if not already logging. The binder is re-delivered every time

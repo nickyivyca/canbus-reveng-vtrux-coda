@@ -13,6 +13,22 @@ Streaming decoded CAN signals from the Vtrux logger phone to an in-truck display
 - UI: `:display` module, Vtrux launcher is `vtrux/.../LiveDisplayActivity.kt`
 - Test server (log replay): `tools/can_display_server.py`
 
+## 914 App (`:p914`)
+
+Display + logger for the Porsche 914 EV conversion. **Track A (comms + logging) complete and
+working on the car, 2026-08-13. Track B (display) not started.** The app also flashes VCU
+firmware over adb, so the car can be reflashed with no laptop present.
+
+Two deliverables: **A -- comms/SLCAN bringup** and **B -- display implementation and layout
+specs**. The transport is the novel part: the 914 has no gs_usb dongle, so the app reads SLCAN
+(LAWICEL ASCII) from the VCU's USB CDC serial port. The SLCAN reader lives in `:cancore` as a peer
+of gs_usb; only the CDC transport is vehicle-specific.
+
+- Plan and full results: `plans/914-app.md`
+- Module architecture and USB gotchas: `canlogger-build-notes.md`
+- Vehicle overview + DBC: `projects/914/README.md`
+- Replay harness: `tools/slcan_bridge.py` (see `tools/tools.md`)
+
 | File | Contents |
 |------|----------|
 | `android-can-poc.md` | PoC notes (gs_usb protocol, Innomaker on Android, PEAK replay setup). The PoC lives at `android-app/CanReaderApp/`. |
@@ -25,6 +41,6 @@ Streaming decoded CAN signals from the Vtrux logger phone to an in-truck display
 
 | Directory | Contents |
 |-----------|----------|
-| `plans/` | Plan files. `companion-file-sync.md` — server in `:cancore` + phone companion app to auto-pull Coda logs over the head unit's hotspot. `vtrux-live-display.md` — live decoded-signal streaming from the Vtrux logger phone (or test server) to a display app, deployable on the same logger phone, a separate phone, or a future tablet head unit. |
+| `plans/` | Plan files. `companion-file-sync.md` — server in `:cancore` + phone companion app to auto-pull Coda logs over the head unit's hotspot. `vtrux-live-display.md` — live decoded-signal streaming from the Vtrux logger phone (or test server) to a display app, deployable on the same logger phone, a separate phone, or a future tablet head unit. `914-app.md` — the `:p914` display + logger app (see below). |
 | `protocols/` | Wire protocol specs. `can-display-protocol.md` — WebSocket protocol for the live display feature. |
 | `artifacts/` | Generated data files. See `artifacts/README.md`. |

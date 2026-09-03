@@ -5,7 +5,7 @@ Data source: 0x18FFD7C0 (BELINV_hvBatteryAndCharger)
   B2:B3 LE signed   x0.05 -> hvBatteryCurrent (A, positive = charging)
   B4:B5 LE unsigned x0.05 -> chargerInputVoltage (AC RMS, V)
   B6:B7 LE unsigned x0.05 -> chargerInputCurrent (AC RMS, A)
-Encoding authority: projects/vtrux/BelInverter-v2.dbc + vtrux.md line 209.
+Encoding authority: projects/vtrux/BelInverter-v2.dbc + projects/vtrux/README.md line 209.
 
 Input is the grep-extracted line dump (raw_primary.txt / raw_android.txt), produced by
   grep -RH "18FFD7C0" <logroot> --include="*.log" > raw_<set>.txt

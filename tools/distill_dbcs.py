@@ -53,7 +53,7 @@ SPEC: dict[str, dict[str, list[int]]] = {
             0x0442,      # TRAC_TrqFbk_0442 -- TRAC_TrqFbk
         ],
         "projects/vtrux/GMW8762_PPEI_GMLAN.dbc": [
-            0x03D1,      # Engine_General_Status_2 -- Throttle_Position (engine APP proxy per vtrux.md)
+            0x03D1,      # Engine_General_Status_2 -- Throttle_Position (engine APP proxy per projects/vtrux/README.md)
             0x03FB,      # Engine_Fuel_Status -- Fuel_Alcohol_Composition (dual-native; also on Vehicle bus)
             0x04C1,      # Engine_General_Status_4 -- Engine_Coolant_Temperature. The EPRI DBC's
                          # definition for this message produced a stuck ~70 C

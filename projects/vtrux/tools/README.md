@@ -7,26 +7,8 @@ are tightly coupled to Vtrux signal definitions and DBC content.
 
 ---
 
-## vtrux_hcu_probe.py
-*Source last modified: 2026-04-17*
-
-Probes the Woodward HCU (VCM) using all services in Woodward's ISO 15765 MotoHawk blockset. Auto-detects OBD, Vehicle, or PT bus; targets a configurable diagnostic address (default 0x7E0). Written 2026-04-17 to probe services never previously attempted on the HCU (Mode 09, DSC, RDBI, Security Access, Routine Control, Control DTC Setting). In practice confirmed the module at 0x7E0 is the GM ECM, not the Woodward HCU.
-
-**Usage:**
-```
-py -3.11 projects/vtrux/tools/vtrux_hcu_probe.py
-py -3.11 projects/vtrux/tools/vtrux_hcu_probe.py --brands kvaser --force-bus pt --target 0x7E7
-py -3.11 projects/vtrux/tools/vtrux_hcu_probe.py --force-bus pcan --sweep --sweep-only
-py -3.11 projects/vtrux/tools/vtrux_hcu_probe.py --target 0x7E7 --did-scan
-py -3.11 projects/vtrux/tools/vtrux_hcu_probe.py --reset hard
-```
-
-**Flags:** `--force-bus {obd|vehicle|pt|<brand>}`, `--target <hex>`, `--sweep`, `--sweep-only`, `--did-scan`, `--programming-session`, `--reset {hard|soft|keyoff}`.
-
----
-
 ## diagnose_vtrux.py
-*Source last modified: 2026-04-21 21:52:08*
+*Source last modified: 2026-08-26*
 
 General-purpose Vtrux diagnostic tool. Decodes all known fault and status signals
 from a PT-bus log (any log type: battery reconnect, drive, idle, fault investigation)
@@ -53,7 +35,9 @@ and produces:
 | 0x430 | BMS data1 | mod_ena, veh_mon, chga_ena/mon, cell V/T, lvbat |
 | 0x440 | BMS data2 | mainc_stat (16-state), vbus_pos/neg, fgd |
 | 0x411 | BMS SoC hi-res | soc_hires |
+| 0x460 | BMS fault-record annunciator | record stack assembled from the page-multiplexed rotation: standing records in initial/final snapshots, pushes/clears in the timeline with catalog names (`FC 22 02` steady-state fault, `F0 E0 00` precharge abort, `F6` contactor/interlock family, ...); boot-time NVM restores labeled vs fresh pushes (EPO-coincident additions always count as pushes); DLC=8 filter guards OBD-bus 0x460 contamination. Catalog: `notes/battery-fault-codes.md` (added 2026-08-26) |
 | 0x592 | HCU sensor | ignition, evse_switch, export_power |
+| 0x617 | VCM system-state flag | vcm_sysstate (B7: NORMAL/STATE_C9/FAULT_ACTIVE; FAULT_ACTIVE fault-tagged, sets ~0.3 s after EPO in every mode) (added 2026-08-26) |
 | 0x065B | HCU DTC | dtc_code, dtc_name |
 
 **Usage:**
@@ -212,75 +196,6 @@ py -3.12 projects/vtrux/tools/analyze_session.py <files...> [options]
 **Output:** Session summary, charger states, fault bit transitions, status transitions, failure timeline with windowed V/I data, V/I profile.
 
 **Note:** Forces UTF-8 stdout on Windows.
-
----
-
-## vtrux_can_bridge.py
-*Source last modified: 2026-06-06*
-
-Forwards a configurable set of CAN arbitration IDs between the Vtrux Vehicle
-(GMLAN) and OBD buses using two USB CAN dongles. Identifies which dongle is
-attached to which bus by **brand** (`--vehicle-brand`, `--obd-brand`) so the
-mapping does not depend on USB enumeration order.
-
-Built for the CCM-input hypothesis from
-`projects/vtrux/notes/trailer-brake-investigation.md` Phase 5.6: three IDs
-(0x189, 0x1A6, 0x1DF) are OBD-bus-native on the Vtrux and never reach the
-Vehicle bus, so the K38 CCM (which lives on the Vehicle bus) cannot see them.
-Bridging them across lets us observe whether CCM behavior changes (DTCs
-cleared, scanner reaches CCM, "Service Trailer Brake System" message clears).
-
-**Usage:**
-```
-py -3.11 projects/vtrux/tools/vtrux_can_bridge.py \
-    --vehicle-brand pcan --obd-brand kvaser [options]
-
-  --vehicle-brand BRAND  Dongle brand attached to the Vehicle (GMLAN) bus
-                         (kvaser | ixxat | pcan | socketcan)  [required]
-  --obd-brand BRAND      Dongle brand attached to the OBD bus           [required]
-  --ids LIST             Comma-separated arbitration IDs (hex with 0x or
-                         decimal). Used as default for whichever direction(s)
-                         are enabled. Default if nothing else: 0x189,0x1A6,0x1DF
-  --obd-to-veh-ids LIST  Per-direction ID list for OBD -> Vehicle (overrides
-                         --ids for this direction only).
-  --veh-to-obd-ids LIST  Per-direction ID list for Vehicle -> OBD (overrides
-                         --ids for this direction only).
-  --direction DIR        obd-to-vehicle (default) | vehicle-to-obd | both
-  --ccm-isolation-test   Phase 5.12 preset (see trailer-brake notes): bridges
-                         all 36 Vehicle-only-survives-T3 IDs Vehicle->OBD AND
-                         the 3 OBD-only IDs OBD->Vehicle. Overrides --direction
-                         and ID options.
-  --bitrate, -b BPS      CAN bitrate (default: 500000)
-  --skip-confirmation    Skip the "Press Enter to start" prompt
-  --debug                Log every forwarded frame
-```
-
-**Examples:**
-```
-# Trailer-brake test: bridge TCM-suspected IDs from OBD to Vehicle bus
-py -3.11 projects/vtrux/tools/vtrux_can_bridge.py \
-    --vehicle-brand pcan --obd-brand kvaser
-
-# Bridge a single ID in the other direction
-py -3.11 projects/vtrux/tools/vtrux_can_bridge.py \
-    --vehicle-brand pcan --obd-brand kvaser \
-    --ids 0x350 --direction vehicle-to-obd
-
-# Phase 5.12 -- full CCM isolation test (all Vehicle-only IDs to OBD,
-# plus the 3 OBD-only IDs to Vehicle)
-py -3.11 projects/vtrux/tools/vtrux_can_bridge.py \
-    --vehicle-brand pcan --obd-brand kvaser \
-    --ccm-isolation-test
-```
-
-**Notes:**
-- If both buses use the same brand, two physically distinct dongles of that
-  brand must be connected; the script picks the first detected for Vehicle
-  and the second for OBD.
-- `--direction both` can echo frames if any target ID is broadcast natively
-  on both buses (no loop suppression). Prefer one direction at a time.
-- Stats are printed every 5 seconds: `rx_total`, `tx`, `tx_err`, `rx_err`,
-  and per-ID forwarded counts.
 
 ---
 

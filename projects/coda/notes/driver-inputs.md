@@ -290,6 +290,8 @@ The following D CAN messages appear identically on B CAN:
 0x08C, 0x300, 0x308, 0x312, 0x325, 0x330, 0x580
 
 > **Correction (Part 2)**: 0x276 was previously listed as D CAN exclusive. The driverinputpart4.log confirms 0x276 appears on both D CAN and B CAN — it is gateway-rebroadcast.
+>
+> **Correction (2026-08-23)**: the direction is **B CAN native → rebroadcast to D CAN**, not the reverse. The AICM transmits 0x276 on B CAN with D CAN asleep, and B leads D by ~1 ms. See `efficiency-calculation.md` §5 and `artifacts/x276_bus_presence.py`.
 
 ### B CAN exclusive (NOT rebroadcast)
 
@@ -773,7 +775,7 @@ All in `artifacts/` — see `artifacts/README.md` for full inventory.
 - [ ] Characterize 0x276 B0 (temperature-related) and B3 (cabin temp sensor) more precisely
 - [ ] Investigate 0x248 B6 further (interior dimming? light switch position?)
 - [ ] Update skeleton DBCs with new confirmed signals
-- [ ] Update notes/README.md, coda.md, artifacts/README.md (housekeeping)
+- [ ] Update notes/README.md, projects/coda/README.md, artifacts/README.md (housekeeping)
 
 ---
 

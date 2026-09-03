@@ -15,7 +15,7 @@ object VtruxConstants {
     const val LOG_DIR = "/sdcard/VtruxLogs"
 
     /**
-     * Bus-identification anchor IDs, taken from `projects/vtrux/vtrux.md`.
+     * Bus-identification anchor IDs, taken from `projects/vtrux/README.md`.
      * The same set the Python test server uses
      * (`tools/can_display_bus_identity_vtrux.json`) -- keep in sync.
      *

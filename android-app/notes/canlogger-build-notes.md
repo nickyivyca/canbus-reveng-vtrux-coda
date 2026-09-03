@@ -6,8 +6,238 @@
 - `:cancore` — shared Android library (gs_usb protocol, pipeline, logging service, GUI framework)
 - `:coda` — Coda vehicle app
 - `:vtrux` — Vtrux vehicle app
+- `:p914` — Porsche 914 EV app (logger; display is future work)
+
+### `:p914` — architecture (2026-08-13)
+
+The only vehicle app with **no gs_usb dongle and no `CanPipelineManager`**. The VCU emits SLCAN
+(LAWICEL ASCII) over its USB CDC serial port, so the app's source is a byte stream rather than a
+USB device.
+
+- `SlcanFrameSource` (in `:cancore`) implements `CanFrameSource`, the three-member seam
+  `CanLoggingService` actually needs. That is why the seam exists — the gs_usb path is untouched.
+- **Trigger:** log while the source is attached. Uses the service's existing `TRIGGER_POWER` mode,
+  where the service is passive and acts only on `notifyPowerState()`, so stream-connected and
+  stream-disconnected are pushed straight in. Nothing reads the charger; no `:cancore` change.
+- **Logs:** `getExternalFilesDir(null)/P914Logs/` — no storage permission needed. Pull with
+  `adb pull /sdcard/Android/data/com.reverseit.p914/files/P914Logs/`.
+- **No Compose.** `MainActivity` is a bring-up readout built in code — status, frame counts, block
+  health and the frame digest. The real display is a separate module (Track B).
+- `MainActivity` accepts `--ez autoconnect true` so a bring-up run is scriptable from adb without
+  simulating taps.
+- Icon: the Porsche crest (`android-app/porsche-crest.png`) fitted onto transparent square
+  mipmaps via Pillow.
+
+#### Classes in `:p914`
+
+| Class | Role |
+|-------|------|
+| `P914Application` | Owns the source and the service binding. Two transports (TCP replay, USB CDC) behind one pump loop, both ending as an `InputStream` |
+| `UsbCdcSerial` | Hand-rolled CDC-ACM over `UsbDeviceConnection`. Exposes an `InputStream` |
+| `RootOtg` | Forces USB host mode via Magisk. **Does not work on this ROM** — see below |
+| `MainActivity` | Bring-up readout, transport buttons, `FLAG_KEEP_SCREEN_ON` |
+| `MbedFlasher` | Writes firmware to the mbed mass-storage volume over SAF — see "Flashing the VCU from the phone" |
+| `FlashActivity` | Flashing UI and the adb entry point. Exported; its own task |
+| `P914Constants` | Vehicle name, bridge host/port, log dir override |
+
+#### Why CDC-ACM is hand-rolled, not `usb-serial-for-android`
+
+The library is published on JitPack, which would mean adding a repository to shared build config
+under `FAIL_ON_PROJECT_REPOS`; `GsUsbDevice` is existing precedent for raw `UsbDeviceConnection`
+work in this project; and CDC-ACM needs only two control transfers before the bulk endpoint is a
+plain byte stream. It would also have needed a custom `ProbeTable` entry regardless, since
+`0d28:0204` is not a USB-serial chip.
+
+**The design decision that made it cheap:** `UsbCdcSerial` exposes an `InputStream`, so
+`SlcanFrameSource.pump()` consumes it exactly as it consumes the replay bridge's TCP socket. No
+new parsing, and the decode path on the car is bit-for-bit the one verified over TCP first.
+
+Two control transfers, both on the **control** interface's id:
+
+```
+SET_LINE_CODING       0x21 0x20  data: dwDTERate LE32, bCharFormat, bParityType, bDataBits
+SET_CONTROL_LINE_STATE 0x21 0x22  wValue 0x03 (DTR|RTS), no data
+```
+
+Baud **must** be 460800: the mbed interface MCU passes it through to the target UART, so a wrong
+rate yields pure garbage rather than an error. `SET_LINE_CODING` returning 7 (bytes accepted) is
+the success signal. Interfaces are found **by class, not index**, so a firmware change that
+reorders them cannot silently bind the wrong one.
+
+#### Three things that bite on the USB path
+
+1. **Read on a dedicated thread.** `bulkTransfer` is a single synchronous URB and USB bulk has no
+   flow control, so anything arriving while the parser is busy is dropped by the host controller.
+   Reading and parsing on one thread measured ~2x the loss. Queue-full is *counted* (`overruns`),
+   never silently dropped.
+2. **`bulkTransfer` returns -1 for both a timeout and a detached device.** Treating every -1 as
+   "idle, keep going" means an unplug spins forever and a replug is never noticed. Needs
+   `ACTION_USB_DEVICE_DETACHED` plus an idle-count backstop — measured on the car, the backstop
+   fired 33 ms *before* the broadcast, so both earn their place.
+3. **Device-absent is transient, not terminal.** Clearing the "keep trying" flag when the device
+   is not found kills the retry loop on the very first post-detach attempt.
+
+#### USB permission must be persistent
+
+`requestPermission()` alone gives a **one-shot** grant, so every replug re-prompts. The
+**"use by default for this USB device"** checkbox only appears when the app declares a matching
+`<usb-device>` filter in a `USB_DEVICE_ATTACHED` intent-filter — that is the whole difference, and
+it is visible in the dialog itself. `res/xml/usb_device_filter.xml` (VID 3368 / PID 516) plus the
+intent-filter and `launchMode="singleTask"` on `MainActivity` gives a persistent grant and makes
+plugging the VCU in launch the app. Confirmed on the car.
+
+#### `RootOtg` does not work on this ROM
+
+Kept because it is the natural place for the fix if the SELinux policy is ever added, and because
+its output is diagnostic. `/sys/class/dual_role_usb/otg_default/mode` is writable by neither the
+shell's nor the app's `su` under LineageOS 14 — see `outstanding-changes.md` Bug 6. It reports the
+role read back rather than trusting an exit code, which is exactly what `:vtrux`'s version fails
+to do.
+
+Bring-up over TCP (no USB host mode needed):
+```
+py -3.12 tools/slcan_bridge.py --file <capture> --loop     # laptop
+adb reverse tcp:9000 tcp:9000
+adb shell am start -n com.reverseit.p914/.MainActivity --ez autoconnect true
+```
+
+**Staying awake.** `MainActivity` sets `FLAG_KEEP_SCREEN_ON` — during bring-up the screen is the
+only readout, and in the car this is a dash display that should never sleep. That is separate
+from the `PARTIAL_WAKE_LOCK` `CanLoggingService` holds while logging, which keeps the CPU
+servicing USB bulk transfers and stops Android enabling USB autosuspend. Different failure modes;
+both wanted. Battery-optimisation exemptions applied as for `:vtrux`:
+
+```
+adb shell dumpsys deviceidle whitelist +com.reverseit.p914
+adb shell cmd appops set com.reverseit.p914 RUN_ANY_IN_BACKGROUND allow
+```
+
+### The VCU as a USB device (measured 2026-08-13, OnePlus 7T in host mode)
+
+```
+vid:pid  0d28:0204   product "MBED CMSIS-DAP"   manufacturer "MBED"
+bDeviceClass 02, 4 interfaces:
+  intf 0  class=08 sub=06 proto=50   mass storage   <- claimed by usb-storage
+  intf 1  class=02 sub=02 proto=01   CDC control    <- unclaimed
+  intf 2  class=0a sub=00 proto=00   CDC data       <- unclaimed
+  intf 3  class=03 sub=00 proto=00   HID            <- claimed by usbhid
+```
+
+What this settles:
+
+- **The CDC interfaces are unclaimed**, so the app can claim interfaces 1 and 2 without fighting a
+  kernel driver. `claimInterface(force = true)` is used anyway, since another ROM could bind
+  `cdc-acm` and then reads would silently return nothing.
+- **The MSD interface being claimed by `usb-storage` is harmless** to the serial path — different
+  interface. The earlier worry that Android mounting the mbed would interfere is unfounded.
+- **That MSD interface is also the firmware-loading route.** The mbed presents its flash-by-copy
+  volume there: dropping a `.bin` on it programs the target. Built and working — see
+  "Flashing the VCU from the phone" below.
+
+**Host mode is hub-dependent** — see `outstanding-changes.md` Bugs 6 and 7. With the bench hub
+powered, the phone sat at `ufp`/device and enumerated nothing; with hub power removed it holds
+`dfp`/host reliably. The root role-forcing path does not work on this ROM.
 
 Migrated from PoC at `android-app/CanReaderApp/` (GsUsbFrame.kt, GsUsbDevice.kt).
+
+### Flashing the VCU from the phone (built and proven on the car, 2026-08-13)
+
+The point: with the phone in the car and the laptop not, the VCU used to be unflashable without
+carrying a laptop out to it. Now firmware and app development can happen in the same sitting.
+
+**The operator is an assistant session over wifi adb, not a person tapping buttons.** That framing
+drove the design — the primary interface is the command line, and everything the screen prints also
+goes to logcat under `P914`, so a headless run is fully observable without `uiautomator`:
+
+```
+adb push fw.bin /sdcard/Android/data/com.reverseit.p914/files/Firmware/
+adb shell am start -n com.reverseit.p914/.FlashActivity -e image fw.bin --ez go true
+adb logcat -s P914
+```
+
+The UI cannot be removed even so: **a SAF permission cannot be granted from a shell**, so the
+one-time volume grant has to come from the document picker. The screen exists mainly to host that,
+with manual selection and a confirm dialog as the by-hand fallback.
+
+| Class | Role |
+|-------|------|
+| `MbedFlasher` | Volume identification, delete/write/readback-verify, `FAIL.TXT` reporting. No UI, no reset |
+| `FlashActivity` | Intent and manual entry points, the SAF grant, the on-screen log |
+| `P914Application.flashAndReset()` | Owns the ordering: stop pump, flash, settle, BREAK, restart |
+| `UsbCdcSerial.sendBreak()` | The reset |
+
+#### Ordering is the whole game
+
+The sequence is stop pump → write → **wait** → reset, and it is spread across three classes, which
+is why `flashAndReset()` exists to own it rather than letting the UI sequence it. The hub's
+`914/notes/artifacts/README.md` records why: the LPC1768 does not auto-reset after programming
+here, and a reset sent too early leaves the target halted with no serial output — indistinguishable
+from a bricked board.
+
+The settle wait is **8 s and untuned**, because there is nothing to tune against: the interface MCU
+reports neither the start nor the end of programming. Chosen on the reasoning that waiting too long
+costs seconds and waiting too little costs a target that looks bricked.
+
+The pump is stopped first for two reasons: the reset ends the stream anyway, and the break needs
+the CDC control interface, which a live session holds claimed.
+
+#### Verifying a flash — readback is not enough
+
+A readback proves the FAT write landed and nothing was silently discarded. It says **nothing** about
+whether the target was programmed. Worse, writing a byte-identical image cannot distinguish the two
+at all: an unprogrammed target looks exactly the same afterwards.
+
+What settles it is flashing a *different* build and watching the stream change character. Measured:
+
+| Image | frames | csv |
+|-------|--------|-----|
+| `fw-dualemit-verify.bin` | 262 fps | climbing 2/s |
+| `fw-slcan-only.bin` | 262 fps | **0** |
+
+`csv` frozen at zero with the frame rate unchanged is proof the target is running different code.
+Both directions were flashed from the phone and the car was left on dual-emit.
+
+#### The reset: CDC SEND_BREAK works from Android
+
+`SEND_BREAK` (`0x21 0x23`) as a control transfer — assert continuous (`wValue 0xFFFF`), hold 500 ms,
+clear (`wValue 0`) — mirrors `send_break()` in the hub's `vcu_serial.py` at the USB level.
+**Verified on the car**, so the phone can reset the VCU with no power cycle and no button press,
+which matters because the reset button is not reachable with the car assembled.
+
+Failure to *clear* the break is reported distinctly: it would leave the target held in reset, which
+looks exactly like a board that died during flashing.
+
+#### Two guards, because this component is exported
+
+`am start` from a shell cannot launch a non-exported component, so adb-driving this required
+`exported="true"`. Two things keep that from being a hole:
+
+1. **Names, not paths.** An intent supplies a filename resolved only inside the app's own external
+   files dir, with a canonical-path check rejecting anything that escapes it. A caller can flash
+   nothing it did not already put where only this app can write.
+2. **`MBED.HTM` before anything destructive.** A SAF tree is just a folder the user picked, and the
+   picker will happily offer internal storage or an unrelated USB stick. `MBED.HTM` is the mbed
+   interface firmware's own signature file, so its presence is a positive identification rather
+   than a guess from a volume name or UUID.
+
+#### `am start` silently doing nothing — taskAffinity vs singleTask
+
+`FlashActivity` originally shared the default task affinity with `MainActivity`, which is
+`singleTask`. An external launch (adb is uid 2000, so the start needs NEW_TASK semantics) got folded
+into that existing task and **the extras were delivered to `MainActivity` instead**. `am start`
+reports "intent has been delivered to currently running top-most instance" and no flash happens.
+Adding `FLAG_ACTIVITY_NEW_TASK` did not help.
+
+Fixed with `android:taskAffinity="com.reverseit.p914.flash"` plus `launchMode="singleTop"`, so it
+gets its own task and a repeat launch routes to `onNewIntent`. Intent extras are stripped once
+acted on, so a redelivered intent cannot re-flash the car off a stale command.
+
+#### Open question
+
+**Whether the persisted SAF grant survives a physical replug of the VCU is untested** — it could not
+be checked remotely. The volume's fsUuid is `0000-0000`, baked into the mbed's FAT image, so the
+tree URI *should* be stable across remounts, but that is reasoning rather than evidence. If it does
+not hold, the one-time picker tap becomes a per-replug tap.
 
 ---
 
@@ -68,6 +298,10 @@ Segmentation: rolls on size (50 MB), time (5 min), or vehicle `LogSegmentPolicy`
 | `BusmasterWriter` | BUSMASTER format output |
 | `CanLoggingService` | Foreground logging service |
 | `SignalDecoder` | Interface for vehicle signal decoders |
+| `SlcanReader` | Incremental LAWICEL/SLCAN ASCII reader (914 VCU over USB CDC serial). Holds a partial token across `feed()` calls, absorbs CRLF as one terminator so interleaved CSV records do not read as bare-CR acks, excludes the integrity frame from its own block, and CRCs the bytes as received. Covered by `SlcanParityTest` |
+| `SlcanSource` | Drives `SlcanReader` from an `InputStream` (serial port or TCP). Blocking `pump()` plus a `slcanFrames()` cold-flow wrapper. No Android imports, so the whole path is JVM-testable |
+| `CanFrameSource` | The three members `CanLoggingService` actually needs from a source: `frames`, `activeDeviceCount()`, `activeBusCount()`. `CanPipelineManager` implements it; widening the service's property to this interface let a non-gs_usb vehicle use the logging path without touching the multi-dongle code |
+| `SlcanFrameSource` | `CanFrameSource` over an SLCAN byte stream. One stream, one bus. Starts a fresh reader per `pump()`, because a reconnected stream can begin mid-frame and a carried-over partial token would splice two unrelated frames |
 
 ---
 
@@ -114,6 +348,37 @@ JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" \
 
 **First-build gotcha:** Gradle auto-downloads build-tools 34.0.0 on first run. If a previous failed build left a corrupt install, delete `%LOCALAPPDATA%\Android\Sdk\build-tools\34.0.0` and the `.temp\` folder, then retry. Or reinstall via Android Studio SDK Manager.
 ```
+
+### `JAVA_HOME` is not optional here — the system JDK breaks the build
+
+Found 2026-08-13. The system default JDK on this machine is **Eclipse Adoptium 25.0.2**, and
+Kotlin 1.9.22's `JavaVersion.parse` cannot read that version string. Building without `JAVA_HOME`
+pointed at the bundled JBR fails while *compiling the build script itself*:
+
+```
+java.lang.IllegalArgumentException: 25.0.2
+```
+
+Two things make this harder to recognise than it should be:
+
+- **It is latent.** Gradle caches the compiled build script, so an unchanged tree keeps building
+  on the stale cache. It surfaces only when something invalidates that cache — editing any
+  `build.gradle.kts` will do it — so the failure looks like it was caused by whatever innocuous
+  edit you just made, in a file with nothing to do with the error.
+- **The message names no file, no module and no task**, so it reads like a corrupt Gradle cache
+  rather than a toolchain mismatch.
+
+The fix is the `JAVA_HOME` prefix already shown above — always pass it. In PowerShell:
+
+```powershell
+$env:JAVA_HOME = "<ANDROID_STUDIO_JBR>"
+```
+
+**Deliberately not fixed by pinning `org.gradle.java.home` in `gradle.properties`.** That file
+syncs across machines via SeaDrive and is shared by all four app modules, so a machine-specific
+absolute path there would break the build on Desktop rather than fix it here. Setting it
+per-invocation keeps the workaround local to the machine that needs it. Whether to pin it anyway
+is the owner's call and has not been decided.
 
 APK outputs:
 - `coda/build/outputs/apk/debug/coda-debug.apk`
@@ -256,6 +521,15 @@ Full hardware details in `projects/coda/notes/android-coda-app-notes.md`.
 
 **`local.properties` not synced:** This file is gitignored by convention and not in SeaDrive sync. Must be recreated on each machine.
 
+**`build/` directories ARE synced, and they carry absolute paths (found 2026-08-13):** SeaDrive syncs the Gradle `build/` folders between machines, and AGP caches machine-specific absolute paths inside them. Building on a second machine then fails in dexing with:
+
+```
+Execution failed for DexingNoClasspathTransform: ...\cancore\build\intermediates\runtime_library_classes_dir\...
+  > this and base files have different roots: <repo-root>\NotGit\reverse-it\... and <repo>
+```
+
+Nothing is wrong with the source. Delete the affected `build/` directories (`cancore/`, `coda/`, `vtrux/`) and rebuild — about 30 s. Worth suspecting first whenever a build fails right after switching machines, since the error names a path that does not exist on the current one.
+
 ---
 
 ---
@@ -338,7 +612,7 @@ The 120-ohm CAN terminator resistor used on the bench test bus is broken (exact 
 
 ## Vtrux In-Truck Deployment — Bugs Fixed (2026-03-23)
 
-### Device: OnePlus 7 Pro (HD1901), Android 14, Magisk root
+### Device: OnePlus 7T (HD1901), Android 14, Magisk root
 
 ADB port at time of session: `<lan-ip>:38463` (changes each wireless debug session).
 
@@ -372,7 +646,7 @@ Fix: added `.setPackage(packageName)` to the intent in both `UsbLaunchActivity.c
 
 **Root cause:** When the ignition-switched hub power source turns on, the hub switches from bus-powered (phone provides 5V) to self-powered (external 12V→5V adapter). During this transition the hub cuts power to one or more downstream ports. The CAN dongle's port does not recover on its own.
 
-**Phone:** OnePlus 7 Pro stays in OTG host mode (`dfp`, `data_role: host`) throughout — OTG mode is not dropped. The issue is entirely within the hub's port power management.
+**Phone:** OnePlus 7T stays in OTG host mode (`dfp`, `data_role: host`) throughout — OTG mode is not dropped. The issue is entirely within the hub's port power management.
 
 **What doesn't work:**
 - `echo host > /sys/class/typec/port0/data_role` — wrong path on this device (node is `otg_default`)
@@ -388,7 +662,7 @@ echo dfp > /sys/class/dual_role_usb/otg_default/mode   # back to host mode
 ```
 This power-cycles the hub from the phone's side, causing all hub ports to re-enumerate cleanly.
 
-**Relevant sysfs paths (OnePlus 7 Pro):**
+**Relevant sysfs paths (OnePlus 7T):**
 - `/sys/class/dual_role_usb/otg_default/mode` — values: `dfp` (host) / `ufp` (device). Requires root.
 - `/sys/class/dual_role_usb/otg_default/data_role` — values: `host` / `device` (read-only reflection)
 - `/sys/bus/usb/devices/` — enumerate connected USB devices. Hub is typically `2-1` or `1-1` depending on bus assignment after role toggles.
@@ -413,9 +687,9 @@ Fix: `CanPipelineManager.removeDevice()` now returns `Boolean` (true = was activ
 
 **Goal:** When the truck is off (no charger), switch the phone to USB device mode (`ufp`) to cut the 5V OTG bus supply to the hub and CAN dongles, preventing battery drain while parked.
 
-**Approach tried:** Write `ufp` to `/sys/class/dual_role_usb/otg_default/mode` via Magisk root (`su -c`). The write returns exit code 0, but the OnePlus 7 Pro's OTG driver auto-reverts to `dfp` (host) after 3-4 seconds, re-powering the hub. A hold loop that re-asserts `ufp` every 0.8-2 seconds was tried but the VBUS power still cycles visibly.
+**Approach tried:** Write `ufp` to `/sys/class/dual_role_usb/otg_default/mode` via Magisk root (`su -c`). The write returns exit code 0, but the OnePlus 7T's OTG driver auto-reverts to `dfp` (host) after 3-4 seconds, re-powering the hub. A hold loop that re-asserts `ufp` every 0.8-2 seconds was tried but the VBUS power still cycles visibly.
 
-**Why it doesn't work on the OnePlus 7 Pro (HD1901, Android 14, kernel 4.14.348-openela-perf):**
+**Why it doesn't work on the OnePlus 7T (HD1901, Android 14, kernel 4.14.348-openela-perf):**
 
 1. **`dual_role_usb/*/mode` write doesn't stick.** The Qualcomm USB driver's CC pin detection hardware overrides the software role within 3-4 seconds. Even writing every 800ms (faster than the auto-revert) doesn't prevent VBUS toggling -- the hardware VBUS boost appears to be controlled independently of the software mode.
 
@@ -458,7 +732,7 @@ Fix: `CanPipelineManager.removeDevice()` now returns `Boolean` (true = was activ
 - If mDNS doesn't find the device, `adb connect <ip:port>` using the port from the Wireless Debugging main screen (not the pairing port)
 
 ### Devices
-- OnePlus 7 Pro (HD1901): wireless ADB, guid `adb-16e7d2b3-RSkDoo`
+- OnePlus 7T (HD1901): wireless ADB, guid `adb-16e7d2b3-RSkDoo`
 - Pixel 8 Pro (husky): USB, serial `41270DLJG00054`
 - Both have the vtrux app installed
 
@@ -495,7 +769,7 @@ ADB is on the system PATH — use `adb` directly, no full SDK path needed.
 
 **Always use PowerShell, never Git Bash for ADB.** Git Bash mangles `/sdcard/...` device paths into `C:/Program Files/Git/sdcard/...`. Run ADB commands directly from PowerShell or via `powershell -Command "adb ..."`.
 
-**Transport IDs:** After pairing, the OnePlus 7 Pro (guid `16e7d2b3`) shows up as mDNS transport `adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp` (no space variant). If the device shows `offline` after a WiFi drop, run `adb disconnect <lan-ip>:<port>` then `adb connect <lan-ip>:<port>` using the current port from Developer Options → Wireless Debugging. The port changes every time wireless debugging is toggled — check the phone screen each session.
+**Transport IDs:** After pairing, the OnePlus 7T (guid `16e7d2b3`) shows up as mDNS transport `adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp` (no space variant). If the device shows `offline` after a WiFi drop, run `adb disconnect <lan-ip>:<port>` then `adb connect <lan-ip>:<port>` using the current port from Developer Options → Wireless Debugging. The port changes every time wireless debugging is toggled — check the phone screen each session.
 
 ```powershell
 # Pull a log file

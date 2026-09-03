@@ -21,7 +21,7 @@ Survey artifacts: `artifacts/survey_partscar.txt`, `artifacts/survey_normal.txt`
 ### Bus mapping
 
 Bus numbers differ between captures (dongle insertion order is arbitrary).
-Identified by anchor IDs per coda.md: presence of B CAN anchors (0x270, 0x271, 0x3A0,
+Identified by anchor IDs per projects/coda/README.md: presence of B CAN anchors (0x270, 0x271, 0x3A0,
 0x381, etc.) identifies B CAN. D CAN signals visible on B CAN (e.g. 0x1C0) are GWM
 rebroadcasts. D CAN anchors (0x212, 0x241, 0x278, 0x315 native) but no B CAN exclusives
 = D CAN. Cell IDs 0x000-0x119 = C CAN.
@@ -36,8 +36,8 @@ rebroadcasts. D CAN anchors (0x212, 0x241, 0x278, 0x315 native) but no B CAN exc
 
 | ID (hex) | Bus | Freq in normal | Notes |
 |----------|-----|---------------|-------|
-| 0x536 | C CAN | 17.8 Hz | Unidentified; 7306 frames. Not in coda.md. |
-| 0x600 | B CAN + D CAN | 1.9 Hz | Unidentified; 1320 frames over 708 s. Appears on both Bus 1 (D CAN) and Bus 3 (B CAN) in normal Coda with identical data -- GWM rebroadcast on both buses. Not in coda.md. |
+| 0x536 | C CAN | 17.8 Hz | Unidentified; 7306 frames. Not in projects/coda/README.md. |
+| 0x600 | B CAN + D CAN | 1.9 Hz | Unidentified; 1320 frames over 708 s. Appears on both Bus 1 (D CAN) and Bus 3 (B CAN) in normal Coda with identical data -- GWM rebroadcast on both buses. Not in projects/coda/README.md. |
 | 0x591 | D CAN | 1 frame | Startup one-shot: `A0 00 00 00 00 00 00` (7 bytes). |
 | 0x592 | D CAN | 1 frame | Startup one-shot: `CC 12 A5 7D 46 A6 4A FB` (8 bytes). |
 | 0x603 | D CAN | 3 frames | Sparse; D CAN. |
@@ -62,7 +62,7 @@ Not yet investigated or attributed — recorded here as a known hardware differe
 
 All IDs below are on B CAN (Bus 3) unless noted.
 
-| ID (hex) | Signal (coda.md) | Normal B-range | Parts car B-range | Interpretation |
+| ID (hex) | Signal (projects/coda/README.md) | Normal B-range | Parts car B-range | Interpretation |
 |----------|-----------------|----------------|-------------------|----------------|
 | 0x270 B0 | BMS fault status | 0x00-0x12 | **0x00-0x02** | Narrower; P1811 is stored not active during capture |
 | 0x271 B0 | VehicleFaultLampReq | 0x00-0x06 | 0x00-0x06 | Same range; need analyze_id for steady-state value |
@@ -389,7 +389,7 @@ module, not a fault-related state.
 **Log:** `projects/coda/logs/(Car 2 log) 03-08-25 16-14-24.asc` (Vector ASC format)
 **Duration:** 1012.87 s  **Frames:** 1,092,308  **Unique IDs:** 39
 **Logger:** CODACAN (owned by Car 2, another Coda owner)
-**Survey artifact:** `artifacts/survey_jakecar.txt`
+**Survey artifact:** `artifacts/survey_car2.txt`
 
 ## Bus Identification
 
