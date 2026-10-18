@@ -24,7 +24,7 @@ Counts lines quickly using binary reads (1 MiB buffer). Counts `\n` bytes direct
 ---
 
 ## merge.py — Multi-File Capture Merging
-*Source last modified: 2026-08-09 16:01:34*
+*Source last modified: 2026-09-27 16:49:21*
 
 > ### Use `detect_capture_sessions()`, not `detect_capture_groups()`
 >
@@ -37,7 +37,7 @@ Counts lines quickly using binary reads (1 MiB buffer). Counts `\n` bytes direct
 > | Vtrux `truklog_M0/M1/M2` start 13:27, 15:27, 16:32 same day | M is a **separate session**, not a bus |
 > | Coda `17_drive_M1_T15` / `_M2_T15` start **12 s apart** | here M really **is** a simultaneous bus |
 > | Coda `17_drive_M0_T12` = 2024-12-11, `_M0_T13` = 2024-12-19 | one M spans unrelated captures 8 days apart |
-> | Coda `partsdrive_M0_T0` = 2025-07-29, `_T1` = **2026-01-25**, `_T2` = 2025-08-21 | **T order is not time order** |
+> | Coda `partsdrive_M0_T0` = 2025-07-29, `_T1` = **2026-01-25** | **T order is not time order** |
 >
 > Because both M conventions occur, neither can be inferred from names.
 > `detect_capture_groups()` returns all of `truklog_M0/M1/M2` as **one** group, so
@@ -82,7 +82,14 @@ Verified against all three real conventions:
 |---|---|---|
 | Vtrux `truklog_M0/M1` (hours apart) | 1 group | `truklog_M0`, `truklog_M1` |
 | Coda `17_drive` (M1/M2 concurrent + M0 across two dates) | 1 group | `17_drive_M0`, `17_drive_M0#2`, `17_drive_M1+M2`, `17_drive_M1+M2#2` |
-| Coda `partsdrive` (T order ≠ time order) | 1 group, wrong order | 4 sessions, time-ordered |
+| Coda `partsdrive` (T order ≠ time order) | 1 group, wrong order | 2 sessions, time-ordered (`partsdrive_M0`, `partsdrive_M0#2`) |
+
+> **Note (2026-09-21):** this row used to read "4 sessions". Two of the four
+> `partsdrive_*` files were Vtrux Powertrain captures misfiled under Coda and
+> have been moved to the Vtrux log folder (log folders are internal-only
+> and not part of the public repo).
+> The row above is the re-measured result on the files that remain; the
+> behaviour being demonstrated is unchanged.
 
 ### `read_chunk_start(path) -> float | None`
 
@@ -96,14 +103,54 @@ Absolute start time of a capture chunk as an epoch float. Reads the BUSMASTER `*
 - Files matching neither pattern are silently ignored
 - Retained for backward compatibility; new code should use `detect_capture_sessions()`
 
-### `merge_files(paths) -> Iterator[CANFrame]`
+### `merge_files(paths, bus_map=None) -> Iterator[CANFrame]`
 
 Parses multiple log files and yields frames sorted by timestamp using a heap merge.
 
 - Uses `absolute=True` so T-chunk files chain correctly on a shared timeline (requires `busmaster.py` to parse the `***START DATE AND TIME***` header for the wall-clock epoch)
 - **Bus number** on each frame is overridden by `_M{bus}` from the filename only if `_M{bus}_T{chunk}` pattern matches; T-only files are not overridden
+- **`bus_map`** (optional, from `buses.resolve_files()`): per-file `{raw channel: bus name or None}`. When given, `frame.bus` becomes the bus **name** (a `str`), frames on channels mapped to `None` are dropped, and the `_M` override is not applied. Use it whenever a tool needs "the PT bus" of an Android capture — see `buses.py` below.
 - Heap merge uses `(timestamp, index)` as key; index is a per-file counter for tie-breaking
 - All timestamps shifted so earliest frame becomes `t=0`
+
+---
+
+## buses.py — Channel -> Bus Resolution
+*Source last modified: 2026-09-25 17:05:49*
+
+Resolves raw logger channel numbers to named buses **per file**, for tools that
+analyse a merged multi-file stream. Written 2026-09-25 after two tools locked to the
+first channel carrying `0x051` and discarded a whole Android session.
+
+**Why neither older rule works.** Android T0 chunks re-number one bus several times
+**in sequence** — `vtrux_20260925_155857_T0` carries powertrain on ch 8 (0-22.8 s),
+10 (31.4-33.0 s), 14 (48.3-54.3 s), 16 (75.7-77.1 s) and 18 (97.5 s on), with disjoint
+spans. "First channel with the anchor" keeps only ch 8; "highest-count claimant wins"
+(`tools/influx_upload.identify_buses`) keeps only ch 18 and drops ch 14, which held the
+event being investigated.
+
+**Rule.** Each channel gets the bus whose anchor set it matches by the highest
+*fraction* (identify_buses' step 1). Among channels with the same name, every
+claimant is kept unless its time span overlaps a busier claimant's by more than
+`OVERLAP_TOLERANCE_S` (1 s) — only then is it concurrent duplicate traffic. Channels
+matching no anchor map to `None`.
+
+### `scan_channels(path) -> dict[int, ChannelSpan]`
+One full parse: per raw channel, `count`, `first_ts`, `last_ts` (file-relative) and
+`ids`. ~3.6 s per 50 MB BUSMASTER chunk on `the Linux box`.
+
+### `resolve_channels(spans, bus_anchors, tolerance_s=1.0) -> dict[int, str | None]`
+`bus_anchors` is a list of `(name, {ids})`, same shape as `influx_upload.VEHICLE_PROFILES[...]["bus_anchors"]`.
+
+### `resolve_files(paths, bus_anchors) -> dict[Path, dict[int, str | None]]`
+`scan_channels` + `resolve_channels` for each file; pass the result to
+`merge_files(paths, bus_map=...)`.
+
+### `describe(bus_map) -> list[str]`
+One report line per file, e.g. `..._T0.log: obd=ch7+9+13+15+17, powertrain=ch8+10+14+16+18`.
+
+**Users:** `projects/vtrux/tools/diagnose_vtrux.py`,
+`projects/vtrux/tools/vtrux_charge_failure_analysis.py`.
 
 ---
 
@@ -142,7 +189,7 @@ Convenience wrapper. Returns:
 ---
 
 ## timebase.py — BUSMASTER Anchor Resolution
-*Source last modified: 2026-08-09 22:56:21*
+*Source last modified: 2026-09-27 16:40:16*
 
 Decides the absolute instant a log file's **first frame** occurred, which is the anchor
 callers need because `BusmasterParser.parse_file()` re-bases every file so its first data

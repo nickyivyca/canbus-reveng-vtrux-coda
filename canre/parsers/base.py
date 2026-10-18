@@ -13,7 +13,7 @@ class CANFrame:
     timestamp: float          # seconds (relative to capture start)
     arbitration_id: int       # 11 or 29-bit ID
     data: bytes               # payload (0-8 bytes)
-    bus: int                  # channel/bus number
+    bus: int                  # channel/bus number (bus-name str after merge_files(bus_map=...))
     is_extended: bool         # True if 29-bit ID
     dlc: int                  # data length code
     is_tx: bool = False       # True if transmitted (vs received)

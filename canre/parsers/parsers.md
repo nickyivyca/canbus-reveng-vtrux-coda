@@ -31,7 +31,7 @@ All scratchpads are invoked via the Bash tool from the project root, so `"."` re
 There is no `canre.parsers.parsers` submodule. The function is `parse_file`, not `parse_log`. The ID field is `arbitration_id` and the bus field is `bus`.
 
 ## base.py — Core Data Types
-*Source last modified: 2026-02-16 00:35:37*
+*Source last modified: 2026-09-25 17:06:04*
 
 ### `CANFrame` dataclass
 
@@ -41,7 +41,7 @@ class CANFrame:
     timestamp: float       # seconds (relative to capture start or absolute)
     arbitration_id: int    # 11-bit or 29-bit CAN ID
     data: bytes            # payload, 0–8 bytes
-    bus: int               # channel/bus number
+    bus: int               # channel/bus number (a bus-name str after merge_files(bus_map=...))
     is_extended: bool      # True = 29-bit extended ID
     dlc: int               # data length code
     is_tx: bool = False    # True = transmitted frame
@@ -67,7 +67,50 @@ class BaseParser(ABC):
 ---
 
 ## busmaster.py — BUSMASTER `.log` Parser
-*Source last modified: 2026-03-28 13:33:25*
+*Source last modified: 2026-09-27 16:40:16*
+
+**Changed 2026-09-26 — midnight rollover was measured against the wrong frame.**
+The check was `rel_time - t_origin < -1.0`, i.e. against the **first frame in the
+file**, adding a day to anything more than a second earlier. Captures are not always
+written in timestamp order — the Android logger emits a few seconds of frames out of
+order at the start of a chunk — so a benign 4-second backwards write became a 24-hour
+jump. **36 of 1069 Coda captures** parsed to a span of `-1.0..86399.0 s` against headers
+only minutes long (`coda_20260508_191742_T0`: 6-minute header, 24-hour parsed span);
+1 of 2031 Vtrux captures. The comparison is now against the **previous** frame with a
+12-hour threshold (`_ROLLOVER_BACKSTEP`), since a real rollover steps back by nearly a
+full day while an out-of-order write steps back by seconds. Verified: the 36 captures
+now parse to their true length, and 0 of 33 laptop time-of-day captures regressed.
+
+Two consequences beyond the timestamps. This was the real cause of the
+"T0 spans 24 h with later chunks nested inside it" overlap that
+`influx_sync.overlapping_files()` was added to work around on 2026-08-26 — the note in
+`tools/tools.md` attributing that to the Android logger is wrong. And it manufactured
+phantom multi-module dropout events in gap-based analysis.
+
+**Changed 2026-09-27 — `_DATA_RE` could not match a negative timestamp component,
+so it was discarding data lines.** The Android logger stamps a frame received before
+the file's origin with negative components (`00:00:-2:-3130`, `00:-1:-26:-150`), which
+the pattern rejected, and `parse_file` dropped the line with no warning and no counter.
+Across 3,674 files and 2.379 bn data lines, **4,827,795 lines (0.203 %) in 1,715 files**
+were being lost; the worst capture lost 447,123 lines, 44 % of itself, all from its start.
+The groups are now `-?\d{1,2}` and `-?\d{1,4}`, since `%02d`/`%04d` widen rather than
+truncate a negative. `_parse_timestamp` needed no change — summing the signed components
+reproduces the offset exactly (round-tripped 4,010 values against a reimplementation of
+the logger's Kotlin formatter, 0 mismatches). The hour field stays at two digits: the one
+corpus line that exceeds it is `50224:01:46:2870`, which is corruption.
+
+**Frames can carry a negative timestamp, and that is correct.** The first frame *in file
+order* is still t=0 under `absolute=False`, so a frame stamped before the origin keeps
+its true earlier time. The pre-origin block reaches **-7.0 s**, and clock-step-repaired
+captures reach **-186 s** — the earlier "observed down to about -4 s" was one file. Do
+not clamp or filter negatives.
+
+**A second, separate defect is repaired in the logs, not here.** In 55 captures the
+phone's wall clock stepped backwards mid-file by 8–216 s, leaving two blocks whose stamped
+ranges overlap. It is independent of the dropped lines — several rewinding captures drop
+none — so the regex fix does not touch it. Those files were repaired on disk, with the
+originals kept in a `pre-clockstep-repair/` folder in each log root. See
+`projects/coda/notes/android-log-timestamp-defects.md`.
 
 Parser for BUSMASTER CAN log files (v3.x). This is the primary log format for the project and the first parser tried during auto-detection.
 
@@ -86,7 +129,7 @@ Streams through a BUSMASTER log, yielding one `CANFrame` per data line. Skips he
 **Timestamp handling:**
 - Frame timestamps in the file are **session-relative** (reset to 0 at logging start), in `HH:MM:SS:TTTT` format where TTTT = 10 kHz ticks (0.1 ms, NOT milliseconds).
 - Converted to seconds via: `H*3600 + M*60 + S + TTTT*0.0001`.
-- **absolute=False** (default): first frame's timestamp becomes t=0; all others are relative to it. Midnight rollover handled (adds 86400 s if delta < -1 s).
+- **absolute=False** (default): first frame's timestamp becomes t=0; all others are relative to it. Midnight rollover is detected against the **previous** frame, not the first: a step back of more than `_ROLLOVER_BACKSTEP` (12 h) adds a day. Smaller backward steps are out-of-order writes and are left alone, so they yield slightly negative timestamps — see the 2026-09-26 note above.
 - **absolute=True**: each frame's session-relative time is offset by the wall-clock `HH:MM:SS` from the file's `***START DATE AND TIME DD:MM:YYYY HH:MM:SS:TTT***` header (sub-second field ignored to avoid ms/ticks ambiguity). This gives every T-chunk a unique, non-overlapping time base so `merge_files()` can chain them correctly. Files without the header fall back to session-relative time (epoch=0).
 
 **HEX/DEC mode:**

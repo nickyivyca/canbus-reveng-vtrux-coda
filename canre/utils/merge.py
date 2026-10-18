@@ -131,7 +131,7 @@ def _extract_bus_from_filename(path: Path) -> int | None:
 #                            -> M really is a simultaneous BUS here
 #   Coda   17_drive_M0_T12 = 2024-12-11, _M0_T13 = 2024-12-19
 #                            -> one M spans unrelated captures 8 days apart
-#   Coda   partsdrive_M0_T0 = 2025-07-29, _M0_T1 = 2026-01-25, _M0_T2 = 2025-08-21
+#   Coda   partsdrive_M0_T0 = 2025-07-29, _M0_T1 = 2026-01-25
 #                            -> T ORDER IS NOT TIME ORDER
 #
 # So neither convention can be inferred from names alone. detect_capture_sessions()
@@ -304,12 +304,35 @@ def detect_capture_sessions(
     return result
 
 
-def merge_files(paths: list[Path | str]) -> Iterator[CANFrame]:
-    """Parse multiple files and yield frames sorted by timestamp.
+def merge_files(
+    paths: list[Path | str],
+    bus_map: dict[Path, dict[int, str | None]] | None = None,
+) -> Iterator[CANFrame]:
+    """Parse multiple files and yield frames in merged timestamp order.
 
     Uses absolute timestamps internally so that T-chunk files from the
     same capture chain correctly.  The first frame's timestamp becomes
     t=0 in the output (re-zeroed after merging).
+
+    **The output is not guaranteed to be fully sorted.**  ``heapq.merge``
+    assumes each input iterable is already sorted, and a BUSMASTER file is
+    not: a multi-channel capture writes its channels interleaved, so the
+    file as a whole steps backwards even though each channel is monotonic.
+    Corrected 2026-09-27 -- the previous wording promised sorted output.
+
+    The residual disorder is small and bounded.  Measured over 844 Coda
+    captures that show any backwards step, the largest single step is 8 ms
+    median and 48 ms at p99, which is ordinary channel interleave; exactly
+    one file exceeds 0.1 s.  Anything reasoning about gaps, rates or event
+    ordering should still sort per ``(bus, id)`` series first, as
+    AGENTS.md requires -- that has always been the rule and this does not
+    change it.
+
+    The one case that used to break the bound was the Android logger's
+    backward wall-clock step, which put two blocks up to 216 s out of
+    order within a single file.  Those 55 captures were repaired on disk
+    (with a one-off repair script, internal-only) rather than
+    worked around here, so no reordering buffer is needed.
 
     The bus number on each frame is overridden by the _M{bus} value in
     the filename (if present).
@@ -318,6 +341,12 @@ def merge_files(paths: list[Path | str]) -> Iterator[CANFrame]:
     ----------
     paths:
         Ordered list of log file paths to merge.
+    bus_map:
+        Optional per-file ``{raw channel: bus name or None}``, as built by
+        ``canre.utils.buses.resolve_files()``.  When given, each frame's
+        ``bus`` is replaced by its bus NAME (a str), frames on channels mapped
+        to None are dropped, and the _M filename override is not applied.
+        Use this whenever channel numbers can churn within a file (Android T0).
 
     Yields
     ------
@@ -328,9 +357,15 @@ def merge_files(paths: list[Path | str]) -> Iterator[CANFrame]:
     # Build per-file iterators using absolute timestamps so T-chunks chain.
     def _decorate_stream(filepath: Path) -> Iterator[tuple[float, int, CANFrame]]:
         bus_override = _extract_bus_from_filename(filepath)
+        names = bus_map.get(filepath) if bus_map is not None else None
         idx = 0  # tie-breaker for heap ordering
         for frame in parse_file(filepath, absolute=True):
-            if bus_override is not None:
+            if bus_map is not None:
+                name = names.get(frame.bus) if names else None
+                if name is None:
+                    continue
+                frame.bus = name
+            elif bus_override is not None:
                 frame = CANFrame(
                     timestamp=frame.timestamp,
                     arbitration_id=frame.arbitration_id,

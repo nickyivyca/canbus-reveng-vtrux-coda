@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canre"
+version = "0.1.0"
+description = "Vehicle-agnostic CAN bus reverse engineering framework: log parsers, analysis and DBC tooling"
+readme = "canre/README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# canre.parsers -- the subpackage external consumers depend on -- is pure
+# stdlib. Keeping the base install dependency-free means a downstream repo
+# that only needs parse_file installs nothing else.
+dependencies = []
+
+[project.optional-dependencies]
+# canre.dbc: builder/skeleton/validator/msghash decode against cantools.
+dbc = ["cantools>=41.1.1"]
+# canre.uds: isotp.py talks to hardware through python-can.
+uds = ["python-can>=4.6.1"]
+all = ["cantools>=41.1.1", "python-can>=4.6.1"]
+
+[project.urls]
+Homepage = "https://github.com/nickyivyca/canbus-reveng-vtrux-coda"
+
+# Packages are listed EXPLICITLY rather than auto-discovered. Two reasons:
+#   1. canre.gui is held from publish (incomplete live-monitor GUI, owner
+#      ruling 2026-08-09). Auto-discovery would package it the moment it
+#      appeared in a tree, which is the "rule anchored too narrowly" failure
+#      in packaging form.
+#   2. This pyproject sits at the REPO root, which also holds tools/,
+#      projects/, notes/ and ghidra/. find-packages would sweep those in.
+[tool.setuptools]
+packages = [
+    "canre",
+    "canre.analysis",
+    "canre.dbc",
+    "canre.parsers",
+    "canre.uds",
+    "canre.utils",
+]

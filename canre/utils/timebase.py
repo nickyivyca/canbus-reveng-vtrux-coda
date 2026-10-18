@@ -63,7 +63,11 @@ SECONDS_PER_DAY = 86400
 _HEADER_RE = re.compile(
     r'START DATE AND TIME\s+(\d{1,2}):(\d{1,2}):(\d{4})\s+'
     r'(\d{1,2}):(\d{1,2}):(\d{1,2}):(\d+)')
-_DATA_RE = re.compile(r'^(\d+):(\d+):(\d+):(\d+)\s+(?:Rx|Tx)\s')
+# Components may be negative -- see the _DATA_RE comment in
+# canre/parsers/busmaster.py.  Without the sign this returned the first
+# POSITIVE line as `first_T`, so a file opening with a pre-origin block
+# reported a first frame later than its real one.
+_DATA_RE = re.compile(r'^(-?\d+):(-?\d+):(-?\d+):(-?\d+)\s+(?:Rx|Tx)\s')
 
 # A chunk whose first frame is this close to zero is counted from the chunk's
 # own start, not from a time of day.

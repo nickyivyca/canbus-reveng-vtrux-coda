@@ -17,8 +17,34 @@ from .base import BaseParser, CANFrame
 
 # Matches a BUSMASTER data line (not a header/metadata line).
 # Groups: timestamp, tx/rx, channel, id, type, dlc, remaining data bytes
+# A real midnight crossing steps the time of day back by nearly 86400 s.
+# Anything smaller is an out-of-order write, not a new day. See the rollover
+# comment in parse() -- testing against the first frame instead of the previous
+# one smeared 36 Coda captures across 24 hours.
+_ROLLOVER_BACKSTEP = 43200.0  # 12 h
+
+# Each timestamp component may be NEGATIVE.  The Android logger's
+# BusmasterWriter formats its offset with Kotlin's truncating division and
+# sign-preserving remainder, so a frame stamped before the file's origin comes
+# out as e.g. `00:00:-2:-3130` (= -2.3130 s) or `00:-1:-26:-150` (= -86.015 s).
+# The shipped pattern could not match a minus sign, so `parse_file` fell through
+# its `if not m: continue` and dropped the line -- silently, with no counter.
+# Measured 2026-09-27 over 3,674 files / 2.379 bn data lines: 4,827,795 lines
+# (0.203 %) discarded across 1,715 files, worst single file 447,123 lines = 44 %
+# of the capture.  See projects/coda/notes/android-log-timestamp-defects.md.
+#
+# Field widths vary with the sign because `%02d`/`%04d` widen rather than
+# truncate, so the groups are `-?\d{1,2}` and `-?\d{1,4}` rather than fixed.
+# `_parse_timestamp` needs no change: summing the signed components reproduces
+# the original offset exactly (verified by round-tripping 4,010 values through a
+# reimplementation of the Kotlin formatter, 0 mismatches).
+#
+# The hour field stays at two digits deliberately.  BUSMASTER does not wrap at
+# midnight -- `charge_M0_T52.log` contains `24:01:29:4480` -- so two digits
+# covers any plausible capture, and the one corpus line that exceeds it,
+# `50224:01:46:2870` (5.7 years), is corruption that should stay rejected.
 _DATA_RE = re.compile(
-    r"^(\d{1,2}:\d{2}:\d{2}:\d{4})\s+"  # HH:MM:SS:TTTT
+    r"^(-?\d{1,2}:-?\d{1,2}:-?\d{1,2}:-?\d{1,4})\s+"  # HH:MM:SS:TTTT, components may be signed
     r"(Tx|Rx)\s+"                          # direction
     r"(\d+)\s+"                            # channel
     r"(0x[0-9A-Fa-f]+)\s+"                # arbitration ID
@@ -157,6 +183,8 @@ class BusmasterParser(BaseParser):
         path = Path(path)
         hex_mode = True  # default; toggled by ***HEX*** / ***DEC***
         t_origin: float | None = None
+        prev_rel: float | None = None
+        day_offset: float = 0.0
         session_epoch: float = 0.0  # set from ***START DATE AND TIME*** header
 
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -193,10 +221,27 @@ class BusmasterParser(BaseParser):
                 else:
                     if t_origin is None:
                         t_origin = rel_time
-                    timestamp = rel_time - t_origin
-                    # Handle midnight rollover
-                    if timestamp < -1.0:
-                        timestamp += 86400.0
+                        prev_rel = rel_time
+                    # Midnight rollover, measured against the PREVIOUS frame.
+                    #
+                    # This used to test `rel_time - t_origin < -1.0`, i.e. against
+                    # the FIRST frame in the file, and add a day to anything more
+                    # than a second before it. Captures are not always written in
+                    # timestamp order -- the Android logger emits a few seconds of
+                    # frames out of order at the start of a chunk -- so a benign
+                    # 4-second backwards write was promoted to a 24-hour jump.
+                    # 36 of 1069 Coda captures parsed to a span of -1.0..86399.0 s
+                    # against headers only minutes long, which manufactured phantom
+                    # multi-module dropouts and was the real cause of the "T0 spans
+                    # 24 h with later chunks nested inside it" overlap that
+                    # influx_sync's overlapping_files() was added to work around.
+                    # A genuine rollover steps the clock back by nearly a full day;
+                    # an out-of-order write steps it back by seconds. Found
+                    # 2026-09-26.
+                    if rel_time < prev_rel - _ROLLOVER_BACKSTEP:
+                        day_offset += 86400.0
+                    prev_rel = rel_time
+                    timestamp = rel_time + day_offset - t_origin
 
                 is_tx = direction.upper() == "TX"
                 bus = int(channel)

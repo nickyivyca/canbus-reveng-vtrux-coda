@@ -7,6 +7,11 @@ _publish-staging/
 __pycache__/
 *.py[cod]
 
+# Python build residue. pyproject.toml makes `pip install .` possible in this
+# tree, and that writes build/ and <name>.egg-info/ next to it.
+build/
+*.egg-info/
+
 # Editor / OS noise
 .DS_Store
 Thumbs.db
