@@ -30,6 +30,10 @@ All scratchpads are invoked via the Bash tool from the project root, so `"."` re
 
 There is no `canre.parsers.parsers` submodule. The function is `parse_file`, not `parse_log`. The ID field is `arbitration_id` and the bus field is `bus`.
 
+### `parse_file` is a generator — it can be iterated once
+
+Every `parse_file` yields frames; none returns a list. A second pass over the same result sees **nothing**, with no error. The usual trap is a bus-identification pass followed by an analysis pass: the second one comes back empty and reads as "the ID is absent". If you need more than one pass, materialise it first: `frames = list(parse_file(path))`. Found 2026-10-26, when an HVAC scratchpad reported every ID, its bus anchors included, as missing from all 20 captures.
+
 ## base.py — Core Data Types
 *Source last modified: 2026-09-25 17:06:04*
 
@@ -58,11 +62,11 @@ class BaseParser(ABC):
     def detect(lines: list[str]) -> bool: ...
 
     @abstractmethod
-    def parse_file(path, *, absolute: bool = False) -> list[CANFrame]: ...
+    def parse_file(path, *, absolute: bool = False) -> Iterator[CANFrame]: ...
 ```
 
 - `detect(lines)` — given the first few lines of a file, returns True if this parser can handle it
-- `parse_file(path, absolute=False)` — parse the file, returns list of CANFrame. When `absolute=True`, timestamps are not zeroed to the first frame (needed for stitching T-chunk files that share a timeline)
+- `parse_file(path, absolute=False)` — parse the file, yielding CANFrame objects (a generator, not a list). When `absolute=True`, timestamps are not zeroed to the first frame (needed for stitching T-chunk files that share a timeline)
 
 ---
 
