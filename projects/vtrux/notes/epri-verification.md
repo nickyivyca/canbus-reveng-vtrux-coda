@@ -88,7 +88,7 @@
 | bcm_dis_max (B0:B1[7:4], 12-bit, 0.25 A) | **CONFIRMED** | Decompile (SIMDImm). Confirmed in current-limits-investigation.md as DCL. Nibble-split encoding confirmed by EPRI decompile after prior scans missed it. |
 | bcm_chg_max (B1[3:0]:B2, 12-bit, 0.25 A) | **CONFIRMED** | Same; confirmed as CCL. |
 | bcm_cell_undervolt (B6 bit 6) | CONFIRMED-DECOMPILE | Decompile: `pbVar15[8] & 0x40`. Never independently observed firing. |
-| bcm_cell_overvolt (B6 bit 7) | **CONFIRMED** | Fires at charge failure cutoff events (before-battery-swap charge analysis). |
+| bcm_cell_overvolt (B6 bit 7) | CONFIRMED-DECOMPILE | Encoding from the decompile. **Never observed set** (corrected 2026-09-16): zero in all 227 InfluxDB sessions / 412,300 points; the corpus maximum of `bcm_cell_vmax` is 3.603 V. The earlier "fires at charge failure cutoff events" claim was wrong -- the pre-swap failures pushed `FC 22 02` with this flag clear (`specific-trucks/before-battery-swap-failed-charge-analysis.md`, `fault-signature-comparison.md`). |
 
 ---
 

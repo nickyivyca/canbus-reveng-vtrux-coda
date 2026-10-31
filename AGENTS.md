@@ -18,10 +18,12 @@ Vehicle-agnostic CAN bus reverse engineering framework. The `canre/` Python pack
 | Analysis API (survey, bitstats, counters, correlation, diff, timeseries, transitions) | `canre/analysis/analysis.md` | Doing data analysis or understanding output dicts |
 | DBC API (builder, skeleton generation, validation) | `canre/dbc/dbc.md` | Building or validating DBC files |
 | Utilities (streaming I/O, log merging, session grouping) | `canre/utils/utils.md` | Working with multi-file captures or session discovery |
-| CLI tools (survey, analyze_id, compare, can_logger, can_replayer, status_events, etc.) | `tools/tools.md` | Running or modifying any tool |
+| CLI tools (survey, analyze_id, compare, status_events, etc.) | `tools/tools.md` | Running or modifying any tool |
+| can-tools git repo: the `canbench` package and `can_logger` / `can_replayer` / `can_gui`. Lives only in a per-machine git clone, not in this folder | `tools-reference.md`, section "can-tools" | Before importing `canbench` or running any of those tools: pull first |
 | Vtrux-specific analysis tools (charge failure analysis, session analysis) | `projects/vtrux/tools/README.md` | Doing Vtrux-specific analysis (charging, fault events, etc.) |
 | Vtrux vehicle overview, known signals, DBC status | `projects/vtrux/README.md` | Working on Vtrux |
 | Coda vehicle overview, CAN topology, module inventory, DBC status | `projects/coda/README.md` | Working on Coda |
+| Coda factory service & diagnostic manual (DTC tables, gateway/DLCM function descriptions, connector & harness schematics) | internal-only, not in this repo | Looking for factory documentation on any Coda module, DTC or connector |
 | Porsche 914 EV overview + telemetry DBC. **Forward-engineered, not reverse-engineered** — the map is authoritative by design, so most of `canre` does not apply. Stub folder; the authoritative hub is a separate internal SeaDrive folder | `projects/914/README.md` | Working on the 914 or its `:p914` Android module |
 | Vehicle notes folder | `projects/<vehicle>/notes/` | Looking for detailed notes on a specific topic for a certain vehicle
 | Primary Vehicle logs folder | `projects/<vehicle>/logs/` | Looking for a log with a specific role or name
@@ -30,6 +32,8 @@ Vehicle-agnostic CAN bus reverse engineering framework. The `canre/` Python pack
 | Per-machine Python executable (hostname → py command) | `python-executables-reference.md` | Before running any Python — check hostname here first |
 | Per-machine external tool paths (Ghidra, JDK, project dirs) | `tools-reference.md` | Setting up Ghidra runners or any external tool script |
 | Ghidra environment: modified SuperH4 SLEIGH, archived workspaces, headless scripts, restore script | `ghidra/README.md` | Any Ghidra/decompile work, or bringing Ghidra up on a new machine |
+| ESP32 firmware: the gen-inhibit and charge-interposer projects | the public `canbus-esp-fw-vtrux` repo and its own `AGENTS.md`; the role-session, ownership and bench notes are internal-only | Working on either project or its bench |
+| Simulators, virtual CAN buses and background processes: the 2026-09-01 LAN flood, `hop_limit=0`, killing processes on Linux and Windows | `simulators.md` | Before running any multi-process CAN simulator or transmitting background process, Coda's `flash_sim` included |
 
 ## Development Rules
 
@@ -37,6 +41,52 @@ Vehicle-agnostic CAN bus reverse engineering framework. The `canre/` Python pack
 
 #### Check for stale local user folder auto-memory
 At the start of each session, check whether anything exists in the local Claude auto-memory folder for this project. The SeaDrive root path varies by machine (e.g. the user profile path differs between computers), so resolve the correct local path before checking: it will be under `~/.claude/projects/<encoded-project-path>/memory/` where the encoded path corresponds to this project's absolute path on the current machine. If files are found there, review them with the user: determine whether the content is still relevant and should be restored into the appropriate project folder, or can be deleted to avoid confusion.
+
+#### After a compaction, re-read the routing docs — do not work from the summary
+
+A compaction summary is a record of what the session *did*, not of what the
+reference docs *say*. The two feel the same from inside the resumed session and
+they are not. **Before the first action that a routing doc governs, re-open the
+doc itself**: `data-sources.md`, `python-executables-reference.md`,
+`tools-reference.md`, `android-app/android-tools-reference.md`.
+
+The failure mode is specific and counter-intuitive: **the docs you are least
+likely to re-read after a compaction are the ones you edited most heavily
+before it.** The summary describes your edits in detail, which produces a
+strong feeling of knowing the file, while the sections you did not touch are
+absent from the summary entirely — and their absence does not register as
+absence, it reads as "there was nothing else relevant in there."
+
+Recorded 2026-09-20 after exactly this. A session that had spent the
+pre-compaction stretch editing `data-sources.md` resumed, decided a 438-capture
+corpus scan was needed, and ran it locally on `the bench laptop` against the dry
+`CANLogs/` library — hydrating gigabytes over SeaDrive, on 32-bit Python, on a
+machine that may have been driving the bench. `data-sources.md` said to run
+sweeps on `the Linux box` over ssh, in two places, one of them a section
+header with a measurement taken that same day, and `~/.ssh/config` had a host
+alias whose comment said the same thing. None of it was read; the summary had
+covered the edits, so the file felt known.
+
+**A corpus sweep is the canonical case.** Anything that reads more than a
+handful of logs from `CANLogs/` goes to `the Linux box` over ssh, where the
+library is on local disk. Decide the *host* before the interpreter — the
+`python-executables-reference.md` lookup answers "which Python on this box" and
+silently presupposes the box is already chosen, so performing it can feel like
+having done the host diligence when it is the wrong question.
+
+**Skills too.** Claude Code re-attaches the body of each skill invoked before
+the compaction, but as the text it had when invoked, not the current
+`SKILL.md` (code.claude.com/docs/en/skills.md: it "does not re-read the skill
+file"). A skill edited since then is followed in its old form, and nothing
+marks it as stale. After a compaction, re-open the current `SKILL.md` of every
+skill invoked in the session before acting under it. This folder has carried no
+skills of its own since 2026-10-31 -- the ESP role skills and `self-compact`
+live in the `canbus-esp-fw-vtrux` repo, and this section is the self-compact
+procedure -- so look wherever the invoked skill actually comes from. Recorded
+2026-10-16, after a reviewer session followed a pre-edit `/reviewer` for many
+turns and broke its newer rules (one line per peer message; do not restate the
+open items). A `SessionStart` hook with the `compact` matcher prints the same
+reminder.
 
 ### Session Pause
 
@@ -48,97 +98,66 @@ bash session_pause.sh <seconds>
 
 Run it with `run_in_background: true`. When it completes you will be notified and can proceed.
 
+### Compacting your own context: `tools/session_compact.py`
+
+A session can compact its own context and carry on without anyone at the keyboard. `tools/session_compact.py` types `/compact <compact message>` into this session's own terminal, waits until the transcript records the compaction, then types one resume message, which starts the next turn. It is the only sanctioned way for a session to type into its own input (user, 2026-10-20). If no compaction finishes within 60 minutes, it types nothing. Its design and limits are in the Infrastructure project's `tools/self-compact/plan.md`, beside this folder in the same library (`../Infrastructure/tools/self-compact/`), since 2026-10-31.
+
+**When:** only when the user asks for it, for example "self-compact between each step" of a plan the user has told you to work through. Never to avoid a question for the user, to drop context the user is relying on, or to end the conversation.
+
+**The two messages** are each one line of printable ASCII, at most 600 characters. They restate what the user has already decided and add nothing.
+- **The compact message** says what the summary must keep: the task in progress with its plan file and step, the user's rulings and standing rules, open questions and pending approvals, and file paths. It must not tell the summary to drop or soften any of these, or record anything as approved that the user has not approved.
+- **The resume message** names the next step the user already assigned and where it is written down, e.g. "Resume: run phase 4 of projects/vtrux/notes/plans/<plan>.md, then report." It cannot start with `/`, `!` or `#`. The next turn reads it as user input, so it must not grant permissions, claim approval, add tasks, change rules or ask for anything the user has not asked for.
+
+**Procedure:**
+1. Finish the current piece of work and write everything worth keeping to its files: the notes, the plan, or the step's worklog in `.claude/memory/`. The summary loses detail; files do not. Write the files in their own tool calls, never in the same call as the command in step 2 or 3, so a refusal can't take the write with it.
+2. Check the messages without typing anything, with a Bash call that contains only this command: `<python> <tool path> --check --compact "..." --resume "..."`, with the Python command from `python-executables-reference.md`. Write the tool's path out in full, as below. The auto-mode allow rule allows the tool only in exactly this form: that path, with no variables and no flags other than `--compact`, `--resume`, `--check` and `--timeout`. Nothing else goes in that Bash call: no `cd`, no `&&`, `;` or pipe, no heredoc, no second command. A compound command doesn't fit the rule, and auto mode refuses it as self-typing.
+   - the Linux box: `<home>/Seafile/NotGit/reverse-it/tools/session_compact.py`
+   - the bench laptop (Git Bash): `"/c/Users/<user>/<repo>/tools/session_compact.py"`
+3. Run the same command without `--check`, the same way: a Bash call with only this command, sent on its own and not alongside another tool call, as the last action of the turn. End the turn with one line: a compaction is queued, and the step it resumes with.
+4. **If auto mode blocks the call,** do not retry it, reword it or run it another way. Carry on without compacting and tell the user in one line.
+5. **After the resume,** re-read the routing docs the step needs before acting, per "After a compaction, re-read the routing docs" above.
+
+**Where it works:** inside tmux on Linux (the tool refuses otherwise; it works with the screen off), and in terminal Claude Code on Windows. Not in Claude Desktop.
+
+### ESP32 firmware (Vtrux generator inhibitor and charge interposer)
+
+Two ESP32 firmware projects live in the `canbus-esp-fw-vtrux` repo: the
+generator inhibitor (`gen-inhibit`, WiCAN OBD, ESP32-C3) and the charge
+interposer (`charge-interposer`, ESP32-CAN-X2, ESP32-S3). Both are
+specification-driven. All work on their code runs in role sessions in that
+repo's worktrees, under the repo's own `AGENTS.md` and role skills; none runs
+from this folder (user, 2026-10-26). Their specs, evidence, plans and bench
+files are still here, and each project's file map in the repo
+(`gen-inhibit/README.md`, `charge-interposer/README.md`) says which;
+an internal-only note lists them. Clone paths per machine are in
+`tools-reference.md`. Sessions not touching that work do not need it.
+
+### Simulators and background processes
+
+**Any session running a multi-process CAN simulator** (Coda's `flash_sim`
+included) or another transmitting background process **reads `simulators.md`
+first**: the 2026-09-01 LAN flood, `hop_limit=0`, and killing processes on
+Linux and Windows.
+
+### can-tools (`canbench`, `can_logger`, `can_replayer`, `can_gui`): git clone only
+
+The CAN runtime stack lives only in the git repo `nickyivyca/can-tools`, cloned per machine
+(`~/Git/can-tools`; exact path, interpreter and setup in `tools-reference.md`, section
+"can-tools"). The old SeaDrive mirror (`canbench/` at the reverse-it root, `tools/can_logger.py`,
+`tools/can_replayer.py`, `sync_from_can_tools.py`) was deleted on 2026-10-31
+(the internal `can-tools-git-cutover` plan).
+
+- **Pull before use:** `git -C ~/Git/can-tools pull --ff-only` before importing `canbench` or
+  running any of its tools, and say so if it moved.
+- **No clone on this machine yet?** Clone it and add the `.pth` file per `tools-reference.md`
+  before running anything that imports `canbench`. Do not recreate `canbench/` here: a copy at
+  the reverse-it root shadows the clone.
+- **Changes go to the clone**, committed and pushed there. The public repo's submodule pin is
+  moved by the git publish workflow, not by the session that changed can-tools.
+
 ### Local Execution
 **Maximize local computation**: Use Python scripts (see Python Rules) to process large log files and produce summarized outputs. Never try to read raw multi-MB/GB log files directly into context.
 
-
-### Simulators, Virtual CAN Buses, and Background Processes
-
-These rules exist because on 2026-09-01 the Vtrux interposer bench flooded the
-house LAN with **66,450 packets/s (13.6 MB/s, ~109 Mbit/s)** for roughly twenty
-minutes and disrupted the user's network. Read them before running any
-multi-process simulator.
-
-#### A virtual CAN bus is not automatically local
-
-`python-can`'s `udp_multicast` transport defaults to **`hop_limit=1`**, and the
-kernel routes `239.0.0.0/8` out the default interface. So every simulated CAN
-frame goes on the real wire:
-
-```
-$ ip route get 239.0.2.1
-multicast 239.0.2.1 dev eno1 src <lan-ip>      <- the LAN NIC, not loopback
-```
-
-Multicast is flooded to every switch port unless IGMP snooping filters it, and
-APs transmit it at the lowest basic rate, so wireless clients suffer worst even
-when the source is wired.
-
-**Always pass `hop_limit=0`.** TTL 0 means the datagram is looped back to local
-sockets and never transmitted on any interface. Delivery between processes on
-the same host is unaffected (verified: 2092 frames/s sent, 2092 received, eno1
-unchanged from idle).
-
-Do **not** also pin `IP_MULTICAST_IF` to loopback. `python-can` joins the group
-with `INADDR_ANY`, which the kernel resolves to the default multicast interface,
-so sending via a different interface means receivers see nothing. TTL 0 alone is
-both necessary and sufficient.
-
-`projects/vtrux/tools/interposer/bus.py` does this correctly and asserts it at
-startup. **`projects/coda/notes/dlcm/flash_sim/bus.py` does NOT** -- it still
-uses the default `hop_limit`. Fix it before running those sims.
-
-> Both simulator folders named above are internal-only and are not part of
-> the public repository. The guidance applies to any multi-process
-> virtual-bus simulator.
-
-#### Measure, do not assume
-
-Before and after any sustained simulator run, check the interface counters:
-
-```bash
-t0=$(cat /sys/class/net/eno1/statistics/tx_packets); sleep 5
-t1=$(cat /sys/class/net/eno1/statistics/tx_packets); echo $(( (t1-t0)/5 )) pps
-```
-
-Idle on `the Linux box` is single-digit pps. Anything in the thousands while a
-sim runs means it is on the wire.
-
-#### Killing background processes -- two traps
-
-1. **`pkill -f <pattern>` matches your own shell.** The Bash tool runs commands
-   through `bash -c '<your command>'`, so the wrapper's command line contains
-   the pattern you are searching for and `pkill -9` kills the shell running your
-   script. Symptoms: exit code 1 or 143 with no output, and later statements in
-   the same command silently never running -- which also means file edits you
-   believed were applied were not. Several edits were lost this way before it
-   was diagnosed.
-
-2. **Anchoring on the bare interpreter name misses subprocesses.** A runner that
-   spawns children via `sys.executable` gives them a command line starting with
-   `/usr/bin/python3.13`, so `pgrep -f '^python3\.13 ...'` never matches them.
-   Six orphaned simulators survived every cleanup this way and kept transmitting
-   long after they were believed dead.
-
-Use this instead -- it matches by path fragment, filters to real interpreter
-processes via `/proc/<pid>/comm`, and cannot match the bash wrapper:
-
-```bash
-for pid in $(pgrep -f 'tools/interposer' || true); do
-  case "$(cat /proc/$pid/comm 2>/dev/null)" in
-    python*) kill -9 "$pid" 2>/dev/null || true ;;
-  esac
-done
-```
-
-Always verify afterwards (`pgrep -af <fragment>`, `ss -uanp | grep <port>`), and
-remember `pgrep`/`pkill` return exit 1 when nothing matches, which aborts the
-rest of the command under `set -e` -- append `|| true`.
-
-#### Run long simulations one at a time
-
-Four concurrent scenario runs multiplied the frame rate by four. Run one, watch
-it, then run the next.
 
 ### Python Rules
 
@@ -169,6 +188,8 @@ The `tools/` and `canre/` folders have capable CLI tools and libraries that hand
 
 ### Data Artifacts
 Generated data files (CSVs, JSONs, survey outputs, event cluster text dumps, one-off scripts) MUST go in an artifacts folder in the relevant location (`./projects/<vehicle>/notes/artifacts/`, `tools/artifacts/`, etc), NOT loose in `notes/` and NOT to the system temp directory (`%TEMP%`, `/tmp`, `tempfile.mkstemp()`, etc.). The `notes/` directory should contain only `.md` analysis write-ups, `README.md`, `plans/`, and `artifacts/`. When a tool writes output to a file, always direct it to the relevant `artifacts/` subfolder.
+
+**Regenerable intermediates are the exception** (user, 2026-10-16). Build trees, mutant scratch copies and anything else a synced script can regenerate go in the machine's temp folder, outside SeaDrive: `%TEMP%` on Windows, `$TMPDIR` or `/tmp` on Linux (Python's `tempfile.gettempdir()` resolves either), in a subfolder named for the project and tool, e.g. `%TEMP%/gen-inhibit-mutants/<name>`. The scripts and inputs that produce them, and any results worth keeping, stay in `artifacts/`. Deleting a large regenerable tree inside SeaDrive trips its 200-file delete guard, which stops the whole library syncing until someone confirms the deletion in the tray. On 2026-10-16 that stopped the bench laptop's sync for hours, the 14th time since 2026-09-19.
 
 #### Inline Execution vs Scratchpad Scripts
 
@@ -230,7 +251,7 @@ Memories can be written to `./.claude/memory`, but this may **only** be used whi
 ### Plans and Plan Files
 
 #### Plan Files — NEVER use `~/.claude/plans/`
-Plan files MUST be stored inside this repository folder, NOT in `~/.claude/plans/` (local user folder) or any other local user folder. The local user profile does not sync across machines and plans stored there will be lost. Plan files are stored in the relevant project's plans folder (`./projects/<vehicle>/notes/plans/`, `tools/plans/`, etc). When using /plan, the first step (step 0) of a /plan based plan must be to write the plan to the relevant project local plans folder.
+Plan files MUST be stored inside this repository folder, NOT in `~/.claude/plans/` (local user folder) or any other local user folder. The local user profile does not sync across machines and plans stored there will be lost. Plan files are stored in the relevant project's plans folder (`./projects/<vehicle>/notes/plans/`, the internal plans folder, etc). When using /plan, the first step (step 0) of a /plan based plan must be to write the plan to the relevant project local plans folder.
 
 #### Plan Step Gate Rule — Stop and Review Before Advancing
 
@@ -284,6 +305,16 @@ user**, stating what each says and which signal is in conflict.
 
 - **Never identify a bus by its channel number.** It varies per capture with dongle
   insertion order. Identify by message content using the vehicle's anchor IDs.
+  **Not splitting at all is the same error.** A grep or histogram run over a whole log
+  or corpus that never looks at the channel field has not avoided the bus question, it
+  has answered it wrong and silently — and because channel numbers are meaningless,
+  dropping the field entirely can feel like compliance with this rule. If a result is a
+  count, a rate or a distribution, state which bus it is for.
+- **The same CAN ID can be a different message on another bus.** Where that happens,
+  merging the two fakes the rate and the structure, and reads as a single message with
+  more states than it has. Nothing in the merged output marks it. Before counting an ID
+  corpus-wide, check that ID's `CM_` in the DBC and the vehicle overview for known
+  collisions — and split by bus regardless of what you find.
 - **`_M{N}` numbers are separate capture sessions, NOT different buses of one session.**
 - **BUSMASTER data-line timestamps are 10 kHz ticks (0.1 ms), not ms** — but the
   `START DATE AND TIME` header's sub-second field *is* ms. Confusing them is a 10x error.
@@ -314,6 +345,119 @@ A correlation scan is only valid if it tests all of the following:
 - **12-bit nibble-split:** two values packed into three bytes — `signal_A = (B0<<4)|(B1>>4)`, `signal_B = ((B1&0x0F)<<8)|B2`. The middle byte is split between both signals; per-byte and 16-bit pair scans are completely blind to this layout. Confirmed on Vtrux A123 BMS (0x420, 0x440) but the pattern is not hardware-specific.
 
 Conversely, when a byte scan returns a signal with only a few (3-6) unique coarse values that partially correlates with a reference, do not conclude it is a low-resolution stepped setpoint — suspect it is the nibble carrying the MSBs of a 12-bit nibble-split value and test the full reconstruction. Discovered 2026-03-28: bcm_dis_max/bcm_chg_max and bcm_vbus_pos/bcm_vbus_neg were all missed by byte/pair scans across five investigation phases. See `projects/vtrux/notes/current-limits-investigation.md` Phase 6.
+
+### Filters that fail silently
+
+**A filter can be wrong in two directions, and neither announces itself.** Every
+instance below was caught by a quantity *orthogonal* to the claim — never by
+inspecting the claim harder, and never by re-reading the code that implemented
+the filter. Collected 2026-09-25/26 from four independent investigations that
+arrived at the same shape from different directions.
+
+**Mode 1 — it returns EMPTY because the premise is wrong**, and that is
+indistinguishable from a true negative.
+
+- `SubFrameID == 0` is the correct gate on Coda `0x200` per the DBC, and it is
+  what most analysis code here uses. The wheel-speed-fault car emits `0x14` for
+  **all** of its frames and never emits `0x00`, so every such script returns
+  nothing on that car and it reads as "no data". It produced a wrong first answer
+  in one session and a false positive in another, silently in both.
+- A firmware-to-DBC comparison scoped to "ids the DBC does not account for"
+  excluded, *by construction*, every message that had a DBC entry but a wrong
+  field width. The scan came back clean. The defect it could not see
+  (`0x208 BrakePressure` declared 16-bit over a 12-bit field plus a validity bit)
+  was found only when another session reached the same image from the DTC side.
+
+**Mode 2 — it returns TOO MUCH because a distinction was collapsed**, and that is
+indistinguishable from a larger true positive.
+
+- A CAN-ID histogram taken across a corpus without separating buses reported an
+  undocumented sub-frame that turned out to belong to a different message sharing the
+  ID. The scale of the scan disguised it: corpus-wide output looks authoritative, and
+  nothing in it says "you are counting two messages". See the bus invariants under
+  Data Sources for the rule this violates.
+- A mask parser matched only Ghidra's hex form `& 0x..` while Ghidra prints small
+  masks in decimal. There was no error: 62 of 120 accessors fell through to a
+  default of "whole byte", and half a signal map was wrong in a direction that
+  looked plausible.
+
+**What actually caught them.** Frame counts and durations that no analyst choice
+can move; a bus identified by content when the channel number was the thing in
+doubt; a second decoder disagreeing; a firmware mask compared against a DBC
+width. In every case the orthogonal quantity was cheap — far cheaper than the
+work spent on the wrong answer.
+
+**So:** when a filter returns nothing, establish that the population is non-empty
+before concluding the answer is negative. When it returns a lot, establish that
+the population is what you think it is before concluding the effect is large. And
+prefer a check whose failure looks different from its success — see
+[Killing background processes](simulators.md#killing-background-processes) for the same
+principle applied to process cleanup.
+
+#### A discriminator that cannot fail
+
+**A bus discriminator must be shown to *separate*, and the winning side must be
+non-empty on its own evidence — not merely the last one standing.** Score the
+discriminator on both buses and require one side to be empty *and* the winner to
+carry a threshold of distinct exclusive ids, so a single frame cannot decide.
+Identifying a bus by content is not sufficient if the content you chose appears on
+both buses, and a selection among one candidate is not evidence at all.
+
+Three forms, collected 2026-09-29 from two sessions in one afternoon. All three emit
+a confident bus label carrying no evidence, and none can report failure:
+
+- **Frame-count selection across two rebroadcast copies** — the winner is decided by
+  margins of one frame.
+- **A two-set score where both sets contain rebroadcast ids** — both sides match, so
+  the comparison always returns a winner.
+- **A single-channel capture** — "there was only one channel, so that's the bus"
+  returns its only candidate.
+
+The third is the one to watch, because the first two look like flawed comparisons and
+invite scrutiny while the third reads as trivially correct. It is also why the weaker
+form of this rule is not enough: "require one side to be empty" is satisfied
+*vacuously* when there is nothing on the other side because there is no other side.
+
+**This is distinct from the rest of *Filters that fail silently*, and the difference is
+what makes it its own rule.** A filter that returns empty or too much produces a wrong
+**quantity**, which can look wrong. A null discriminator produces a wrong **label** on a
+quantity that is right, so there is no residue at all — the error surfaces only later,
+when someone reasons from the name.
+
+Both sessions independently arrived at the same fix shape, and it is the shape to copy:
+reject on ambiguity and say why, rather than picking a winner.
+`WheelRatioExtractor.select_d_can` requires `MIN_ANCHORS` distinct anchor ids on the
+winner and raises on ambiguity;
+`projects/coda/notes/artifacts/powerstate_ladder_check.py` prints
+`UNRESOLVED -- both sets present (b=3, d=7), so neither separates`, which is more
+useful than the confident `d_can` its first version produced.
+
+**Coda anchors are audited, and not every published one passes.** Use the ids that the
+audit cleared, not whichever id is nearest to hand — see the anchor table in
+`projects/coda/README.md` and
+`projects/coda/notes/artifacts/anchor_exclusivity_audit.py`.
+
+#### Two thresholds that look like measurements
+
+Both of these turn a parameter you chose into a finding you then believe.
+
+- **A silence threshold must be relative to the message's own period**, never a
+  fixed number of seconds. A fixed gap flags every message slower than the
+  threshold as permanently dropping out. The damage is not that it is noisy: it
+  fires on the *slowest* messages first, so in any ordering derived from the
+  result the artefacts sit at the **head** of the list, exactly where they read
+  as the most meaningful entries. A derived spread or duration is inflated the
+  same way, and nothing in the output marks it.
+
+- **Frames arrive in file order, and file order is not time order.** Parsers
+  yield rows as written, and some captures interleave seconds of frames out of
+  order — within a single `(bus, id)` series, not merely across channels. Any
+  reasoning over adjacent pairs (`zip(v, v[1:])`) then invents gaps that never
+  happened, and they can be large enough to look like a real event. Sort each
+  series before computing gaps, rates or ordering. Checking that the *whole file*
+  is monotonic is not the same check and can pass while a series is scrambled;
+  conversely a multi-channel capture is almost never globally monotonic and that
+  is harmless.
 
 ### Graphing
 

@@ -5,10 +5,17 @@
 Vtrux-specific CLI analysis tools. These scripts use the `canre` framework but
 are tightly coupled to Vtrux signal definitions and DBC content.
 
+### Subfolders
+
+| Folder | What |
+|---|---|
+| `interposer/` | **Moved out of this repo on 2026-10-08** (reviewer's batch, after the gen-inhibit reviewer confirmed by grep that nothing on that side loaded from it). The charge interposer's reference core, sims, host tests and firmware now live in the `canbus-esp-fw-vtrux` repo at `charge-interposer/`, on branch `charge-interposer/main`, so the Python reference and its firmware port sit together -- the same treatment `gen_inhibit/` got the day before. Locally that is `~/Git/canbus-esp-fw-vtrux/charge-interposer/`; `tools-reference.md`, "The ESP firmware repo", has the clone path per machine. **The vendor data sheets did not move** and are internal-only (third-party documents). The folder keeps a pointer `README.md`. |
+| `gen_inhibit/` | **Moved out of this repo on 2026-10-08** (user's ruling). The generator inhibitor's host tools now live in the `canbus-esp-fw-vtrux` firmware repo at `tools/gen_inhibit/`, on branch `gen-inhibit/main` (named `gen-inhibit/rollback-fix` until 2026-10-12), so the Python reference and its firmware port sit together. Locally that is `~/Git/wican-fw-vtrux/tools/gen_inhibit/`; `tools-reference.md`, "The ESP firmware repo", has the clone path per machine. Start at its `README.md` for the file map and `HANDOFF.md` for the procedure at the truck. Two things changed in the move: the folder carries `gi_vbus.py` instead of importing `interposer/bus.py`, with the same multicast-TTL-0 guard and read-back; and the WiCAN's SoftAP SSID, the runs folder and this checkout's path are now settings with no committed default (`GI_WICAN_SSID`, `GI_RUNS_DIR`, `REVERSE_IT_ROOT`), because that repo is public. |
+
 ---
 
 ## diagnose_vtrux.py
-*Source last modified: 2026-08-26*
+*Source last modified: 2026-09-25*
 
 General-purpose Vtrux diagnostic tool. Decodes all known fault and status signals
 from a PT-bus log (any log type: battery reconnect, drive, idle, fault investigation)
@@ -51,10 +58,16 @@ py -3.12 projects/vtrux/tools/diagnose_vtrux.py FILE --output report.txt
 Glob patterns are expanded by the script (quote them on Windows to prevent shell interference).
 Multi-file inputs are merged by timestamp and re-zeroed to t=0.
 
+**Bus selection (2026-09-25):** channels are resolved to PT / OBD / Vehicle per file
+by `canre.utils.buses` (anchor fraction + time span), and the report header lists
+the resolution. Previously the first channel carrying `0x051` was locked in, which
+on an Android T0 chunk is a transient channel -- the whole of
+`vtrux_20260925_155857` came out empty.
+
 ---
 
 ## vtrux_charge_failure_analysis.py
-*Source last modified: 2026-03-29*
+*Source last modified: 2026-09-25*
 
 Analyzes one or more CAN log files from the Vtrux powertrain bus and produces
 a structured plain-text report covering:
@@ -69,6 +82,11 @@ a structured plain-text report covering:
   before/after battery swap
 - Voltage/current profile around each failure event
 - Failure pattern classification
+
+**Bus selection (2026-09-25):** PT channels are resolved per file by
+`canre.utils.buses` (anchors `0x051` / `0x18FFD4C0`, time-span aware), so Android
+captures whose PT bus is re-numbered mid-chunk are read in full. The header lists
+the channel resolution per file; `Frames` counts identified-bus frames only.
 
 Replaces the piecemeal approach of running fault_bits_analysis.py,
 j1772_analysis.py, and charge_intermittency_analysis.py separately.

@@ -265,7 +265,7 @@ CM_ SG_ 83 OperationState "9-entry state machine, valid 0-8.";
 
 CM_ BO_ 776 "HCU park request command. B1-B2=InputShaftSpeed decoded in vtrux-powertrain-experimental.dbc.";
 
-CM_ SG_ 776 ParkRequest "0=OFF, 1=Park, 2=UnPark.";
+CM_ SG_ 776 ParkRequest "0=OFF, 1=Park, 2=UnPark. CONFIRMED 2026-09-24 against both vehicles and against the Coda DLCM firmware, which ORs DAT_d0006AF1 * 0x20 & 0x60 into byte 0 -- the same bits this signal declares. No bit outside 6-5 is ever set: 0 frames of 6,423 on Vtrux, 0 of 3,855 on Coda. The request leads the TCM 0x55C parkLockState by +55/+65 ms on Vtrux and +76..+89 ms on Coda, in both the engage and release directions. This EPRI definition is the one that was right: the Coda DBC and notes/borgwarner.md both had the id as a TCM pin-state broadcast.";
 
 CM_ BO_ 1024 "HV BCM control word (HCU-to-BMS commands).";
 

@@ -94,7 +94,8 @@ Status: **confirmed** = push moment directly observed against a known cause;
 | `F6 CF 00` | confirmed | **Interlock opened while HV up (trip).** truck3-2026-08-05 charge attempt: clean bring-up to `P_CLOSED_CHARGE`, hvil opens spontaneously at +5.7 s, EPO 253 ms later — textbook interlock-fault signature — pushing `F6 CF 00` (with `F0 00 00`, `FB C0 00`, **no AC record**). Also present in debuglog_M6's stack (main truck, evening 2025-08-21 — the M4_T20 aftermath in which HVIL opened twice during HCU oscillation). |
 | `FC 16 F2` | **confirmed** | **Generator inverter not communicating** (owner theory, confirmed 2026-08-26 against the T4 fuse experiment). Fresh detection captured live in `vtrux_no_gene_inv_fuse.log`: with the gen inverter's 12V fuse out, the entire GENE family (0x054, 0x470–0x484 except 0x474) is absent from the PT bus, and `FC 16 F2` pushes **~30–37 s after BMS boot with zero GENE frames on the bus**. The record then **latches**: it keeps broadcasting after the fuse is reinserted (GENE back at full rate) and survives until a plug-cycle/12V clear — so the May–Jul 2026 appearances at +15–40 s after every boot (GENE alive at ~100 Hz throughout) are staged NVM **restores** of the standing record from the fuse pulls, not re-detections. The GENE MCU is **12V-powered via that same fuse** (owner-confirmed; an earlier revision here wrongly called it HV-powered). The deliberate interlock test's appearance is likewise a **restore, not a test-induced push**: it lands at boot+39.4 s with GENE broadcasting continuously beforehand, and the record had been standing on the main truck since at least **2026-01-26** (`vtrux_charge_M1`, post-swap work era). Era map: pushed fresh whenever the gen-inverter fuse was out >~30 s with the BMS awake (post-swap era ≤Jan 26; Apr reinstall era; ~May 3); standing until the next 12V clear; absent in gen-in-service eras. |
 | `FB B6 E4` | observed, identity unknown | Frequent standing companion to `FC 16 F2`, but with an **independent lifecycle**: the Mar-6 isolation test has `FB B6 E4` standing *without* `FC 16 F2` (something re-latched FB alone between Feb 25 and Mar 6 — the ucsc charger-debug era), and in T4 only `FC 16 F2` pushed fresh. Always restores first at boot. A DCDC-lost-comms reading was floated and is now **weakened**: in M3 the DCDC went silent at EPO+7 s with no `FB B6 E4` push (though the BMS was nearly powered down by then — inconclusive rather than falsified). Push moment never captured; **not** the isolation record (absent during gen-iso era; the forced isolation EPO pushed only generics). Note `FC 16 F2` (comms-fail, confirmed) is an FC-prefix record while this is FB — no "lost-comms family" prefix pattern is established. |
-| `AC 10 xx` | confirmed | **Fault-EPO record with parameter.** `AC 10 00` at most fault-initiated EPO trips. **Not universal**: absent at Truck 3's 2026-08-05 interlock trip; `AC 10 01` (only non-zero parameter seen) at the 2026-06-18 00:21 drive-mode trip. **Not pushed at normal key-off** (which never asserts EPO — 6/6 clean key-offs 2026-06-17) and **not pushed at operator EVSE unplug** (2026-07-14). |
+| `AC 10 xx` | record confirmed; **parameter = hypothesis** | **EPO-source record.** Hypothesis (2026-09-06, `artifacts/ac_param_discriminator.py`): the parameter says *how* the EPO was asserted — **`00` = the VCM's `hsc_bcm_epo` bit arrived on 0x400**, **`01` = the 0x400 heartbeat timed out**. Evidence: in every `AC 10 00` event in the corpus (deliberate isolation, deliberate interlock ×3, gen-iso ×3, evapfuse ×3, precharge aborts ×4, steady-state ×2, reinstall boot-fault, Truck 3's two contactor faults) 0x400 keeps flowing across the EPO and `hsc_bcm_epo=1` is present either **12–42 ms before** `bcm_epo` (VCM-commanded trips) or **181–187 ms after** it (the VCM echoing a BMS-initiated trip). The two EPOs with **no AC record** (truck3-2026-08-05 hvil trip, 2026-07-14 EVSE unplug) never show `hsc_bcm_epo=1`. The single `AC 10 01` (2026-06-18 00:21:26) is the only EPO where **0x400 stopped — last frame 168 ms before `SHUTDOWN_REQUEST`, bit never set** — because the laptop CAN bridge (`generator_runner.py`) jammed and cut the VCM off from the BMS half of the bus. The [T2] HV-battery LV-connector pull does **not** test this path (the BMS left the bus entirely; at reconnect the VCM was already asserting the bit, so `AC 10 00`). **Not pushed at normal key-off** (which never asserts EPO — 6/6 clean key-offs 2026-06-17) and **not pushed at operator EVSE unplug** (2026-07-14). |
+| `CC F1 00` | observed once, meaning unknown | Pushed at the **reconnect** of the HV-battery LV connector in test [T2] (`vtruxunplugpumpthenhvbatterylvconnector.log`, t=88.5 s) together with `F0 00 00` + `AC 10 00`; all three gone after the deliberate 12V cycle at t=107.5 s while `FB B6 E4`/`FC 16 F2` restored. Not seen anywhere else (`artifacts/disconnect_tests_x460.py`). |
 | `F0 00 00` | confirmed | **Universal fault-trip shutdown record** — pushed first (before `AC 10 xx`) at every fault EPO observed, including truck3-8-5. Not pushed at key-off or unplug. |
 | `FB C0 00` | hypothesis (strong): charger went away during charge mode | Pushed within **30–150 ms of the Bel charger's last CAN frame** in all four measured steady-state instances — at EPO+3.0–3.2 s in M0/M1/M3 (Bel's orderly post-EPO shutdown) and at **EPO+119.1 s in 0822, where the Bel famously did not fault and stayed alive until the operator unplugged** (the push lands exactly at the unplug). Too fast for a comms timeout (~10 Hz Bel frames) — the BMS reacts simultaneously with the charger's departure (shutdown announcement / pilot loss / equivalent), i.e. a charge-termination record, not a comms-fail record. Also at Truck 3's 8-5 charge-mode trip (EPO+2.2 s) and in the M4_T20 charge-context residue; absent from every drive/idle-mode trip (no charger present). M3 falsifies a DCDC association: the DCDC outlived the push there. |
 | `FC B0 00` | observed, meaning unknown | Steady-state trip cascade only; expires from the stack within minutes. |
@@ -127,18 +128,44 @@ it measured.
 
 ### June 2026 drive events (parts truck + main-orig)
 
-- **2026-06-10 20:45:57 — mid-drive interlock flutter.** While in `PN_CLOSED_DRIVE`,
-  hvil bounces open/closed **six times in 350 ms**; the contactor state machine flaps
-  `PN_CLOSED_DRIVE↔ALL_OPEN_SHUTDOWN` with each bounce; no EPO; driving resumes; hvil
-  drops for good 5 s later (no EPO then either). First captured mid-drive interlock
-  flutter on this pack — the leading mechanism candidate for the historical
-  warning-free driving shutdowns.
+- ~~**2026-06-10 20:45:57 — mid-drive interlock flutter.**~~ **Retracted 2026-09-06.**
+  There was no flutter, and the truck was not moving. In
+  `vtrux_20260610_202222_T6.log`, read in file order, channel 4 carries **one** hvil
+  transition — 1→0 at t+81.42 (20:46:02.7) — then `mainc` 11 → 13 → 14, no EPO and no
+  0x460 record. Speed (`0x3E9`) is **0.00 km/h for all of T5 and T6**; the truck last
+  moved at 20:39:15.5, i.e. it had been **stationary 6 min 47 s**. This was a normal
+  key-off. The "six bounces in 350 ms" comes from sorting the log by timestamp:
+  channel 4's timebase rewinds ~5.6 s partway through the file, so sorted order
+  interleaves its post-key-off frames with its own pre-key-off frames and produces 13
+  hvil flips across 370 ms. See the retraction box in `fault-signature-comparison.md`
+  for the full mechanism. **This event is therefore not evidence for anything, and in
+  particular is not a candidate mechanism for the historical warning-free driving
+  shutdowns.**
 - **2026-06-17 19:39 drive:** six key-off/restart cycles; every restart shows the
   staged FB→FC restore; normal key-offs push nothing.
-- **2026-06-18 00:21:26 — drive-mode EPO trip.** `B1 0xBF→0xCF` directly (no `0xFF`
-  step), hvil stays **closed** through the trip, from `SHUTDOWN_REQUEST`, pushing
-  **`AC 10 01`** + `F0 00 00` — the only non-zero AC parameter in the corpus. Cleared
-  by a plain restart 52 s later. Matches no documented fault mode; unexplained.
+- **2026-06-17 21:56:51 — key-on bring-up failure (laptop bridge one-way).** The
+  `generator_runner.py` MITM bridge was inline (logger downstream of it, see
+  `vtrux-smog-pass.md`). BMS woke normally (SoC 20.5 %, ready), but the VCM **never sent
+  0x400** and its own BMS-SoC echo (0x596 B6) stayed **0 for the whole 90 s** — at healthy
+  key-ons that echo goes non-zero 2–22 ms after the first 0x410. Reading: the VCM was not
+  receiving the BMS half of the bus. `0x617 B7` C8→C9 at key-on, →CA 0.7 s after BMS
+  wake; hvil closed for 0.30 s then opened 80 ms after the CA flag (the HCU drives the
+  ESS HVIL, pin C-H4); VCM looped STBY 0.11 s → SHTDWN 0.22 s → WAIT4COOLING 1.32 s for
+  53 cycles (the only WAIT4COOLING frames in the corpus). **No 0x460 record** — the BMS
+  saw nothing wrong. Owner: this fault latched and needed a Via 12V cycle; the 22:23
+  drive afterwards is clean (B7=C8, lamp off). Evidence: `artifacts/initial_fault_215641.py`.
+- **2026-06-18 00:21:26 — 0x400 heartbeat timeout (laptop bridge jam).** Same bridge,
+  driving at 38 km/h, generator delivering 54 A. The laptop's own OBD readiness polling
+  (0x7E0) stopped at −0.27 s; forwarded 0x400 jitter had grown to 3–33 ms; then GENE
+  e-stop flag (−0.34 s), VCM `OperationState` FAILURE (−0.24 s), engine off (−0.21 s), and
+  **every VCM-sourced ID stopped at −0.17 s**. BMS: `SHUTDOWN_REQUEST` → EPO with hvil
+  **closed**, `B1 0xBF→0xCF` directly, pushing **`AC 10 01`** + `F0 00 00` at +0.32 s.
+  BMS, GENE, DCDC and pack boards kept transmitting until key-off (+26 s); hvil opened at
+  +19.8 s. VCM traffic returned at +43 s with key off (bridge restarted), still reporting
+  FAILURE until HV was up after key-on (+47 s). `AC 10 01`/`F0 00 00` were **gone at that
+  key-on boot** (count 0) while the standing pair restored; `0x617 B7 = C9` and the lamp
+  (0x646 field 5) stayed on for the rest of the drive. ECM PID 01: MIL off, 0 DTCs before
+  and after. Not a truck fault. Evidence: `artifacts/ac1001_trip_forensics.py`.
 
 ## Per-event evidence
 
@@ -158,7 +185,8 @@ What each analyzed event pushed (newest first), from the artifact outputs:
 | truck3-BMS power loss (rounds 3/4) | Truck 3 | no BMS frames — absence is the signature |
 | Main truck evening event (2025-08-21, debuglog_M6) | main-orig / main | `F6 CF 00` on top of `F0 00 00`, `FB C0 00`, `FC 22 02` — consistent with the M4_T20 aftermath's HVIL openings |
 | Reinstall boot-fault (2026-04-08) | main-orig / parts | `AC 10 00`, `F0 00 00` (hvil open at wake) |
-| 2026-06-18 00:21 drive trip | main-orig / parts | `AC 10 01`, `F0 00 00` |
+| 2026-06-18 00:21 drive trip (laptop bridge jam) | main-orig / parts | `AC 10 01`, `F0 00 00` — 0x400 gap 168 ms before `SHUTDOWN_REQUEST`, `hsc_bcm_epo` never set |
+| HV-battery LV connector pull + reconnect [T2] (pre-2026-02) | main | at reconnect (+12.7 s): `F0 00 00`, `AC 10 00` (`hsc_bcm_epo=1` 15 ms before), `CC F1 00`; all wiped by the 12V cycle 20 s later |
 | Operator EVSE unplug (2026-07-14) | parts | none (count ticks only) |
 | Normal drive key-off ×6 (2026-06-17) | parts | none (no EPO) |
 | After-swap Bel charger failures (2026-02) | parts-orig / main | none — BMS uninvolved |
@@ -171,23 +199,42 @@ What each analyzed event pushed (newest first), from the artifact outputs:
    classifications** (`FC 22 02` vs `F0 E0 00`), and the Aug-2026 precharge failures
    occurred in the clean record era — distinct main-orig phenomena are now separable:
    the 2025 steady-state fault, the precharge abort, the deliberate-gen-disconnect
-   condition (`FC 16 F2` eras), and the genuine main-loop events (2026-06-10 flutter,
-   2026-06-18 `AC 10 01` trip).
+   condition (`FC 16 F2` eras), the genuine main-loop event (2026-06-10 flutter), and
+   the two 2026-06-17/18 laptop-bridge incidents (not truck faults).
 2. **Neither main-orig fault is a contactor fault in the BMS's eyes** — no F6 records;
    Truck 3's genuine contactor/interlock hardware faults all carry F6 codes.
 3. **`FC 22 02` has not recurred since 2025-08-22** anywhere.
-4. **Post-mortem readout works**: records survive reboot until a plug-cycle/12V clear,
-   so a capture taken after towing home — before any reset — recovers a driving
-   shutdown's code. The logger need not be running at the moment of failure.
+4. **Post-mortem readout works — with a doubt (2026-09-06).** Records survive reboot
+   until a plug-cycle/12V clear, so a capture taken after towing home — before any
+   reset — recovers a driving shutdown's code. The logger need not be running at the
+   moment of failure. **But this is only demonstrated for the FB/FC condition records.**
+   The 2026-06-18 trip's `AC 10 01` + `F0 00 00` were **gone at the very next key-on boot**
+   52 s later (0x460 count 0, then only the `FB B6 E4`/`FC 16 F2` staged restore), with
+   no plug-cycle or 12V clear in between — a plain key-off/key-on. In [T2] the `F0 00 00` /
+   `AC 10 00` / `CC F1 00` set vanished at the 12V cycle, which does not separate the two
+   readings. Open possibilities: (a) the F0/AC generics are transient and only FB/FC-class
+   records persist across a BMS reboot; (b) something specific to that key cycle cleared
+   them. Until a driving EPO is followed by a plain key cycle *and* the generics are seen
+   to restore, do not rely on `F0 00 00`/`AC 10 xx` being readable after a restart —
+   capture before keying on again.
 5. **Records are fault-path-only**: key-offs, unplugs, and charger-internal failures
    push nothing. An empty/unchanged list after an "event" is itself informative.
 6. `0x617 B7 = 0xCA` is a fast VCM-side fault-active flag (all modes, ~0.3 s).
+7. **Hypothesis:** the `AC 10 xx` parameter encodes the EPO source (`00` = EPO bit on
+   0x400, `01` = 0x400 heartbeat timeout, ~170 ms). An `AC 10 01` means the BMS lost the
+   VCM, not that the pack did anything. See the catalog row for the evidence.
 
 ## Open questions
 
 - Semantics of the 3-byte encoding (F6 = contactor/interlock sequencer family, F0 =
   shutdown/abort actions, AC = EPO-with-parameter, FB/FC = condition records — pattern,
-  not proof) and of the `AC 10 01` parameter.
+  not proof).
+- Confirm `AC 10 01` = 0x400-timeout with a controlled test: interrupt **only** 0x400 (a
+  bridge filter) with the BMS awake and HV up, and check that `AC 10 01` pushes with no
+  `hsc_bcm_epo`. A connector pull does not isolate the path ([T2] gave `AC 10 00`).
+- `CC F1 00` (seen once, at the [T2] LV-connector reconnect).
+- Which record classes survive a plain key cycle (see conclusion 4): find or make a
+  driving/idle EPO followed by key-off/key-on with the logger running through both.
 - What condition `FC 22 02` actually names.
 - `FB B6 E4`'s module: test the DCDC-lost-comms hypothesis by finding (or making) a
   capture where only the DCDC goes silent >30 s with the BMS awake and HV up.

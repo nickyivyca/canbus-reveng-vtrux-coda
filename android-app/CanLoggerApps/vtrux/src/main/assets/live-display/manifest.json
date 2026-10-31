@@ -2,6 +2,14 @@
   "comment": "Vtrux live-display subscriptions. Message IDs reference live-display/dbcs/<bus>.dbc.",
   "subscriptions": [
     {
+      "bus": "powertrain", "message_id": 1120,
+      "signals": ["fr_page", "fr_pages", "fr_grp3", "fr_grp2", "fr_grp1", "fr_total",
+                  "fr_p1_r1", "fr_p1_r2", "fr_p2_r1", "fr_p2_r2",
+                  "fr_p3_r1", "fr_p3_r2", "fr_p4_r1", "fr_p4_r2"],
+      "rate_hz": 20, "aggregation": "latest",
+      "_note": "0x460 BMS fault-record annunciator. Page-multiplexed on B0; must run at full rate or pages are dropped and the record list never completes."
+    },
+    {
       "bus": "powertrain", "message_id": 1040,
       "signals": ["bcm_ibat", "bcm_alarm", "bcm_gfd", "bcm_epo", "bcm_hvil_mon"],
       "rate_hz": 5, "aggregation": "latest",

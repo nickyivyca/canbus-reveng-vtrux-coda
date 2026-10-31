@@ -35,9 +35,45 @@ object CodaConstants {
      * Channel numbers depend on dongle insertion order and are never stable across
      * capture sessions, so the bus must be identified by its content.
      */
+    /**
+     * Logical name for B CAN in [com.reverseit.cancore.BusIdentityResolver].
+     *
+     * The app is on B CAN via OBD pins 2/3, and that is also the bus the IPK reads the TPMS
+     * telltale from -- `0x600` originates on D CAN at the RCU and reaches B CAN as a gateway
+     * pass-through, so injecting on B CAN puts the frame directly at its consumer.
+     */
+    const val BUS_B_CAN = "b_can"
+
     val B_CAN_ANCHOR_IDS = setOf(
         ID_BMS_BATT_STATUS, ID_BATT_POWERMODE, ID_BMS_VMIN_VMAX,
         ID_BMS_DRIVE_LIMITS, ID_BMS_THERMAL, ID_DCDC_STATUS1,
+    )
+
+    /**
+     * B CAN anchors that are **exclusive** to B CAN -- never gateway-rebroadcast onto D CAN.
+     *
+     * Use these, not [B_CAN_ANCHOR_IDS], to identify the bus for anything that *transmits*.
+     *
+     * Three of the six IDs in [B_CAN_ANCHOR_IDS] -- 0x275, 0x383 and 0x1D5 -- are B CAN native but
+     * gateway-rebroadcast to D CAN (`notes/driver-inputs.md`, "B CAN -> D CAN direct pass-through").
+     * They therefore appear on *both* buses, and `BusIdentityResolver`'s threshold is
+     * `min(3, anchorIds.size)` = 3 matches, which D CAN can clear on rebroadcast traffic alone.
+     * For picking a bus to *read* from -- what `B_CAN_ANCHOR_IDS` was written for, in
+     * `ReplayCanSource` -- an occasional wrong pick costs a bad replay. For picking a bus to
+     * transmit on it would put a synthetic frame on the driveline bus, so the sets are kept
+     * separate rather than the looser one reused.
+     *
+     * Every ID here is on the B CAN exclusive list in `notes/driver-inputs.md`.
+     */
+    val B_CAN_EXCLUSIVE_IDS = setOf(
+        ID_BATT_POWERMODE,    // 0x378
+        ID_BMS_VMIN_VMAX,     // 0x381
+        ID_BMS_THERMAL,       // 0x382
+        ID_BMS_HV_BATT_TEMP,  // 0x390
+        ID_HVAC_AIR_STATE,    // 0x391
+        ID_BMS_FAULT_STATUS,  // 0x270
+        ID_GWM_VEH_FAULTS,    // 0x271
+        ID_BMS_DRIVING_RANGE, // 0x2C1
     )
 
     // --- Motor torque (0x1C0) ---
@@ -115,6 +151,122 @@ object CodaConstants {
 
     /** 0x241 raw bytes appear to be degC with this offset (also unconfirmed). */
     const val MCM_THERMAL_OFFSET_C = -40f
+
+    // --- Indirect TPMS ------------------------------------------------------
+
+    /**
+     * Cold inflation pressure preloaded into the four tyre boxes on the settings page.
+     * Calibration normally happens right after filling, so preloading saves ~100 button presses.
+     *
+     * **Two sources disagree and neither is a reading of this car's doorjamb placard.** Chosen
+     * value confirmed by the owner 2026-09-21 with both figures in front of him; recorded here so
+     * nobody re-opens it without the same information.
+     *
+     * | Source | Figure | What it is |
+     * |---|---|---|
+     * | Factory service manual, RCU DTC repair step | **42 psi** (chosen) | "Check tires for low pressure or damage. Repair or set to 42psi" -- five occurrences in the factory manual (internal-only) |
+     * | `notes/indirect-tpms-feasibility.md` section 5 | 33 psi | Used in a "25 % loss from a 33 psi placard" calculation; not cited to a placard reading |
+     * | Owner's gauge, 2026-09-20 | FL 31, FR 35, LR 33, RR 33 | Measured, but mid-leak-cycle |
+     *
+     * What makes 42 the manual's nominal figure rather than one instruction's number is that three
+     * independent thresholds elsewhere in it are exact multiples: 33.6 psi (RCU DTC low) = 0.80x,
+     * 35.7 psi (IPK lamp-on, `ipk-instrument-pack-function-overview.md`) = 0.85x, and 50.4 psi
+     * (RCU DTC high) = 1.20x.
+     *
+     * The unresolved tension is that the owner's measured tyres sit at 31-35, which against a 42
+     * placard puts **three of the four** below the 33.6 psi DTC low limit -- LF 31, LR 33 and
+     * RR 33 below it, RF 35 above -- and all four between 16.7 % and 26.2 % under-inflated. So a
+     * live RCU would have been setting a low-pressure DTC on three corners. **Confirm against the
+     * actual doorjamb placard when the car is available** -- a preloaded value is the one that
+     * gets submitted unchanged.
+     */
+    const val DEFAULT_TIRE_PSI = 42.0f
+
+    /**
+     * Subdirectory of the log directory holding the indirect-TPMS store --
+     * `<externalFilesDir>/CodaLogs/tpms/`, a folder of immutable fragments (`TpmsEpochStore`).
+     *
+     * **Inside the log directory so SeaDrive on the head unit sweeps it up with everything else,
+     * and in a subdirectory so nothing that prunes or deletes can touch it.** Every path that
+     * deletes in the log directory is non-recursive and `.log`-only:
+     *
+     * | | |
+     * |---|---|
+     * | `LogFileServer` `/files` listing | log root, `.log`, non-recursive -- what the companion pulls then DELETEs |
+     * | `LogFileServer` DELETE | log-root `.log` names only; no `/` |
+     * | `CanLoggingService.pruneOldLogs` | `.log` filter, non-recursive -- the 10 GB cap cannot reach it |
+     * | companion "Delete local copies" | `isFile && .log`, non-recursive |
+     *
+     * So the retention rule the owner asked for -- rollover and sync deletion remove CAN logs only,
+     * never TPMS data -- holds by construction rather than by a rule someone has to remember.
+     *
+     * Reading is open: since 2026-09-26 `LogFileServer`'s `/tree` lists this folder and
+     * `GET /files/tpms/<name>` serves it, so the store can be read back and verified over the
+     * network. That retired the old trap ("switch the primary route to the companion and TPMS
+     * backup silently stops"): the files are no longer invisible to the server.
+     *
+     * Writing is narrow: `PUT /files/tpms/<name>.jsonl` adds a new fragment here and nowhere else,
+     * create-only, so a corrected drive row can be returned to the car (it supersedes the old row
+     * in the store's dedupe; nothing is replaced). The store re-reads after each one.
+     */
+    const val TPMS_DIR = "tpms"
+
+    /**
+     * Subfolder of the log directory for diagnostic reports that have to reach Seafile because
+     * there is no ADB to the car (`HardwareReport`). Same reachability as [TPMS_DIR]: SeaDrive,
+     * plus read-only through `LogFileServer`'s `/tree`; never pulled-and-deleted by the companion.
+     * A report arriving on the server is also evidence that SeaDrive syncs subfolders.
+     */
+    const val DIAG_DIR = "diag"
+
+    // Wheel-speed channels the detection method reads. See
+    // projects/coda/notes/indirect-tpms-feasibility.md section 2.
+    const val ID_WHEEL_FRONT = 0x200  // B0=SubFrameID; LF/RF valid ONLY when SubFrameID == 0
+    const val ID_WHEEL_REAR  = 0x208  // LR, RR, BrakePressure
+    const val ID_STEERING    = 0x080  // SteeringAngle -- the straightness gate
+    // Torque is ID_MCM_TELEMETRY (0x1C0), already declared above.
+
+    /** Wheel channel scale: zero = 0xC000, 0.0567 km/h per count (17.61 counts per km/h). */
+    const val WHEEL_SPEED_ZERO_RAW = 0xC000
+    const val WHEEL_SPEED_SCALE_KMH = 0.0567f
+
+    /**
+     * RCU status frame. B7 bit 5 is the TPMS telltale the IPK reads off B CAN (0 = OFF,
+     * 1 = FAULT); B5-B6 are an RCU awake-time counter that zeroes on restart.
+     */
+    const val ID_RCU_STATUS = 0x600
+    const val TPMS_TELLTALE_MASK = 0x20  // 0x600 B7 bit 5
+    /** Measured RCU cadence for 0x600: ~1.9 Hz, gaps clustered at 0.523-0.525 s. */
+    const val RCU_STATUS_PERIOD_MS = 525L
+
+    /**
+     * Every CAN ID this app is permitted to transmit, enforced by [PeriodicTransmitter] at
+     * registration. Deliberately a single ID.
+     *
+     * 0x600 is here because an indirect TPMS that drives the factory dash lamp must transmit it
+     * continuously just to hold the lamp *off* -- the IPK appears to infer the fault from the
+     * frame's absence, so there is no override, only replacement. That step also requires the RCU
+     * to be physically removed, and the evidence for its safety is one parts-car observation that
+     * contradicts the factory manual (feasibility document section 7a). Since 2026-09-26 the TPMS
+     * lamp slot is registered for this ID (`TpmsLampSlot`), but the transmitter is only enabled
+     * where [TPMS_LAMP_TX_ON_CAR] or the emulator harness says so; the allowlist is the
+     * wiring-time guard, not the decision.
+     */
+    val TX_ALLOWED_IDS = setOf(ID_RCU_STATUS)
+
+    /**
+     * **The one switch for the TPMS dash lamp on the car.** Owner, 2026-09-26: "leave it disabled
+     * for now until I confirm the RCU is disconnected (it's not yet)." Turned on 2026-10-04 for
+     * build 31: "build v31 with the 0x600 TX enabled. I will go pull the RCU in the car and then
+     * install it."
+     *
+     * False: the lamp slot is registered but [PeriodicTransmitter.enabled] stays false, so nothing
+     * is ever sent from the car -- only the emulator harness (`debug.coda.slcan`, ADB-only) turns
+     * the transmitter on. True: the car sends `0x600` on B CAN every [RCU_STATUS_PERIOD_MS], still
+     * subject to every interlock, notably the contention guard, which holds the slot silent for as
+     * long as an RCU is heard on the bus.
+     */
+    const val TPMS_LAMP_TX_ON_CAR = true
 
     // --- Replay (emulator / no-dongle testing) ---
     const val REPLAY_DIR = "replay"

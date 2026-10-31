@@ -271,36 +271,36 @@ epri-pt-bus.dbc	1426	FC44EF8B6239A953	EVSESwitchState=0;ExportPowerState=1;Ignit
 epri-pt-bus.dbc	1426	EA835F07AC976259	EVSESwitchState=1;ExportPowerState=0;IgnitionKeyState=0;Veh_BrakePdl_Pos=388.28
 epri-pt-bus.dbc	1426	CFDAA72CCD305E47	EVSESwitchState=1;ExportPowerState=1;IgnitionKeyState=0;Veh_BrakePdl_Pos=124.93
 epri-pt-bus.dbc	1426	F4A57F0385C478E4	EVSESwitchState=0;ExportPowerState=1;IgnitionKeyState=1;Veh_BrakePdl_Pos=503.09
-epri-pt-bus.dbc	1432	88A89A0585B8781F	DBL_ESSPwrAvg=-223.92;DBL_TracPwrAvg=-182.99
-epri-pt-bus.dbc	1432	3CEE9D51CF9F3C97	DBL_ESSPwrAvg=-45.48;DBL_TracPwrAvg=-246.25
-epri-pt-bus.dbc	1432	BC717044F44EE8BF	DBL_ESSPwrAvg=291.16;DBL_TracPwrAvg=202.12
-epri-pt-bus.dbc	1432	D4F16F7E29E4B927	DBL_ESSPwrAvg=-36.28;DBL_TracPwrAvg=-71.27
-epri-pt-bus.dbc	1432	391F674C54A7E23B	DBL_ESSPwrAvg=79.93;DBL_TracPwrAvg=-227
-epri-pt-bus.dbc	1432	69FA2EE41CE843D4	DBL_ESSPwrAvg=-14.31;DBL_TracPwrAvg=-61.16
-epri-pt-bus.dbc	1432	E91DEC9D0BCA8201	DBL_ESSPwrAvg=76.57;DBL_TracPwrAvg=-138.13
-epri-pt-bus.dbc	1432	6F2517D8B0201E23	DBL_ESSPwrAvg=95.83;DBL_TracPwrAvg=83.68
-epri-pt-bus.dbc	1432	F11092D15C45D7BF	DBL_ESSPwrAvg=43.37;DBL_TracPwrAvg=177.56
-epri-pt-bus.dbc	1432	C3E5C1C02944B23C	DBL_ESSPwrAvg=-67.17;DBL_TracPwrAvg=174.49
-epri-pt-bus.dbc	1432	5BC94172010B98ED	DBL_ESSPwrAvg=-139.89;DBL_TracPwrAvg=28.17
-epri-pt-bus.dbc	1432	D9C2757EEBB14F8D	DBL_ESSPwrAvg=-156.55;DBL_TracPwrAvg=-199.89
-epri-pt-bus.dbc	1432	603910D6087B6922	DBL_ESSPwrAvg=146.88;DBL_TracPwrAvg=314.96
-epri-pt-bus.dbc	1432	3311E4187D16CDE0	DBL_ESSPwrAvg=44.03;DBL_TracPwrAvg=57.57
-epri-pt-bus.dbc	1432	776F1C479477A3A4	DBL_ESSPwrAvg=285.35;DBL_TracPwrAvg=306.12
-epri-pt-bus.dbc	1432	799A4971D3998C1F	DBL_ESSPwrAvg=-259.91;DBL_TracPwrAvg=-261.57
-epri-pt-bus.dbc	1432	59DAFD18B0C3A3D5	DBL_ESSPwrAvg=-96.39;DBL_TracPwrAvg=-154.4
-epri-pt-bus.dbc	1432	D14C99C05EF27B73	DBL_ESSPwrAvg=196.65;DBL_TracPwrAvg=-34.9
-epri-pt-bus.dbc	1432	9949ED1DD3D544C6	DBL_ESSPwrAvg=188.41;DBL_TracPwrAvg=-107.97
-epri-pt-bus.dbc	1432	7C8268A928E6BD2F	DBL_ESSPwrAvg=-321.32;DBL_TracPwrAvg=-66.16
-epri-pt-bus.dbc	1432	611A89C11425606F	DBL_ESSPwrAvg=67.53;DBL_TracPwrAvg=94.92
-epri-pt-bus.dbc	1432	F56AAA9B076C613C	DBL_ESSPwrAvg=273.81;DBL_TracPwrAvg=276.55
-epri-pt-bus.dbc	1432	F57C68CB7AA490C2	DBL_ESSPwrAvg=319.89;DBL_TracPwrAvg=-234.3
-epri-pt-bus.dbc	1432	EEB79D85B8FEEE32	DBL_ESSPwrAvg=-184.5;DBL_TracPwrAvg=-3.28
-epri-pt-bus.dbc	1432	F0A368BDA0D31771	DBL_ESSPwrAvg=-235.68;DBL_TracPwrAvg=-113.6
-epri-pt-bus.dbc	1432	4A0885D5974E64A8	DBL_ESSPwrAvg=21.22;DBL_TracPwrAvg=201.19
-epri-pt-bus.dbc	1432	75C27DFFAC83FAFB	DBL_ESSPwrAvg=-157.55;DBL_TracPwrAvg=-318.28
-epri-pt-bus.dbc	1432	EB56B45647FA5E1E	DBL_ESSPwrAvg=222.51;DBL_TracPwrAvg=-14.65
-epri-pt-bus.dbc	1432	11261803D3467622	DBL_ESSPwrAvg=97.45;DBL_TracPwrAvg=181.31
-epri-pt-bus.dbc	1432	4D046FE9BF1EF7F9	DBL_ESSPwrAvg=11.01;DBL_TracPwrAvg=78.71
+epri-pt-bus.dbc	1432	88A89A0585B8781F	
+epri-pt-bus.dbc	1432	3CEE9D51CF9F3C97	
+epri-pt-bus.dbc	1432	BC717044F44EE8BF	
+epri-pt-bus.dbc	1432	D4F16F7E29E4B927	
+epri-pt-bus.dbc	1432	391F674C54A7E23B	
+epri-pt-bus.dbc	1432	69FA2EE41CE843D4	
+epri-pt-bus.dbc	1432	E91DEC9D0BCA8201	
+epri-pt-bus.dbc	1432	6F2517D8B0201E23	
+epri-pt-bus.dbc	1432	F11092D15C45D7BF	
+epri-pt-bus.dbc	1432	C3E5C1C02944B23C	
+epri-pt-bus.dbc	1432	5BC94172010B98ED	
+epri-pt-bus.dbc	1432	D9C2757EEBB14F8D	
+epri-pt-bus.dbc	1432	603910D6087B6922	
+epri-pt-bus.dbc	1432	3311E4187D16CDE0	
+epri-pt-bus.dbc	1432	776F1C479477A3A4	
+epri-pt-bus.dbc	1432	799A4971D3998C1F	
+epri-pt-bus.dbc	1432	59DAFD18B0C3A3D5	
+epri-pt-bus.dbc	1432	D14C99C05EF27B73	
+epri-pt-bus.dbc	1432	9949ED1DD3D544C6	
+epri-pt-bus.dbc	1432	7C8268A928E6BD2F	
+epri-pt-bus.dbc	1432	611A89C11425606F	
+epri-pt-bus.dbc	1432	F56AAA9B076C613C	
+epri-pt-bus.dbc	1432	F57C68CB7AA490C2	
+epri-pt-bus.dbc	1432	EEB79D85B8FEEE32	
+epri-pt-bus.dbc	1432	F0A368BDA0D31771	
+epri-pt-bus.dbc	1432	4A0885D5974E64A8	
+epri-pt-bus.dbc	1432	75C27DFFAC83FAFB	
+epri-pt-bus.dbc	1432	EB56B45647FA5E1E	
+epri-pt-bus.dbc	1432	11261803D3467622	
+epri-pt-bus.dbc	1432	4D046FE9BF1EF7F9	
 epri-pt-bus.dbc	1433	0803D206088C9208	GeneOilPress=77.6;TracOilPress=3584.8
 epri-pt-bus.dbc	1433	DC5B36314C7B6281	GeneOilPress=2351.6;TracOilPress=3156.4
 epri-pt-bus.dbc	1433	B588CB28BFCFEB7C	GeneOilPress=3499.7;TracOilPress=5318.3
@@ -1201,36 +1201,36 @@ epri-obd-bus.dbc	1122	37A7A5616ACA	TRAC_HighPwr_Volt=1447;TRAC_HighPwr_Curr=664.
 epri-obd-bus.dbc	1122	DB3D766D36B6	TRAC_HighPwr_Volt=1597;TRAC_HighPwr_Curr=1435.25
 epri-obd-bus.dbc	1122	A55807CDA106	TRAC_HighPwr_Volt=1880;TRAC_HighPwr_Curr=115.25
 epri-obd-bus.dbc	1122	C76CEA70218E	TRAC_HighPwr_Volt=620;TRAC_HighPwr_Curr=92
-epri-obd-bus.dbc	1217	BC16226FD29AFF34	ECM_EngineCoolantTemp=170;ECM_EngineAirIntakeTemp=114;ECM_OutsideAirTemp=87.5
-epri-obd-bus.dbc	1217	578030A6C644AA59	ECM_EngineCoolantTemp=158;ECM_EngineAirIntakeTemp=28;ECM_OutsideAirTemp=45
-epri-obd-bus.dbc	1217	A2F622AB09E5C377	ECM_EngineCoolantTemp=-31;ECM_EngineAirIntakeTemp=189;ECM_OutsideAirTemp=57.5
-epri-obd-bus.dbc	1217	06770A3F9E79DB7C	ECM_EngineCoolantTemp=118;ECM_EngineAirIntakeTemp=81;ECM_OutsideAirTemp=69.5
-epri-obd-bus.dbc	1217	281E46BFFF97674D	ECM_EngineCoolantTemp=215;ECM_EngineAirIntakeTemp=111;ECM_OutsideAirTemp=11.5
-epri-obd-bus.dbc	1217	C0681379E3A8448E	ECM_EngineCoolantTemp=187;ECM_EngineAirIntakeTemp=128;ECM_OutsideAirTemp=-6
-epri-obd-bus.dbc	1217	A214D4930C75A9AF	ECM_EngineCoolantTemp=-28;ECM_EngineAirIntakeTemp=77;ECM_OutsideAirTemp=44.5
-epri-obd-bus.dbc	1217	7C691B7F71C3A45D	ECM_EngineCoolantTemp=73;ECM_EngineAirIntakeTemp=155;ECM_OutsideAirTemp=42
-epri-obd-bus.dbc	1217	E20321FB23621A48	ECM_EngineCoolantTemp=-5;ECM_EngineAirIntakeTemp=58;ECM_OutsideAirTemp=-27
-epri-obd-bus.dbc	1217	68402E58687828DA	ECM_EngineCoolantTemp=64;ECM_EngineAirIntakeTemp=80;ECM_OutsideAirTemp=-20
-epri-obd-bus.dbc	1217	EF9F54657DD95A7F	ECM_EngineCoolantTemp=85;ECM_EngineAirIntakeTemp=177;ECM_OutsideAirTemp=5
-epri-obd-bus.dbc	1217	9B92E5678BF628B8	ECM_EngineCoolantTemp=99;ECM_EngineAirIntakeTemp=206;ECM_OutsideAirTemp=-20
-epri-obd-bus.dbc	1217	CBC155F1E1D8DD4F	ECM_EngineCoolantTemp=185;ECM_EngineAirIntakeTemp=176;ECM_OutsideAirTemp=70.5
-epri-obd-bus.dbc	1217	F60AC3DA2A994E59	ECM_EngineCoolantTemp=2;ECM_EngineAirIntakeTemp=113;ECM_OutsideAirTemp=-1
-epri-obd-bus.dbc	1217	83C2ED9CE891C0F6	ECM_EngineCoolantTemp=192;ECM_EngineAirIntakeTemp=105;ECM_OutsideAirTemp=56
-epri-obd-bus.dbc	1217	24AA45F0644F6102	ECM_EngineCoolantTemp=60;ECM_EngineAirIntakeTemp=39;ECM_OutsideAirTemp=8.5
-epri-obd-bus.dbc	1217	06BFFBCFD4CABFC4	ECM_EngineCoolantTemp=172;ECM_EngineAirIntakeTemp=162;ECM_OutsideAirTemp=55.5
-epri-obd-bus.dbc	1217	FA9D24D1133FC553	ECM_EngineCoolantTemp=-21;ECM_EngineAirIntakeTemp=23;ECM_OutsideAirTemp=58.5
-epri-obd-bus.dbc	1217	63DF82B2FABC1DC5	ECM_EngineCoolantTemp=210;ECM_EngineAirIntakeTemp=148;ECM_OutsideAirTemp=-25.5
-epri-obd-bus.dbc	1217	D97E7CF411B90E4B	ECM_EngineCoolantTemp=-23;ECM_EngineAirIntakeTemp=145;ECM_OutsideAirTemp=-33
-epri-obd-bus.dbc	1217	85E94B827E52063B	ECM_EngineCoolantTemp=86;ECM_EngineAirIntakeTemp=42;ECM_OutsideAirTemp=-37
-epri-obd-bus.dbc	1217	2FC4CB2960D854DA	ECM_EngineCoolantTemp=56;ECM_EngineAirIntakeTemp=176;ECM_OutsideAirTemp=2
-epri-obd-bus.dbc	1217	819AC39DD22D37B0	ECM_EngineCoolantTemp=170;ECM_EngineAirIntakeTemp=5;ECM_OutsideAirTemp=-12.5
-epri-obd-bus.dbc	1217	49896BCB9D0356FB	ECM_EngineCoolantTemp=117;ECM_EngineAirIntakeTemp=-37;ECM_OutsideAirTemp=3
-epri-obd-bus.dbc	1217	003123D5D593DC57	ECM_EngineCoolantTemp=173;ECM_EngineAirIntakeTemp=107;ECM_OutsideAirTemp=70
-epri-obd-bus.dbc	1217	5ABF5F4465F95D38	ECM_EngineCoolantTemp=61;ECM_EngineAirIntakeTemp=209;ECM_OutsideAirTemp=6.5
-epri-obd-bus.dbc	1217	E66C5F661E5D6284	ECM_EngineCoolantTemp=-10;ECM_EngineAirIntakeTemp=53;ECM_OutsideAirTemp=9
-epri-obd-bus.dbc	1217	D1E1375528962BC1	ECM_EngineCoolantTemp=0;ECM_EngineAirIntakeTemp=110;ECM_OutsideAirTemp=-18.5
-epri-obd-bus.dbc	1217	3F8D20AF0F78F4F8	ECM_EngineCoolantTemp=-25;ECM_EngineAirIntakeTemp=80;ECM_OutsideAirTemp=82
-epri-obd-bus.dbc	1217	33041F880315316C	ECM_EngineCoolantTemp=-37;ECM_EngineAirIntakeTemp=-19;ECM_OutsideAirTemp=-15.5
+epri-obd-bus.dbc	1217	BC16226FD29AFF34	ECM_EngineCoolantTemp=-6;ECM_EngineAirIntakeTemp=71;ECM_OutsideAirTemp=65
+epri-obd-bus.dbc	1217	578030A6C644AA59	ECM_EngineCoolantTemp=8;ECM_EngineAirIntakeTemp=126;ECM_OutsideAirTemp=59
+epri-obd-bus.dbc	1217	A2F622AB09E5C377	ECM_EngineCoolantTemp=-6;ECM_EngineAirIntakeTemp=131;ECM_OutsideAirTemp=-35.5
+epri-obd-bus.dbc	1217	06770A3F9E79DB7C	ECM_EngineCoolantTemp=-30;ECM_EngineAirIntakeTemp=23;ECM_OutsideAirTemp=39
+epri-obd-bus.dbc	1217	281E46BFFF97674D	ECM_EngineCoolantTemp=30;ECM_EngineAirIntakeTemp=151;ECM_OutsideAirTemp=87.5
+epri-obd-bus.dbc	1217	C0681379E3A8448E	ECM_EngineCoolantTemp=-21;ECM_EngineAirIntakeTemp=81;ECM_OutsideAirTemp=73.5
+epri-obd-bus.dbc	1217	A214D4930C75A9AF	ECM_EngineCoolantTemp=172;ECM_EngineAirIntakeTemp=107;ECM_OutsideAirTemp=-34
+epri-obd-bus.dbc	1217	7C691B7F71C3A45D	ECM_EngineCoolantTemp=-13;ECM_EngineAirIntakeTemp=87;ECM_OutsideAirTemp=16.5
+epri-obd-bus.dbc	1217	E20321FB23621A48	ECM_EngineCoolantTemp=-7;ECM_EngineAirIntakeTemp=211;ECM_OutsideAirTemp=-22.5
+epri-obd-bus.dbc	1217	68402E58687828DA	ECM_EngineCoolantTemp=6;ECM_EngineAirIntakeTemp=48;ECM_OutsideAirTemp=12
+epri-obd-bus.dbc	1217	EF9F54657DD95A7F	ECM_EngineCoolantTemp=44;ECM_EngineAirIntakeTemp=61;ECM_OutsideAirTemp=22.5
+epri-obd-bus.dbc	1217	9B92E5678BF628B8	ECM_EngineCoolantTemp=189;ECM_EngineAirIntakeTemp=63;ECM_OutsideAirTemp=29.5
+epri-obd-bus.dbc	1217	CBC155F1E1D8DD4F	ECM_EngineCoolantTemp=45;ECM_EngineAirIntakeTemp=201;ECM_OutsideAirTemp=72.5
+epri-obd-bus.dbc	1217	F60AC3DA2A994E59	ECM_EngineCoolantTemp=155;ECM_EngineAirIntakeTemp=178;ECM_OutsideAirTemp=-19
+epri-obd-bus.dbc	1217	83C2ED9CE891C0F6	ECM_EngineCoolantTemp=197;ECM_EngineAirIntakeTemp=116;ECM_OutsideAirTemp=76
+epri-obd-bus.dbc	1217	24AA45F0644F6102	ECM_EngineCoolantTemp=29;ECM_EngineAirIntakeTemp=200;ECM_OutsideAirTemp=10
+epri-obd-bus.dbc	1217	06BFFBCFD4CABFC4	ECM_EngineCoolantTemp=211;ECM_EngineAirIntakeTemp=167;ECM_OutsideAirTemp=66
+epri-obd-bus.dbc	1217	FA9D24D1133FC553	ECM_EngineCoolantTemp=-4;ECM_EngineAirIntakeTemp=169;ECM_OutsideAirTemp=-30.5
+epri-obd-bus.dbc	1217	63DF82B2FABC1DC5	ECM_EngineCoolantTemp=90;ECM_EngineAirIntakeTemp=138;ECM_OutsideAirTemp=85
+epri-obd-bus.dbc	1217	D97E7CF411B90E4B	ECM_EngineCoolantTemp=84;ECM_EngineAirIntakeTemp=204;ECM_OutsideAirTemp=-31.5
+epri-obd-bus.dbc	1217	85E94B827E52063B	ECM_EngineCoolantTemp=35;ECM_EngineAirIntakeTemp=90;ECM_OutsideAirTemp=23
+epri-obd-bus.dbc	1217	2FC4CB2960D854DA	ECM_EngineCoolantTemp=163;ECM_EngineAirIntakeTemp=1;ECM_OutsideAirTemp=8
+epri-obd-bus.dbc	1217	819AC39DD22D37B0	ECM_EngineCoolantTemp=155;ECM_EngineAirIntakeTemp=117;ECM_OutsideAirTemp=65
+epri-obd-bus.dbc	1217	49896BCB9D0356FB	ECM_EngineCoolantTemp=67;ECM_EngineAirIntakeTemp=163;ECM_OutsideAirTemp=38.5
+epri-obd-bus.dbc	1217	003123D5D593DC57	ECM_EngineCoolantTemp=-5;ECM_EngineAirIntakeTemp=173;ECM_OutsideAirTemp=66.5
+epri-obd-bus.dbc	1217	5ABF5F4465F95D38	ECM_EngineCoolantTemp=55;ECM_EngineAirIntakeTemp=28;ECM_OutsideAirTemp=10.5
+epri-obd-bus.dbc	1217	E66C5F661E5D6284	ECM_EngineCoolantTemp=55;ECM_EngineAirIntakeTemp=62;ECM_OutsideAirTemp=-25
+epri-obd-bus.dbc	1217	D1E1375528962BC1	ECM_EngineCoolantTemp=15;ECM_EngineAirIntakeTemp=45;ECM_OutsideAirTemp=-20
+epri-obd-bus.dbc	1217	3F8D20AF0F78F4F8	ECM_EngineCoolantTemp=-8;ECM_EngineAirIntakeTemp=135;ECM_OutsideAirTemp=-32.5
+epri-obd-bus.dbc	1217	33041F880315316C	ECM_EngineCoolantTemp=-9;ECM_EngineAirIntakeTemp=96;ECM_OutsideAirTemp=-38.5
 BelInverter-v2.dbc	419419328	00C088F8F2ACDBAC	BELINV_statusMultiplexer=0;BELINV_keySwitch=0;BELINV_pilotControlSignal=0;BELINV_proxEnabled=0;BELINV_evseConnected=0;BELINV_vehicleConnected=0;BELINV_auxPowerSupply=0;BELINV_chargerEnergyFlowEnable=1;BELINV_s2Switch=1;BELINV_chargingInProgress=0;BELINV_powerChargingInProgress=0;BELINV_exportEnergy=0;BELINV_exporting=1;BELINV_gridTied=0;BELINV_wakeOutput=0;BELINV_delayedSleepMode=1;BELINV_rewakedFromDelayedSleep=0;BELINV_inverterAlive=0;BELINV_inverterReady=0;BELINV_buckBoostAlive=1;BELINV_buckBoostReady=1;BELINV_alciResetOn=1;BELINV_alciActive=1;BELINV_evseDisconnected=1;BELINV_autoLowPower=0;BELINV_standby=1;BELINV_unitReady=1;BELINV_state=172;BELINV_shutdownSource=219;BELINV_stateBeforeLastShutdown=172
 BelInverter-v2.dbc	419419328	00AFA17AB8CCC11D	BELINV_statusMultiplexer=0;BELINV_keySwitch=1;BELINV_pilotControlSignal=1;BELINV_proxEnabled=1;BELINV_evseConnected=1;BELINV_vehicleConnected=0;BELINV_auxPowerSupply=1;BELINV_chargerEnergyFlowEnable=0;BELINV_s2Switch=1;BELINV_chargingInProgress=1;BELINV_powerChargingInProgress=0;BELINV_exportEnergy=0;BELINV_exporting=0;BELINV_gridTied=0;BELINV_wakeOutput=1;BELINV_delayedSleepMode=1;BELINV_rewakedFromDelayedSleep=0;BELINV_inverterAlive=1;BELINV_inverterReady=0;BELINV_buckBoostAlive=1;BELINV_buckBoostReady=1;BELINV_alciResetOn=1;BELINV_alciActive=1;BELINV_evseDisconnected=0;BELINV_autoLowPower=0;BELINV_standby=0;BELINV_unitReady=1;BELINV_state=204;BELINV_shutdownSource=193;BELINV_stateBeforeLastShutdown=29
 BelInverter-v2.dbc	419419328	00A93301E9CD470D	BELINV_statusMultiplexer=0;BELINV_keySwitch=1;BELINV_pilotControlSignal=0;BELINV_proxEnabled=0;BELINV_evseConnected=1;BELINV_vehicleConnected=0;BELINV_auxPowerSupply=1;BELINV_chargerEnergyFlowEnable=0;BELINV_s2Switch=1;BELINV_chargingInProgress=1;BELINV_powerChargingInProgress=1;BELINV_exportEnergy=0;BELINV_exporting=0;BELINV_gridTied=1;BELINV_wakeOutput=1;BELINV_delayedSleepMode=0;BELINV_rewakedFromDelayedSleep=1;BELINV_inverterAlive=0;BELINV_inverterReady=0;BELINV_buckBoostAlive=0;BELINV_buckBoostReady=0;BELINV_alciResetOn=0;BELINV_alciActive=0;BELINV_evseDisconnected=0;BELINV_autoLowPower=0;BELINV_standby=1;BELINV_unitReady=1;BELINV_state=205;BELINV_shutdownSource=71;BELINV_stateBeforeLastShutdown=13

@@ -17,6 +17,10 @@ class CANFrame:
     is_extended: bool         # True if 29-bit ID
     dlc: int                  # data length code
     is_tx: bool = False       # True if transmitted (vs received)
+    # True for an adapter error frame (BUSMASTER `ERR` line); arbitration_id is
+    # then the SocketCAN error-class mask, not a message ID.  Only yielded when
+    # a parser is asked for them (BusmasterParser include_errors=True).
+    is_error: bool = False
 
     @property
     def id_hex(self) -> str:
@@ -25,7 +29,8 @@ class CANFrame:
 
     def __repr__(self) -> str:
         data_hex = " ".join(f"{b:02X}" for b in self.data)
-        return f"CANFrame(t={self.timestamp:.4f} bus={self.bus} id={self.id_hex} [{self.dlc}] {data_hex})"
+        kind = " ERR" if self.is_error else ""
+        return f"CANFrame(t={self.timestamp:.4f} bus={self.bus}{kind} id={self.id_hex} [{self.dlc}] {data_hex})"
 
 
 class BaseParser(ABC):

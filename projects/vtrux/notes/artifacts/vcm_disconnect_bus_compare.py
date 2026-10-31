@@ -17,7 +17,7 @@ from pathlib import Path
 LOGS = Path(r"<repo>\projects\vtrux\logs")
 
 REF_LOG = LOGS / "generator-on-then-off.log"
-T3_LOG  = LOGS / "vtruxwoodwardbconnectordisconnected.log"
+T3_LOG  = LOGS / "unidentified-bus" / "vtruxwoodwardbconnectordisconnected.log"
 
 FRAME_RE = re.compile(
     r"^(\d{2}:\d{2}:\d{2}:\d{4})\s+\w+\s+(\d+)\s+0x([0-9A-Fa-f]+)\s+[se]\s+(\d+)\s+((?:[0-9A-Fa-f]{2}\s*)+)"

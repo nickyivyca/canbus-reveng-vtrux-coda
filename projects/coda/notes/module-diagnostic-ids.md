@@ -33,8 +33,9 @@ origin on its own -- it is only Coda's number for the unit.
 Notes:
 - **DLCM = Continental — confirmed.** The `A2C...` prefix is Continental/Temic's
   standard part-number format, and the physical module carries a Continental
-  label. (Matches the firmware decompile: DLCM = Continental EMS9180, Renesas
-  SH-4 -- see `dlcm/coda-dlcm-decompile-notes.md`.)
+  label. (Matches the firmware decompile: DLCM = Continental EMS9180, Infineon
+  TriCore little-endian -- corrected 2026-09-19, previously recorded as Renesas
+  SH-4; see `dlcm/coda-dlcm-decompile-notes.md`.)
 - Gateway VM # `AK21080200` matches the gateway firmware decompile string
   (see `coda-gateway-decompile-notes.md`).
 - EPS supplier software `CODA_02.0.01` is Coda-specific firmware on a third-party
@@ -73,8 +74,8 @@ semi-confirmed to confirmed.
 
 ### SRS DTC list provenance & lineage (2026-07-03) -- semi-confirmed
 - **Source of the list:** the Coda airbag DTC descriptions come from Coda's own
-  2012 SRS diagnostic manual (`Diagnostic/SRS_DTCs.htm`, an Adobe RoboHelp export
-  dated 2012-12-06, plus `Diagnostic/SRS DTCs.pdf` / `DTC Master List.pdf`),
+  2012 SRS diagnostic manual (`Diagnostic/precursor/SRS_DTCs.htm`, an Adobe RoboHelp export
+  dated 2012-12-06, plus `Diagnostic/precursor/SRS DTCs.pdf` / `Diagnostic/precursor/DTC Master List.pdf`),
   mechanically extracted into `coda-diagnostics/coda_dtc_list.csv` by
   `extract_dtc_pdf.py`.
 - **Lineage (semi-confirmed): the airbag DTC table matches the Hyundai/Kia SRSCM
@@ -95,7 +96,7 @@ semi-confirmed to confirmed.
   override the real PDF data. It was a hallucinated mash-up (Hyundai decimal codes
   B1382/B2505 + Chrysler *immobilizer* B1Axx + Chrysler *squib* B1Bxx) and was
   later removed; the final list is Coda-manual-sourced. Full captured dev session:
-  `Diagnostic/copilot-log.md`.
+  `Diagnostic/precursor/copilot-log.md`.
 - **Why only semi-confirmed:** the match is on the DTC table (software), and the
   module still exposes only Coda's `AK36030100` on the bus -- no supplier ID.
   Physical confirmation is still pending (see buckle-switch note above).
@@ -104,7 +105,7 @@ semi-confirmed to confirmed.
   `notes/artifacts/dtc_ancel_compare.py` for the Toyota/Honda/GM/generic controls.
 
 ## SRS DTCs read 2026-06-27 (real scanner cross-checked)
-Captured in `logs/coda_srs_dtc_read.log`:
+Captured in `../Diagnostic/logs/coda_srs_dtc_read.log`:
 
 | DTC | Description |
 |-----|-------------|
@@ -124,5 +125,5 @@ A later live read (same session, after the clear) showed the airbag reporting
   **U0037** ("CAN Bus Failure Detected"), not U1037 (the old decoder's hard-coded
   leading digit was an artifact).
 - Fixed airbag clear: real scanner uses `14 FF 00` (2-byte KWP group), not the
-  3-byte `14 FF FF FF`. Verified against `logs/coda_srs_dtc_clear.log`.
+  3-byte `14 FF FF FF`. Verified against `../Diagnostic/logs/coda_srs_dtc_clear.log`.
 - See the repo's `docs/protocol.md` for full encoding details.

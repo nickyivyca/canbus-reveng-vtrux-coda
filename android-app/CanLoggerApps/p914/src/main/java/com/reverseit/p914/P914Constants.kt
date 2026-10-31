@@ -45,14 +45,17 @@ object P914Constants {
     const val BRIDGE_PORT = 9000
 
     /**
-     * Logs go to the app-private external directory, which needs no storage permission at all --
-     * the system grants the owning app full access. `:vtrux` uses a public `/sdcard` path so
-     * other apps can sync it, which costs it MANAGE_EXTERNAL_STORAGE; that trade is not worth
-     * making before the transport is proven, so EXTRA_LOG_DIR is deliberately not set and
-     * CanLoggingService falls back to `getExternalFilesDir(null)/P914Logs/`.
+     * Logs go to a public folder so a sync app (Seafile) can pick them up, as `:vtrux` does.
+     * Until 2026-09-26 they went to the app-private external directory, deliberately, while the
+     * transport was unproven; Android 11+ hides that directory from other apps, so it could not
+     * be synced.
      *
-     * Pull with:
-     *   adb pull /sdcard/Android/data/com.reverseit.p914/files/P914Logs/
+     * The public folder needs "All files access" (MANAGE_EXTERNAL_STORAGE, declared in
+     * `:cancore`'s manifest). Without the grant P914Application passes no EXTRA_LOG_DIR and
+     * CanLoggingService falls back to `getExternalFilesDir(null)/P914Logs/`, so a missing grant
+     * moves the logs rather than stopping them. Grant over adb with:
+     *   adb shell appops set --uid com.reverseit.p914 MANAGE_EXTERNAL_STORAGE allow
+     * The folder is chosen when the logging service starts, so restart the app after granting.
      */
-    val LOG_DIR_OVERRIDE: String? = null
+    const val PUBLIC_LOG_DIR = "/sdcard/P914Logs"
 }

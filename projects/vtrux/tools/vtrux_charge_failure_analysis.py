@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
+from canre.utils.buses import describe, resolve_files
 from canre.utils.merge import detect_capture_groups, merge_files
 
 # ---------------------------------------------------------------------------
@@ -23,6 +24,18 @@ from canre.utils.merge import detect_capture_groups, merge_files
 
 PT_BUS_ANCHOR_ID         = 0x051       # Always on PT bus; used to identify PT channel
 PT_BUS_ANCHOR_FALLBACK   = 0x18FFD4C0  # Charger-only logs lack 0x051; use charger ID instead
+
+# Channels are resolved to buses per file by anchor fraction and time span
+# (canre/utils/buses.py). Channel numbers churn in Android T0 chunks: the PT
+# bus of vtrux_20260925_155857_T0 is ch 8, 10, 14, 16 and 18 in sequence, and
+# locking to the first channel carrying 0x051 discarded the whole session.
+# The other buses are listed only so their channels score correctly.
+BUS_ANCHORS = [
+    ("powertrain", {PT_BUS_ANCHOR_ID, PT_BUS_ANCHOR_FALLBACK}),
+    ("vehicle",    {0x1E5, 0x500}),
+    ("obd",        {0x040, 0x041, 0x042, 0x043, 0x044}),
+]
+PT_BUS = "powertrain"
 
 # Standard 11-bit target IDs (PT bus only)
 TARGET_STD = {
@@ -93,38 +106,33 @@ def resolve_input_files(args):
 # ---------------------------------------------------------------------------
 
 def collect_frames(paths):
-    """Stream all files once.
-
-    Identifies PT bus from the first 0x051 frame, then accumulates
-    (timestamp, data) tuples for each target ID on that bus only.
+    """Pre-scan each file to resolve its PT channel(s), then stream all
+    files once, accumulating (timestamp, data) tuples for each target ID on
+    the PT bus only.
 
     Returns:
-        pt_bus (int|None): PT bus channel number; None if 0x051 never seen.
+        bus_lines (list[str]): per-file channel -> bus resolution, for the
+            report header; pt_found is False if no file had a PT channel.
         accumulated (dict[int, list[tuple[float, bytes]]]): per-ID frame lists.
         duration (float): timestamp of last frame seen.
         frame_count (int): total frames across all buses.
     """
-    pt_bus = None
+    bus_map = resolve_files(paths, BUS_ANCHORS)
+    pt_found = any(PT_BUS in m.values() for m in bus_map.values())
     accumulated = {aid: [] for aid in ALL_TARGETS}
     duration = 0.0
     frame_count = 0
 
-    for frame in merge_files(paths):
+    # Frames on unidentified channels are dropped by merge_files, so
+    # frame_count counts identified-bus frames only.
+    for frame in merge_files(paths, bus_map=bus_map):
         frame_count += 1
         duration = frame.timestamp
 
-        if pt_bus is None:
-            if frame.arbitration_id == PT_BUS_ANCHOR_ID:
-                pt_bus = frame.bus
-            elif frame.arbitration_id == PT_BUS_ANCHOR_FALLBACK:
-                pt_bus = frame.bus  # charger-only log: no 0x051, use charger ID
-
-        if (pt_bus is not None
-                and frame.bus == pt_bus
-                and frame.arbitration_id in ALL_TARGETS):
+        if frame.bus == PT_BUS and frame.arbitration_id in ALL_TARGETS:
             accumulated[frame.arbitration_id].append((frame.timestamp, frame.data))
 
-    return pt_bus, accumulated, duration, frame_count
+    return (describe(bus_map), pt_found), accumulated, duration, frame_count
 
 
 # ---------------------------------------------------------------------------
@@ -1664,7 +1672,8 @@ def classify_failure(results):
 # Report assembly
 # ---------------------------------------------------------------------------
 
-def build_report(paths, pt_bus, accumulated, duration, frame_count, window):
+def build_report(paths, buses, accumulated, duration, frame_count, window):
+    bus_lines, pt_found = buses
     label = ", ".join(p.name for p in paths)
     lines = []
 
@@ -1673,9 +1682,11 @@ def build_report(paths, pt_bus, accumulated, duration, frame_count, window):
     lines.append(SEP)
     lines.append(f"Log:      {label}")
     lines.append(f"Duration: {duration:.1f}s ({duration / 60:.1f} min)")
-    lines.append(f"Frames:   {frame_count:,} total")
-    if pt_bus is not None:
-        lines.append(f"PT bus:   channel {pt_bus} (anchor: 0x{PT_BUS_ANCHOR_ID:03X})")
+    lines.append(f"Frames:   {frame_count:,} on identified buses")
+    if pt_found:
+        lines.append(f"Buses (anchors 0x{PT_BUS_ANCHOR_ID:03X} / 0x{PT_BUS_ANCHOR_FALLBACK:08X} "
+                     f"for PT; channels resolved per file):")
+        lines.extend(f"  {b}" for b in bus_lines)
     else:
         lines.append(
             f"PT bus:   NOT IDENTIFIED -- neither 0x{PT_BUS_ANCHOR_ID:03X} nor "
@@ -1766,8 +1777,8 @@ def main():
         parser.error("Provide FILE argument(s) or use --dir.")
 
     paths = resolve_input_files(args)
-    pt_bus, accumulated, duration, frame_count = collect_frames(paths)
-    report = build_report(paths, pt_bus, accumulated, duration, frame_count, args.window)
+    buses, accumulated, duration, frame_count = collect_frames(paths)
+    report = build_report(paths, buses, accumulated, duration, frame_count, args.window)
 
     if args.output:
         out_path = Path(args.output)

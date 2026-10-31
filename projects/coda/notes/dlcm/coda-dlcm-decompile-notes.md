@@ -1,5 +1,24 @@
 # Coda DLCM ECU — Firmware Decompile Notes
 
+> ## ⚠ 2026-09-19 — ISA CORRECTION: this ECU is TriCore, not SH-4
+>
+> **The DLCM is an Infineon TriCore (little-endian). This file previously asserted
+> Renesas SuperH (SH-4) big-endian, and every disassembly-derived finding below was
+> produced under that wrong premise.** See the [Architecture](#architecture) section for
+> the evidence and for why the old evidence looked convincing.
+>
+> **Before relying on anything in this file, check which side of this line it falls on:**
+>
+> | Status | What |
+> |---|---|
+> | **Still valid** | Anything derived from *data*: the UDS dispatch table, DID descriptor tables, the REDYWAIT state descriptor struct, the 12-byte event record table, CAL contents, binary provenance, load addresses, the flash session summary, and all CAN-log analysis. Data structures were read correctly because reading a table does not depend on the instruction decoder. |
+> | **Invalid until re-derived** | Anything derived from *disassembly*: the 353 functions in the `dlcm_analysis` Ghidra project, the “529 Continental variant opcodes”, the delay-slot “obfuscation”, the `reset_entry` / VBR / startup-chain analysis, the CAN 0x212 transmit code trace, the torque-limiter code trace, and every `halt_unimplemented()` / `halt_baddata()` explanation. |
+>
+> Re-derivation is cheap, not a re-investigation: under `tricore:LE:32:default` the image
+> disassembles cleanly on the first pass. The UDS SecurityAccess handler went from
+> `halt_baddata()` to readable C in one run, which is how the seed/key algorithm
+> — blocked for months — was solved the same day. See `dlcm-security-access.md` §1c.
+
 ## Goal
 
 **Speed up the torque zero-crossing anti-lash filtering / rate limiting** so the throttle response feels less sluggish through the lash zone. Mechanism per the spec is the §10.7 State Dependent Torque Gradient Limiter — a pure rate limiter whose tightness near zero comes from `gradientLimiterPositive_TrqLast[TrqLast]` and `gradientLimiterNegative_TrqLast[TrqLast]` having small step sizes around TrqLast = 0. The end goal is to identify those two LUTs in the CAL binary and edit them so the rate limit through the lash zone is larger.
@@ -8,15 +27,156 @@
 
 The Simulink topology, calibration item list, and rate-limit equations live in **`dlcm-torque-flow.md`** (re-transcription of `dlcm-torque-flow-chart.png`). Refer to that file for the canonical architecture; this notes file does not reproduce it.
 
+## The symbol map — KEEP THIS UP TO DATE
+
+**`artifacts/dlcm_symbols.csv` is the function-to-meaning index for this firmware,
+and it is the source of truth. The Ghidra database is derived from it.**
+
+Apply it with `ghidra/scripts/DlcmApplySymbols.java`; check it is still applied
+with `DlcmSymbolCensus.java`.
+
+**Why it exists.** On 2026-10-07 the census measured the database after two
+months of reverse engineering: **2960 functions, 0 with a real name, 0 labels, 0
+comments.** Findings flowed out of Ghidra into prose and never back in, so every
+session opened the project, saw `FUN_80056c20`, and had no signal that the answer
+was already written down. That produced **four re-derivations of existing material
+in a single session** (worklog 6H.1 the UDS DID table, 6H.26 the creep
+identification, 6H.29 the reaction chain, 6H.32 reason code 12) and one of them
+published a wrong attribution that an existing note had explicitly warned against.
+A named function makes that failure visible the moment a decompile is read.
+
+**Why the CSV and not the database.** Ghidra projects must live on a local path
+(`tools-reference.md`), so the database does not sync between machines. Anything
+recorded only there is stranded — which is literally how
+`dlcm-dtcs-investigation.md` §2b came to exist, its opening line noting that the
+finding "existed only in `~/ghidra-projects/dlcm_export/safety_flags.txt`, which
+is machine-local and does not sync." The CSV is in the repo and syncs. The
+database is disposable and rebuildable.
+
+**The maintenance rule, for every future session doing decompilation work:**
+
+1. **Before tracing a function, look it up.** `grep` the address in
+   `dlcm_symbols.csv`. A hit means the work is done — read the `source` column
+   and go to that note section instead of re-deriving it.
+2. **After identifying a function, add the row** — in the same step as writing
+   the finding to notes, not later. Columns: `address, name, kind, end, role,
+   source, confidence`. Set `confidence` to `hypothesis` unless the role is
+   confirmed, and always fill `source` with the note section that establishes it,
+   so a later reader can check the claim rather than trust the name.
+3. **Record fragments explicitly** with `kind=fragment` and a `role` naming the
+   real parent function. The ECM2 band is pervasively fragmented because
+   `FUN_80082EAA` is wrongly marked "does not return" (worklog 6H.15), and a
+   fragment label is **not a stable identifier** — the same region was
+   `FUN_80050980` in one Ghidra run and `FUN_800509A6` in the next (worklog
+   6H.32b). Rows that pin a fragment to its parent are among the most valuable in
+   the file.
+4. **Prefer the true ret-to-ret span** in the `end` column over any Ghidra
+   function boundary in this band.
+5. **Re-run `DlcmApplySymbols.java` after any project rebuild**, and never
+   hand-edit a name in the GUI expecting it to survive.
+
+Seeded 2026-10-07 with 54 rows covering the torque and ECM2 safety path (the
+limiter, all 16 reason-code detectors, the speed chain, creep, the IIR and LUT
+helpers, the reaction and reset path). **It is deliberately partial** — 2894
+functions are still unnamed, so an absent row means "not yet recorded", never
+"not identified".
+
 ## Tooling guidance: prefer Ghidra over manual Python disassembly
 
 **Running Ghidra (headless, via `analyzeHeadless.bat`) is effectively free** — local computer execution costs nothing, and the only token cost is generating the script and interpreting the output log. Where Ghidra and a hand-rolled Python disassembler can both do the job, **default to Ghidra**. Where Ghidra is helpful at all, **just run it autonomously without asking** — the cost profile is the same as running a Python scratchpad.
 
 Practical implications for this investigation:
-- For SH-4 disassembly, function discovery, decompilation, control-flow graphs, jump-table analysis: use Ghidra.
+- For TriCore disassembly, function discovery, decompilation, control-flow graphs, jump-table analysis: use Ghidra with `tricore:LE:32:default`.
 - For raw byte-pattern scans, statistics, shape-search across data: Python scratchpads are still fine (they're already written).
-- The `dlcm_analysis` Ghidra project (`%LOCALAPPDATA%/ghidra-projects/dlcm_analysis.gpr`) is already populated with both binaries, the modified Continental SLEIGH (variant opcodes treated as no-ops), and several pre-existing scripts. Don't re-import.
+- **Do not use the `dlcm_analysis` Ghidra project.** It was built as `SuperH4:BE:32` with the modified Continental SLEIGH and its disassembly is meaningless (see the ISA correction above). Use `dlcm_tricore` instead — created 2026-09-19 by importing `coda_dlcm_prog.bin` at `0x80040000` under `tricore:LE:32:default`.
 - Headless commands and conventions: see `tools-reference.md`.
+
+### Ghidra's caller lists are wrong by default on this image — run `DlcmFixOrphanCode.java` first
+
+*Recorded 2026-09-25.*
+
+"Who calls this function?" returns an empty set for functions that run every task
+cycle. `FUN_8006eb8c` — the brake-lamp-feedback module that raises DTC B2100 —
+reported **zero callers** and was briefly written off as dead code. It is called
+from `0x8007C2E2`, in the main periodic task, every cycle.
+
+**The cause is not what it looks like.** The first diagnosis was that TriCore tail
+calls (`j <function>` instead of `call`) were being recorded as jumps and so missed
+by `Function.getCallingFunctions`, which filters on `RefType.isCall()`. That
+diagnosis was **wrong**, and a script written to fix it added exactly one reference
+to the entire image. Ghidra's TriCore language already classifies them correctly —
+probing `0x8007C5FC`:
+
+```
+insn: j 0x8007cd6e
+flowType: CALL_TERMINATOR   isCall=true  isJump=false
+reference: -> 8007cd6e  type=UNCONDITIONAL_CALL  isCall=true
+```
+
+**The real cause is that the caller is code with no function around it.** Every way
+of listing callers turns a reference into a *function*, through
+`getFunctionContaining(callsite)`. Where the call site lies in a region the rebuild
+never turned into a function, that mapping yields null and the caller silently
+disappears. The reference is right there in the database; only its container is
+missing.
+
+`DlcmFixOrphanCode.java` repairs both directions, in the project database, once:
+
+- any call/jump **destination** holding instructions but in no function gets one;
+- any call **site** in no function: walk back to the previous terminator and create
+  a function at the instruction after it.
+
+It iterates to a fixed point and is idempotent. Applied to `dlcm_tricore` on
+2026-09-25: **1692 → 2959 functions**, after which `FUN_8006eb8c` reports its
+caller correctly.
+
+**A region that was never disassembled is a separate, earlier step.**
+`DlcmFixOrphanCode` cannot recover a call site that is not an instruction. For
+`0x8007C2C6`–`0x8007C339` the bytes had to be disassembled explicitly first, with
+`DlcmDisasmRange.java`. That script also **verifies alignment**, which matters
+because TriCore instructions are 2 or 4 bytes and a stream started at the wrong
+offset decodes plausible garbage: give it the address the stream must end at, and a
+clean landing on a known function boundary is the proof the start was right.
+
+**Corollary for `artifacts/call_target_scan.py`.** That Python linear sweep finds
+call sites by decoding raw bytes, and it found the `call 0x8006EB8C` above — in a
+region Ghidra had never disassembled, so the hit was unverified until the region
+was decoded properly. Treat a hit as a lead to confirm, never as proof. Its **zero
+counts mean nothing at all**: it decodes `CALL` (0x6D) and 16-bit `CALL` (0x5C)
+only — not `J` (0x1D), `CALLA` or `CALLI` — so every tail-called function in the
+I/O accessor band `0x8007C54C`–`0x8007C662` reports zero call sites while being
+called normally.
+
+**What the gap does and does not affect** (checked on the repaired project by
+`reverse-it-e1`, 2026-09-25, not reasoned about). Orphaned code breaks *"who calls
+this?"* and nothing else: `DlcmA0RefScan` iterates `listing.getInstructions()` and
+`getReferencesTo` returns references regardless of whether the site sits in a
+function, so instruction-level scans and reference enumeration were correct all
+along. Re-run across the repair: buffer-region readers outside the accessor band
+**0 both times**; signal accessor call sites **14 TX + 26 RX, identical**;
+instruction count 101,070 → 101,099, the 29 added being exactly the periodic-task
+region. So results derived before the fix are suspect only where they depend on a
+caller list.
+
+**The repair itself can create mid-function fragments — check before trusting a new
+function.** `getFunctionContaining` is not a reliable "is this inside a function"
+test here, because Ghidra's recorded *body* can be a fraction of the code a function
+executes: `FUN_800803fa` has a 4-byte body while its decompilation runs through
+`0x80080414`. Every address past `0x800803FE` therefore reported no container, and
+the first version of `DlcmFixOrphanCode` created `FUN_80080400` in the middle of it —
+a fragment that decompiles to nonsense (`*a0 = unaff_a13; FUN_800686d8();`) while
+looking like a real function. The script now requires a candidate entry to be
+preceded by a terminator or an unconditional jump, which rejects that case.
+
+Two fragments were created in the accessor band and have been removed; the band is
+back to the documented **120** getters, which is what made the damage there
+measurable. **Elsewhere there is no such ground truth and an unknown number may
+remain.** A report-only pass lists entries not preceded by a terminator, but it
+over-flags badly — 831 under the loose test and 553 under a stricter
+"falls through from another function" test, both including legitimate pre-existing
+functions such as `FUN_80048d94` — so do **not** bulk-delete on it. Treat a
+suspiciously tiny function, or one whose decompilation references `unaff_` registers,
+as a probable fragment and check its predecessor.
 
 ## Open data-collection items
 
@@ -26,7 +186,7 @@ Practical implications for this investigation:
 
 | Item | Value |
 |------|-------|
-| Source log | `projects/coda/logs/coda_dlcm_flash6.log` |
+| Source log | `projects/coda/logs/flash/coda_dlcm_flash6.log` |
 | Capture date | 2026-04-26 |
 | Tool | Omitec scanner, BUSMASTER 500 kbps (Ixxat interface) |
 | Manufacturer label | Continental **EMS9180** |
@@ -72,54 +232,125 @@ CAL region starts with ASCII `CA1CI5271CI52700` — the `CA` prefix is likely sh
 
 ## Architecture
 
-**Renesas SuperH (SH-4), big-endian.**
-
-### Load addresses as the primary clue
-
-Both download addresses fall in the SH-4 direct-mapped regions:
-
-| Region | Virtual address | SH-4 region | Physical address |
-|--------|----------------|-------------|-----------------|
-| PROG | `0x80040000` | P1 (cached) | `0x00040000` |
-| CAL | `0xA0020000` | P2 (uncached) | `0x00020000` |
-
-The bootloader writes via uncached P2 addresses during flash programming, then the CPU executes PROG via the cached P1 mapping. CAL is accessed at runtime via its P1 equivalent (`0x80020000`). This is standard SH-4 flash programming practice and rules out every other MCU family.
-
-### cpu_rec confirmation
-
-`cpu_rec` (Airbus Seclab statistical classifier, KL divergence — lower = better match) run against the PROG active region and sub-chunks:
-
-| Chunk | Winner | Top-3 scores |
-|-------|--------|-------------|
-| PROG active (0–0x55CB2) | None (tie) | SuperH **3.80**, TMS320C6x 3.86, ARcompact 3.93 |
-| PROG 0x4000–0x8000 | TMS320C6x | TMS320C6x 4.30, ARcompact 4.39, Cell-SPU 4.51 |
-| PROG 0x8000–0x20000 | None | ARcompact 5.52, TMS320C6x 5.52, SuperH 5.53 |
-| PROG 0x20000–0x55CB2 | None | SuperH **3.61**, TMS320C6x 3.79, Cell-SPU 3.84 |
-
-SuperH wins or ties on the full active region and the large 0x20000–0x55CB2 chunk. The TMS320C6x win on 0x4000–0x8000 is a data-section statistical artefact. CAL results are meaningless (18 KB of calibration data tables, not executable code).
-
-### Eliminated architectures
-
-| Architecture | Evidence against |
-|---|---|
-| ARM (any variant) | 0 hits for LDR PC/BX LR/PUSH {lr} |
-| ColdFire / 68k | 0 hits for LINK A6, MOVEM.L, RTS, UNLK A6 |
-| PowerPC | 0 hits for `mflr r0` (7C 08 02 A6) and `blr` (4E 80 00 20) |
-
-### Ghidra setup
+**Infineon TriCore, little-endian.** Corrected 2026-09-19; this section previously
+asserted Renesas SuperH (SH-4) big-endian.
 
 | Setting | Value |
 |---------|-------|
-| Language | `SuperH4:BE:32:default` |
+| Ghidra language | `tricore:LE:32:default` |
 | PROG load address | `0x80040000` |
-| CAL load address | `0x80020000` (P1 runtime access address; P2 write address was 0xA0020000) |
-| Ghidra project (local) | `%LOCALAPPDATA%\ghidra-projects\dlcm_analysis\` |
+| Active code | `0x80040000`-`0x80095CB2` (~344 KB). The remaining 1.48 MB of the container is a single zero run — 83 % of the file. |
+| Small-data base `A0` | **`0xD0009000`**, set at `0x800400B0` (`movh.a a0,#0xD001` + `lea a0,[a0]-0x7000`). DSPR data RAM. |
+| Const small-data base `A1` | `0xA0028000`, set at `0x800400B8`. Uncached flash mirror, and *below* the PROG image — i.e. it points into the bootloader region, which we do not have. |
+| Ghidra project (local) | `~/ghidra-projects/dlcm_tricore` |
 
-**Project status (2026-04-26):** PROG binary (flash6, no gap) loaded at 0x80040000. Project created with `-noanalysis` to prevent Ghidra's "Create Address Tables" analyzer from overwriting disassembly. Clean recursive disassembly from 90 confirmed seed addresses via `DlcmCleanSetup.java`. CAL binary not yet added. Note: Ghidra's SH-4 Sleigh spec is missing several instruction encodings (MAC.L @Rm+/@Rn+, FPU variants, ADDV, MULS.W), causing `halt_unimplemented()` in decompile output for many functions — direct Python binary analysis is preferred for those regions.
+Startup builds these at `0x80040000`-`0x80040200`: `A0` = `0xD0009000`, `A1` = `0xA0028000`,
+plus `0xD0004000`, `0xD00009C0`, `0x80048000`, `0x80045144`, `0x80045219`. Enumerated by
+scanning for `movh.a` + `lea` pairs — see "Address constants" below.
 
-**Opening in Ghidra GUI:** Open the `dlcm_analysis` project. Avoid running full auto-analysis until "Create Address Tables" is disabled in the analyzer list — that analyzer re-classifies SH-4 literal pools as data and overwrites functions.
+Resolved `A0`-relative addresses in use (SecurityAccess):
 
-Load both binaries into the same Ghidra project at their respective addresses. The PROG active code ends at `0x80095CB2`; the rest of the 1.8 MB container is zero padding.
+| Symbol | Offset | Absolute |
+|---|---|---|
+| per-level key constants, element `[1]` | `a0-0x4074` | `0xD0004F8C` (level 1, `0xCAF77776`) |
+| element `[2]` | `a0-0x4070` | `0xD0004F90` (level 3, `0x9D89EA36`) |
+| slot *before* the array (unrelated counter; level `7D` underflows onto it) | `a0-0x4078` | `0xD0004F88` |
+| current seed | `a0-0x3708` | `0xD00058F8` |
+| expected key | `a0-0x370C` | `0xD00058F4` |
+
+These check out against independent references elsewhere in the image: other code builds
+`0xD0004F80` and `0xD0004FFC` (bracketing the constants array) and `0x800440E0`-`0x800440F4`
+holds a pointer table of `0xD00058F0`-`0xD00058F3` (bracketing the seed).
+
+### Address constants
+
+TriCore builds 32-bit addresses as `movh.a aX,#hi` + `lea aX,[aX]lo`, so absolute addresses
+do not appear as literals and cannot be found by searching for them. Scanning for that
+instruction pair recovers 3050 constructions at 1117 distinct addresses across the image
+— that scan is the practical substitute for a symbol table, and it is what resolved `A0`.
+Tooling: `artifacts/dlcm_image_encoding_probe.py`.
+
+TriCore addresses globals as offsets from `A0`/`A1` rather than absolutely, so a
+global's address is only meaningful once `A0` is known. This is why the
+SecurityAccess key constants appear in the decompiler as `a0 - 0x4078 + index*4`
+rather than as a literal address, and why locating them meant tracing `A0`'s
+initialisation.
+
+### Evidence
+
+Counted over the active region only (the trailing zeros swamp whole-file statistics):
+
+| Test | Result |
+|---|---|
+| TriCore `call` (op `0x6D`, disp24) | 4965 sites, **98.8 %** of targets land inside the active region. Control opcodes under the same decode score 0.6-5.1 %. |
+| TriCore `ret` (`00 90`) | 2192 occurrences — a sensible return count for 344 KB of code. |
+| SH-4 `rts`+`nop` (`000B 0009`), the standard SH-4 epilogue | **0** occurrences, in *any* byte order (identity, 16-bit swap, 32-bit reverse, 32-bit halfword swap). Bare `rts` occurs twice in 917k 16-bit slots. |
+| Ghidra `tricore:LE:32:default` | Disassembles and decompiles the image cleanly on the first pass, with no patched processor spec. |
+
+Tooling: `artifacts/dlcm_image_encoding_probe.py` (byte-order and idiom census),
+`ghidra/scripts/DlcmSecurityAccess.java` (import and decompile).
+
+### Why the SH-4 conclusion looked well-supported
+
+All three original arguments are recorded below with what is wrong with each,
+because two of them are the kind of reasoning that will recur.
+
+**1. "Load addresses rule out every other MCU family."** The original argument was
+that `0x80040000` (cached) and `0xA0020000` (uncached) are the SH-4 P1/P2
+direct-mapped regions. TriCore has the *same* segment structure in the *same*
+two nibbles — segment `8` is cached program flash, segment `A` is the uncached
+mirror of the same physical flash, and `D` is data scratchpad RAM. The load
+addresses are equally consistent with TriCore and rule out nothing. They were
+right about what the addresses *mean*; the inference to a vendor was unsound.
+
+**2. "cpu_rec confirmation."** This one matters most.
+**`cpu_rec` cannot identify this image, because TriCore is not in its corpus.**
+The corpus shipped in `artifacts/cpu_rec_tool/cpu_rec_corpus/` holds 76
+architectures including SuperH, V850 and TMS320C6x, and **no TriCore** (verified
+2026-09-19). A classifier that does not contain the right answer will always
+return the nearest wrong one. The margin it returned was also noise: SuperH 3.80
+against TMS320C6x 3.86 is a 1.6 % separation, and on two of the four chunks
+SuperH did not win at all. Re-run 2026-09-19 on the active region, it reports
+`None` for the whole region and `TMS320C6x` for the largest chunk.
+
+> **Do not use `cpu_rec` as an architecture check on this firmware, and do not
+> read a narrow win in it as confirmation on any firmware.** Absence from the
+> corpus is invisible in the output.
+
+**3. "Eliminated architectures."** ARM, ColdFire/68k and PowerPC were each
+eliminated correctly, by searching for their call/return idioms. The method was
+sound. TriCore was simply never a candidate, so it was never tested — and the
+same idiom test applied to TriCore is what settled it today.
+
+### Why the error was self-concealing
+
+The wrong ISA did not fail loudly; it was made to fail quietly. Roughly half the
+16-bit words in a TriCore stream are not valid SH-4, so disassembly stopped
+constantly. Each stop was read as a Continental "variant opcode" and patched with
+a NOP stub in a modified SLEIGH, which let the disassembler continue and produce
+more output that looked superficially like code. **529 stubs is not a measure of
+obfuscation; it is a measure of how wrong the decoder was.** The
+"nested-delay-slot traps" attributed to Continental obfuscation were Ghidra
+correctly applying SH-4 delay-slot semantics to a CPU that has no delay slots.
+The `halt_unimplemented()` output blamed on gaps in Ghidra's SH-4 spec was the
+decompiler reporting, accurately, that the bytes were not SH-4.
+
+Two specific differences did the damage: SH-4 is fixed 16-bit while TriCore is
+variable 16/32-bit with the length in bit 0 of the first byte, so a 32-bit TriCore
+instruction reads as two unrelated SH-4 words (this is the recurring `6D FF` +
+`xx F6` pattern — one `call`, seen twice); and SH-4 was configured big-endian
+while TriCore is little-endian, which is the whole of the "mixed-endian image,
+big-endian instructions with little-endian pointers" puzzle. Nothing was mixed.
+
+### Generalisable lesson
+
+An architecture guess that is wrong but *almost* works is more expensive than one
+that obviously fails, because the workarounds that make it almost work also
+suppress the signal that it is wrong. Before patching a processor spec to get
+past undecodable bytes, run the cheap census that does not depend on the
+decoder: count the call and return idioms, and check what fraction of relative
+branch targets land inside the image. That test took minutes and separated the
+two candidates by a factor of roughly fifty.
 
 ## Region Details
 
@@ -503,7 +734,7 @@ Analysis performed with `dlcm_212_torque_corr.py` (torque encoding) and `dlcm_an
 
 | Field | Value |
 |-------|-------|
-| Byte layout | 12-bit nibble-split: `(B4 & 0x0F) << 8 \| B5` |
+| Byte layout | **13-bit**: `(B4 & 0x1F) << 8 \| B5` — corrected 2026-09-19 from the publisher and the DID 8539 handler, both of which mask with `0x1F`. Previously recorded as 12-bit `(B4 & 0x0F)`; torque never reaches 12 bits in practice so the difference was invisible. |
 | Zero torque | raw = 2000 (0x7D0) |
 | Scale | ~0.244 Nm/count (OLS fit; unconfirmed — scale not in DBC) |
 | Correlation | r = +0.999 vs 0x1C0 Torque across 4 drive logs |
@@ -720,6 +951,68 @@ Earlier analysis assumed PROG base = 0x80060000. Confirmed correct base is **0x8
 PROG binary spans: 0x80040000–0x801FFDFF (1,834,496 bytes = 0x1BFE00).
 
 #### CAL access method — no literal addresses in application code (2026-05-03)
+
+> ### ⚠ CORRECTED 2026-09-19 — the premise of this section is an artefact of the wrong ISA
+>
+> ### ⚠ EXTENDED 2026-09-25 — scalars ARE directly referenced, through A1
+>
+> The corrected statement below is right about *descriptors* and wrong as a general claim
+> about calibration access. TriCore's second global address register is set once at startup:
+>
+> ```
+> 0x800400B0   movh.a a0,#0xd001
+> 0x800400B4   lea    a0,[a0]-0x7000      ->  A0 = 0xD0009000   (RAM small-data base)
+> 0x800400B8   movh.a a1,#0xa003
+> 0x800400BC   lea    a1,[a1]-0x8000      ->  A1 = 0xA0028000
+> ```
+>
+> `A1` sits exactly at the top of the CAL region (`0xA0020000`–`0xA0028000`), so **every
+> `[a1]`-relative load with a negative displacement names a calibration constant directly**,
+> resolvable as `cal_addr = 0xA0028000 + disp`. There are **359 distinct CAL addresses**
+> referenced that way. `ghidra/scripts/DlcmA1CalRefs.java` enumerates them with the stored
+> value decoded as u8/u16/i16 beside every referencing instruction.
+>
+> So: LUT *tables* are reached through the descriptor blocks, as this section says, and are
+> invisible to a code-address scan. Calibration *scalars* are reached through A1 and were
+> invisible only because nothing had resolved A1. The two mechanisms coexist.
+>
+> Found 2026-09-25 while looking for a hysteresis threshold; `DlcmA0Base.java` prints every
+> write to A0/A1, which is how the bases were recovered.
+
+> "Zero CAL literals in the application code region" was guaranteed by the architecture, not
+> a finding. **TriCore cannot encode a 32-bit immediate.** Every CAL address is built at
+> runtime from two instruction fields:
+>
+> ```
+> movh.a a4, #0xA002        ; high half
+> lea    a4, [a4] 0x13FB    ; low half, sign-extended
+> ```
+>
+> A byte search for `0x8002xxxx` / `0xA002xxxx` finds nothing and always would have, on any
+> firmware for this core. The four "CAL literals" the table below reports are coincidental
+> byte patterns, which is also why the 2026-07-02 note had to explain one of them away.
+>
+> Reconstructing the `movh.a`+`lea` pairs instead gives **273 CAL addresses referenced from
+> 321 code sites** — tooling: `artifacts/cal_code_xref.py` (+ `.out.txt`). Two structural
+> results fall straight out:
+>
+> - CAL is referenced exclusively through the **uncached** mirror `0xA0020000`, not the
+>   cached `0x80020000` alias this file assumes elsewhere.
+> - The dense block `0xA00212A0`-`0xA0021894` is ~200 two-byte scalars, each read from
+>   exactly one code site — the main calibration parameter area.
+>
+> **Startup copy table** (found 2026-09-19 while testing a since-refuted hypothesis):
+> `0x800933CC`, 76 records of `{dst, src, len}` on a 16-byte stride, copying 15,046 bytes
+> from **PROG flash** to RAM. It sources **nothing from CAL** and contains no CAL pointers,
+> so CAL is not shadowed into RAM at init. It independently confirms the SecurityAccess RAM
+> layout to the byte.
+>
+> What remains true from the original section: the gradient-limiter tables are **not**
+> reached by a statically resolvable direct reference, while neighbours in the same bank
+> are. The mechanism by which they *are* reached is still not traced — see
+> `dlcm-torque-limiter-code-trace.md`, "The indirection wall", for why address-scanning
+> cannot answer it here.
+
 
 Searched the entire PROG binary for embedded 0x8002xxxx constants (CAL address range). Result: **zero CAL literals in the application code region (0x8006xxxx)**. Only 4 exist in the entire binary, all in init/OS code:
 
@@ -1254,6 +1547,15 @@ Two further confirmations and one critical observation:
 Analysis performed with Python SH-4 disassembler scripts: `dlcm_phase_dump.py`, `dlcm_filter_trace.py`, `dlcm_bsrf_context.py`, `dlcm_dispatch_trace.py` (all in `notes/artifacts/`).
 
 #### Continental SH-4 variant opcodes
+
+> **⚠ DEPRECATED — wrong ISA era. Do not use any of the following.** This table and
+> the Phase 27 correction beneath it were derived under the SuperH4 misidentification,
+> before the processor was established as TriCore (see the ISA correction above and
+> `Architecture`). The opcode numbers, their "roles", and the `dlcm_analysis`
+> workspace they came from are all meaningless against the real instruction set.
+> Kept only so a future session recognises the material and does not re-derive it.
+> The TriCore-era equivalents live in `ghidra/README.md` under "TriCore-era scripts".
+
 
 **⚠ Correction (Phase 27):** The opcode roles below were revised after Phase 27 analysis. `00F8` is Motor CAN TX (not a generic "CAN TX stub"), and `00F6` is D-CAN TX (via pre-configured mailbox, not listed here originally). See Phase 27 for the confirmed opcode map.
 
@@ -2239,6 +2541,12 @@ GBR+0x008 is written **431 times in 0x8007xxxx** vs 624 times in 0x8005xxxx. Bot
 
 ### CAN IDs handled by each region (Phase 23)
 
+> **SUPERSEDED 2026-09-24.** The Motor CAN ids named here (`0x0048`, `0x0100`,
+> `0x0222`, `0x0500`, `0x02FF`) are artefacts of the SH-4 decode and appear nowhere
+> in the firmware's CAN configuration tables. See
+> [The firmware's own CAN configuration tables](#the-firmwares-own-can-configuration-tables--full-message-inventory-2026-09-24)
+> for the real inventory.
+
 Phase 23 searched for corrected 00FD filter setups (pool value in 0x0001–0x07FF, non-degenerate displacement) in both regions.
 
 **0x8007xxxx — only ONE legitimate receive filter:**
@@ -2363,6 +2671,12 @@ One read at 0x8008005C uses `C602 MOV.L @(0x008,GBR),R0` — a 32-bit LONG read 
 
 ### D-CAN linkage — 00F8 TX scan (Phase 26)
 
+> **SUPERSEDED 2026-09-24.** The Motor CAN ids named here (`0x0048`, `0x0100`,
+> `0x0222`, `0x0500`, `0x02FF`) are artefacts of the SH-4 decode and appear nowhere
+> in the firmware's CAN configuration tables. See
+> [The firmware's own CAN configuration tables](#the-firmwares-own-can-configuration-tables--full-message-inventory-2026-09-24)
+> for the real inventory.
+
 Phase 26 searched for 00F8 (CAN TX trigger) patterns to find which Motor CAN handlers relay data to D-CAN messages, specifically MCM_Thermal (0x0241 / 577 decimal).
 
 **0x0241 TX not found anywhere in binary.** The 9110+00F8 pattern (which successfully finds other TX sites) locates no 0x0241 TX. Either:
@@ -2392,6 +2706,12 @@ Evidence favouring interpretation 1: 0x8007xxxx (the CAN TX construction region 
 ---
 
 ## Phase 27 — D-CAN TX mechanism and MCM_Thermal source identification
+
+> **SUPERSEDED 2026-09-24.** The Motor CAN ids named here (`0x0048`, `0x0100`,
+> `0x0222`, `0x0500`, `0x02FF`) are artefacts of the SH-4 decode and appear nowhere
+> in the firmware's CAN configuration tables. See
+> [The firmware's own CAN configuration tables](#the-firmwares-own-can-configuration-tables--full-message-inventory-2026-09-24)
+> for the real inventory.
 
 **Goal:** Determine which Motor CAN receive handler (0x0048, 0x0222, or 0x0500) feeds D-CAN MCM_Thermal (0x0241 / 577 decimal) and how that transmission is triggered.
 
@@ -2497,7 +2817,7 @@ Complete message list on the private Motor CAN bus:
 | AccurateFeedbacks_Elec | CRC + message counter | No — protected version for DLCM internal use |
 | AccurateFeedbacks | none (security bits stripped) | Yes — forwarded to D_CAN per §7.1.1 |
 | SystemStatusMessage | none | Yes — forwarded to D_CAN per §7.1.1 |
-| Temperature | none | Yes — forwarded to D_CAN per §7.1.1 (confirmed Phase 27: 0x0222 → 0x0241) |
+| Temperature | none | Yes — forwarded to D_CAN per §7.1.1 (the Phase 27 claim that this is Motor CAN 0x0222 is SUPERSEDED — see 2026-09-24 CAN configuration tables) |
 | limited_torque_percentage | none | No (contains high_bound and low_bound as % of 300 Nm) |
 | CANWatchdogStatus | none | No (legacy watchdog status) |
 
@@ -3027,3 +3347,631 @@ If the hypothesis is correct, bytes to edit to double the gradient limit (allow 
 | 0x1454 | `3B 01` | 315 | 630 | `76 02` |
 
 These edits are **not confirmed safe or correct**. They should only be applied with full awareness that the hypothesis may be wrong and the actual effect (if any) is unknown.
+
+---
+
+## 2026-09-13 — the mapping crack: mixed-endian pointer network + module registration table
+
+Session goal: find the indirect memory mapping from the torque-filtering
+constants, i.e. resolve `[[R13+0x34]+0x34]` to CAL addresses. Result: the
+mapping's **static structure is now decoded** (registration table + dispatch
+stubs + CAL offsets); the final *numeric* link (runtime MDB/table pointer
+values) is not statically obtainable and goes to live RAM read (Route A plan).
+Scratchpad: `artifacts/module_mapping_recon.py` (+ `.out.txt` phase series).
+Emulator: `artifacts/dlcm_init_emulator.py`. Ghidra: `DlcmInitTrace.java`.
+
+### 1. Why every prior pointer scan was blind (the endianness resolution)
+
+The torque task's R13 is a **static literal, stored big-endian**:
+`pool[0x800677C8] = d9 04 7b 5c` = `0xD9047B5C`, loaded at `0x800676B8`
+(`DD43 mov.l @(0x10c,pc),r13`). All prior "zero pointers" results came from
+LE-only scans (after the 2026-05-06 "CAL is LE i16" finding); BE hits were
+dismissed as spurious. Re-running the inventory big-endian surfaces the
+network the LE scans missed: `0xD9047B5C` (3 pool slots), `0x7F0F0880` (the
+filter ring buffer — all seven documented load sites), and the
+`0xD9FFB830`/`0xD9FFB930`/`0xD922B930/BA30/BB30` coefficient-buffer family.
+
+**Pool storage is mixed-endian (evidence: this session, HIGH confidence):**
+assembler/emitted address literals are BE (same byte order as the instruction
+stream they sit in; CPU data accesses are BE); calibration-tool-generated
+tables (CAL, the 0x80041800 descriptor array, the 0x80041E00 dispatch table)
+are LE and swapped in software where needed. Confirmed samples: pool
+`0x800677C8` BE = `0xD9047B5C` (real RAM pointer) vs pool `0x80073710` LE =
+`0x80020820` (real CAL pointer) vs dispatch-table entry `0x80041E00` LE =
+`0x80080C08` (real code pointer). This **resolves the "Inconsistent
+Endianness Problem" loose end** from the earlier passes: there is no
+per-axis endianness split inside CAL — the split is *provenance* (assembler
+BE vs cal-tool LE), nothing more mysterious.
+
+### 2. The "indirect memory mapping" is a physical registration structure
+
+The 24-record descriptor array at **0x80041800** is the module registration
+table, and **0x800673FC–0x80067A60** is a dispatch-stub table: ~0x2A-byte
+stubs, each embedding its context pointer as an **inline BE u32** (not a pool
+— invisible to every pool scan, the second reason "zero code references" was
+an artifact). Decoded layout (record stride 0x34 for records 0–16; records
+17–23 are a 0x28-stride second family):
+
+| field | meaning (evidence level) |
+|---|---|
+| +0x00 | type byte (0x04–0x08) + `ff 01 01` marker (confirmed) |
+| +0x08 | module entry stub ptr into 0x80067568–0x800678xx (confirmed) |
+| +0x0C | per-record u16 ID into 0x80041F00 table (confirmed) |
+| +0x18 | per-record 6-byte companion record into 0x80067AD8 table (confirmed) |
+| +0x24 | u16 config pair, e.g. (40,40), (200,200), (400,400) (confirmed data; role hypothesis) |
+| +0x2C | **CAL offset** — for 10/17 records it lands on clean per-module calibration data (rec 7 → `0x80021714`; rec 9 → `0x8002165C` descending `[11000,5000,...]`; rec 10 → `0x80021680` monotone `[7000..16000]`) |
+| +0x30 | **CAL offset + size-ish pair** — rec 16 (32,0) → `0x80020020` **CAL part-number header** (clean validation); rec 5 (960,0) → `0x800214C0` **the negative gradient curve**; rec 13 (768,4) → `0x80021400`; rec 15 (832,4) → `0x80021440` (`[116,117,137,...]`); recs 3/8/12 (8288/8352/8384) → `0x80022060–0x800220C0` |
+
+Stub→context mapping (inline BE values at ~0x2A stride, confirmed):
+
+- **Records 0–16 (stubs 0x80067568–0x80067834) all share ONE context struct:
+  `0xD9047B5C`** — the driveline/torque context (not per-module structs).
+- **Records 17–23 share a second context: `0xD9057B5C`.**
+- **The torque module is record 7** (type 0x07, stub `0x80067698` — the R13
+  load `0x800676B8` sits inside its stub range; its body is `bsr 0x8006704C`).
+  Its CAL offsets: +0x2C=1556 → `0x80021714`; +0x30=(1120,0) → `0x80021560`.
+
+The exact base/field semantics of +0x2C/+0x30 (which base address each is
+relative to, and the second +0x30 word's role) are the one remaining static
+ambiguity — they are runtime-computed (base+offset, which is why no absolute
+CAL pointers exist in PROG), to be pinned by the Route A RAM read.
+
+### 3. New candidate for the fixed ~8 cts/update near-zero clamp (open item 5)
+
+Sibling records 8 (+0x2C=522) and 12 (+0x2C=526) — two calibration variants
+of one torque-path module — point into the same small constants block at
+**`0x80021308`: `[100, 8, 8, 50, 20, 135, 0, 25, 25, 80, 10, 200, 200]`**
+(LE i16). Two adjacent `8`s, right magnitude (cts/update units, consistent
+with the live-edit-confirmed V-curve units), inside the §10.7 bank,
+registered to torque-path modules. **HYPOTHESIS (unconfirmed):** one of these
+`8`s (or a near neighbor) is the fixed near-zero positive-rate clamp that
+`map_rate_limit.py` measured (~7–9 cts/update, speed-flat, below both
+`min()` limbs). Confirmation route: Route A RAM read (check whether the
+runtime torque structure references this block), then a live edit.
+
+### 4. The remaining wall, now precisely characterized
+
+The code that *populates* `[0xD9047B5C+0x34]` (the MDB pointer) is saturated
+with Continental variant opcodes whose semantics are unknown. Verified two
+independent ways this session: (a) Ghidra with the 529-stub SLEIGH truncates
+decompiles in the init band with "bad instruction data" (`DlcmInitTrace.java`
+output `~/ghidra-projects/dlcm_export/init_trace.txt`); (b) a purpose-built
+bare-metal SH-4 interpreter (`artifacts/dlcm_init_emulator.py` — written
+because Unicorn 2.1.4 has no SH-4) derails within tens of instructions: the
+variants carry real control-flow semantics (loop guards/register moves), so
+NOP-ing them breaks execution. The MDB pointer is not a pool or inline
+literal anywhere in PROG (endianness-complete scans); it is computed at
+runtime. Priority decode targets recorded for Route B: `0x49A4/0x4944/0x49A5,
+0x8204/0x8212/0x8216/0x8234, 0x438E/0x4C8E, 0x0220/0x0480, 0x0040/0x0090,
+0x8CCF, 0xFFFA, 0x40F2, 0x0920, 0x010A, 0x0F50, 0x000A`.
+
+### 5. Route forward (decided 2026-09-13)
+
+- **Route A — NEXT STEP: live RAM read via UDS ReadMemoryByAddress (0x23).**
+  Walk `[0xD9047B90]` → MDB → `[MDB+0x34]` → tables; content-match to CAL;
+  produce the definitive mapping table. Read-only toward the ECU. Car + both
+  dongles available on the car-side laptop (not this machine).
+  Plan: `projects/coda/notes/plans/dlcm_ram_read_mapping.md`.
+  **Step-0 service inventory DONE (same day):** normal mode = `10 01` + 0x22
+  loop on 11 DIDs, unlocked, no 0x23 seen; the app's 0x22 stack IS in PROG —
+  11-record DID descriptor table at `0x80040C38` (4) + `0x80041174` (7),
+  20-byte records `(DID, len, flags, rsvd, RAM data ptr, handler ptr)`, DID
+  data in RAM `0xD0006Cxx`/`0xD000534C`. Programming mode = `10 02` → `27`
+  levels 01/02 → erase (~10 s NRC-0x78 gaps = injection windows). 0x23 support
+  indeterminate statically, so the car-side plan probes it FIRST with a single
+  dongle in default session (no Omitec/MITM needed for the first attempt);
+  escalates to the MITM+Omitec path only if security-gated. Script:
+  `artifacts/uds_service_inventory.py` (+ `.out.txt`).
+- **Route B — backup: decode the variant opcodes, then emulate the init path**
+  (`dlcm_init_emulator.py`) to extract the same mapping statically; backport
+  semantics into `ghidra/sleigh/continental-stubs.sinc`.
+  Plan: `projects/coda/notes/plans/dlcm_variant_opcode_decode.md`.
+- **Route C (blind empirical edit campaign on the 0x80021308 candidate) —
+  declined for now.**
+
+### New artifacts (this session)
+
+- `artifacts/module_mapping_recon.py` + `module_mapping_recon*.out.txt` —
+  phased recon: descriptor-table decode, endianness-complete pool inventories,
+  stub-band inline-pointer scan, CAL scalar/clamp scans, referrer analysis.
+- `artifacts/dlcm_init_emulator.py` + `.out.txt` — bare-metal BE SH-4
+  interpreter (sparse paged memory, watch windows, pointer-store log) with
+  init-path scenarios; demonstrates the variant wall empirically.
+- `ghidra/scripts/DlcmInitTrace.java` — init-band seed/decompile dump (output
+  `~/ghidra-projects/dlcm_export/init_trace.txt`).
+
+---
+
+## The firmware's own CAN configuration tables — full message inventory (2026-09-24)
+
+The DLCM does not scatter its CAN handling through code: it carries a COM
+configuration in flash, and reading it gives a **closed inventory** of every
+message the ECU sends or receives. This supersedes every ID list derived from
+SH-4 pattern matching (see the supersession note at the end of this section).
+
+Entry point is the master CAN config at **`0x80041DA4`**, already found during the
+0x212 transmit-chain trace (`dlcm-torque-limiter-code-trace.md`, 2026-09-19):
+
+```
+master CAN config              0x80041DA4
+  +0x00 -> RX message table    0x8004162C   26 x 52B
+  +0x04 -> TX message table    0x80041B74   14 x 40B
+  +0x10 =  26   (RX count)
+  +0x14 -> RX signal table     0x80041490   27 x  8B
+  +0x18 -> TX signal table     0x80041568        x 12B
+  +0x1C =  27   (RX signal count);  +0x1E = TX signal count
+```
+
+The three tables are contiguous: RX signal table ends where the TX signal table
+begins, which ends at the RX message table, which ends at the TX message table,
+which ends at the config struct itself.
+
+### Message record layout
+
+Common prefix for RX and TX records:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0x00` | u32 | CAN id |
+| `+0x04` | u16 | frame buffer offset |
+| `+0x06` | u16 | period (TX) or expected period / timeout (RX), in **5 ms ticks** |
+| `+0x08` | u8 | DLC — **RX records only** |
+| `+0x0A` | u8 | DLC — **TX records only** |
+| `+0x10` | u32 | per-message handler stub (RX stubs run `0x800673EA` upward at a 42-byte stride) |
+
+The period field is verified against measured bus rates: `0x580` = 200 ticks and
+is 1.0 Hz on the wire; `0x055C` = 20 ticks and is 9.9 Hz; `0x1D5` = 5 ticks and
+is 39.9 Hz; `0x212` = 4 ticks and is 49.9 Hz; `0x308` = 2 ticks and is 99.7 Hz.
+
+### Hardware mailbox / acceptance-filter array
+
+A separate array at **`0x800422E8`**, stride 12B, `+0x00` = id, `+0x04` = mask
+(`0x7FF` throughout), `+0x08` = optional callback pointer. 51 entries, indexed by
+an 8-byte `(handle, pointer)` table starting at `0x8004254C` with handles from
+`0x0100`. It is the union of both COM tables plus the diagnostic addresses and
+three ids that have no COM record at all. `0x7E1`/`0x7E9` appear twice.
+
+This array — not the `0x8008FCxx` address guessed in Phase 27 — is the mailbox
+configuration.
+
+### TX table — the 14 messages the DLCM transmits
+
+`0x80041B74`, stride 40. "Wire" is a survey of `projects/coda/logs/driverinputpart4.log`
+(bus 2 = D CAN, bus 3 = B CAN in that capture).
+
+| ID | Period | DLC | DBC | Wire |
+|---|---|---|---|---|
+| `0x052` | 50 ms | 8 | `ParkingBrake_0x052`, sender `Vector__XXX` | 20.0 Hz |
+| `0x08C` | 1000 ms | 1 | **absent** | 1.0 Hz |
+| `0x210` | 20 ms | 6 | `VehicleMode_0x210`, sender `Vector__XXX` | 49.9 Hz |
+| `0x212` | 20 ms | 6 | `DLCM_TorqueRequest` | 49.9 Hz |
+| `0x278` | 20 ms | 8 | `DLCM_DriveKeepalive`, **DBC DLC 2** | 49.9 Hz, DLC 8 |
+| `0x308` | 10 ms | 5 | `TCM_ParkPin`, sender `Vector__XXX` | 99.7 Hz |
+| `0x312` | 10 ms | 8 | **absent** | 99.7 Hz |
+| `0x315` | 20 ms | 6 | `DLCMStatus` | 49.9 Hz |
+| `0x418` | 20 ms | 6 | `DLCM_Globals_0x418` | 49.9 Hz |
+| `0x591` | event | 7 | **absent** | not seen |
+| `0x592` | event | 8 | **absent** | not seen |
+| `0x595` | event | 8 | **absent** | not seen |
+| `0x204` | 10 ms | 5 | **absent** | not seen — second buffer region |
+| `0x207` | 480 ms | 8 | **absent** | not seen — second buffer region |
+
+### RX table — the 26 messages the DLCM receives
+
+`0x8004162C`, stride 52.
+
+| ID | Expected period | DLC | DBC | Wire |
+|---|---|---|---|---|
+| `0x051` | 100 ms | 8 | **absent** | 10.0 Hz |
+| `0x168` | 100 ms | 8 | **absent** | not seen |
+| `0x1D5` | 25 ms | 7 | B CAN `DCDCStatus1` (DLC 8) | 39.9 Hz, DLC 8 |
+| `0x200` | 20 ms | 8 | `ESC_FrontWheelSpeeds` | 99.8 Hz |
+| `0x208` | 20 ms | 8 | `ESC_BrakePressure` | 99.8 Hz |
+| `0x215` | 20 ms | 7 | `misc_0x215`, **DBC DLC 2** | 49.9 Hz, DLC 7 |
+| `0x271` | 20 ms | 8 | `misc_0x271` | 10.0 Hz (bus 3 only in this capture) |
+| `0x275` | 100 ms | 8 | B CAN `BMSDriveLimits` | 10.0 Hz |
+| `0x276` | 100 ms | 8 | B CAN `HVACStatus` | 9.6 Hz |
+| `0x300` | 20 ms | 8 | `ESC_0x300` | 49.9 Hz |
+| `0x330` | 20 ms | 8 | `misc_0x330` | 49.9 Hz |
+| `0x370` | 20 ms | 8 | `misc_0x370` | 49.9 Hz |
+| `0x383` | 100 ms | 8 | B CAN `BMSBattStatus` | 10.0 Hz |
+| `0x491` | 100 ms | 8 | B CAN `IPK_Cluster` | 10.0 Hz |
+| `0x55C` | 100 ms | 4 | `TCM_State` | 9.9 Hz |
+| `0x580` | 1000 ms | 4 | `DCANAnchor_0x580` | 1.0 Hz |
+| `0x593` | event | 8 | **absent** | not seen |
+| `0x603` | event | 7 | **absent** | not seen |
+| `0x614` | event | 8 | **absent** | not seen |
+| `0x209` | 10 ms | 8 | **absent** | not seen — second buffer region |
+| `0x20A` | 25 ms | 8 | **absent** | not seen — second buffer region |
+| `0x20B` | 10 ms | 6 | **absent** | not seen — second buffer region |
+| `0x20C` | 10 ms | 6 | **absent** | not seen — second buffer region |
+| `0x20D` | 25 ms | 8 | **absent** | not seen — second buffer region |
+| `0x20E` | 100 ms | 8 | **absent** | not seen — second buffer region |
+| `0x20F` | 480 ms | 8 | **absent** | not seen — second buffer region |
+
+The B CAN ids in this table are the ones the DBC already documents as gateway
+rebroadcasts; the DLCM has no B CAN interface, so it reads them off D CAN.
+
+### Mailbox-only ids — no COM record
+
+| ID | Callback | Note |
+|---|---|---|
+| `0x7DF` | `0x800422B8` | OBD functional request |
+| `0x7E0` | `0x800422C0` | tester -> ECU |
+| `0x7E8` | `0x800422C8` | ECU -> tester |
+| `0x7E1`, `0x7E9` | none | second diagnostic pair, listed twice |
+| `0x7FF` | none | terminator / catch-all |
+| `0x240` | none | `SystemState_0x240`, 40.0 Hz on the wire |
+| `0x241` | none | `MCM_Thermal`, DBC sender DLCM, 1.0 Hz |
+| `0x1C0` | none | `MCM_CoreTelemetry`, DBC sender DLCM, 99.7 Hz |
+
+`0x1C0`, `0x241` and `0x240` are filtered by hardware but handled outside the
+generic COM stack. This is consistent with the DBC's description of `0x1C0` and
+`0x241` as relays of Motor CAN data, and it explains why the Phase 26 scan for a
+`0x0241` transmit site found nothing: there is no COM TX record to find.
+
+### Hypothesis: the second buffer region is M_CAN
+
+Nine records — TX `0x204`, `0x207` and RX `0x209`, `0x20A`, `0x20B`, `0x20C`,
+`0x20D`, `0x20E`, `0x20F` — use frame buffer offsets at `0x2020`-`0x2160`, while
+every other record in both tables uses an offset below `0x1000`. Exactly those
+nine are absent from every D CAN capture surveyed.
+
+Supporting evidence, all circumstantial:
+
+- The counts match the MCM spec §7.1 inventory exactly: **2 DLCM -> MCM**
+  (TorqueCommandMessage, ResetCANWatchdogTimer) and **7 MCM -> DLCM**
+  (AccurateFeedbacks_Mech, AccurateFeedbacks_Elec, AccurateFeedbacks,
+  SystemStatusMessage, Temperature, limited_torque_percentage,
+  CANWatchdogStatus).
+- `0x204` transmits every **10 ms**, matching the Coda-specific Universal Command
+  rate documented in the Dilithium VCU manual (10 ms for Coda against 125 ms for
+  standard UQM).
+
+**Not confirmed.** The buffer-region split is the only structural evidence that
+these are a different physical channel; the absence from captures is equally
+explained by a message that simply never appears in the logged conditions. Per
+message assignment within the nine is unassigned.
+
+### What this says about the DBC
+
+Presented and pending review; the DBC has not been edited.
+
+- **Sender attribution.** `0x052`, `0x210` and `0x308` are in the DLCM TX table
+  with periods matching the wire exactly, but are `Vector__XXX` in the DBC, and
+  `0x308` is named and commented as a BorgWarner TCM message.
+- **DLC.** `0x278 DLCM_DriveKeepalive` is DLC 8 in the firmware and on the wire,
+  2 in the DBC. `0x215 misc_0x215` is DLC 7 in the firmware and on the wire, 2 in
+  the DBC.
+- **Missing from the DBC entirely**, on the D CAN wire: `0x312` (10 ms, DLC 8),
+  `0x08C` (1 s, DLC 1), `0x051` (100 ms, DLC 8). Configured but not seen in the
+  surveyed capture: `0x168`. Event-driven and not seen: TX `0x591`/`0x592`/`0x595`,
+  RX `0x593`/`0x603`/`0x614`.
+- **In the DBC, in no firmware table:** `0x080 EPS_SteeringAngle`,
+  `0x248 ExteriorLights_0x248`, `0x325 DCANAnchor_0x325`, `0x600 misc_0x600`,
+  `0x6FA GWM_VIN`. The DLCM neither filters nor consumes them.
+
+### Supersedes the Phase 26 / Phase 27 Motor CAN ids
+
+Phases 23-27 identified the Motor CAN ids as `0x0048`, `0x0100`, `0x0222`,
+`0x0500` and `0x02FF`, and concluded that `0x0222` is the source of MCM_Thermal.
+**All of that is void.** It came from matching a supposed `00FD` receive-filter
+opcode in an SH-4 decode of a TriCore image; none of those five ids appears in
+either COM table or in the mailbox array. The real configured id set is the one
+tabulated above. Those sections are left in place as a record of the method
+failure, not as findings.
+
+### Reproduction
+
+`artifacts/dlcm_can_table_inventory.py` dumps all three tables from
+`coda_dlcm_prog.bin` and joins them to the three Coda DBCs and to a survey of a
+capture. The survey it reads is `artifacts/survey_driverinputpart4.txt`
+(`python3.13 tools/survey.py projects/coda/logs/driverinputpart4.log`).
+
+---
+
+## What each configured message actually carries (2026-09-24)
+
+The message tables above say which messages exist. This section says what is in
+them. Everything here is read out of the TriCore image and then checked against
+logs; where the two disagree the check is recorded rather than the conclusion.
+
+### The accessor band — and why the field map is complete
+
+The DLCM never touches a CAN payload in application code. `FUN_8008008C` fetches
+each received message into a per-message RAM buffer with
+`FUN_800686D8(buf, sig)`, and **every** read of those buffers goes through one of
+**120 tiny getters in the contiguous band `0x800803FA`-`0x80080B4A`**. That
+completeness is checked, not assumed: an A0-relative scan over the whole buffer
+region returns zero references from outside the band. Each getter names one byte
+or byte pair and a mask, so the band is the module's own declaration of every
+received field's bit layout.
+
+Transmitted messages are assembled inline in `FUN_80080C14` into staging buffers
+and published with `FUN_800685C4(buf, sig)`.
+
+`sig` resolves to a CAN id through the signal tables at `0x80041490` (RX, 27 x 8B)
+and `0x80041568` (TX, 15 x 12B), whose first byte is the message-table index. Two
+messages carry two signal records each and are split across them: RX `0x20A` and
+TX `0x204`.
+
+Tooling: `ghidra/scripts/DlcmBandDecompile.java`, `ghidra/scripts/DlcmCanHandlers.java`,
+`ghidra/scripts/DlcmCanSignalUsers.java`; `artifacts/dlcm_signal_map.py` joins the
+result to the DBCs, `artifacts/verify_signal_map.py` checks the conflicts against
+logs.
+
+### 0x312 — the DLCM's torque and torque-limit broadcast
+
+**It is not an ESC message.** It is TX record 10 in the DLCM's own transmit table
+at 10 ms, and `FUN_80080C14` writes all eight bytes from the `0xD00069Dx` mirror
+block that `FUN_80074780` fills with `internal * 0.4 + 2000`.
+
+| Bits | Field | Check |
+|---|---|---|
+| B0[4:0],B1 | torque feedback | r = 0.9994 against `0x1C0` Torque; least-squares slope **0.24993 Nm/count, zero at 1999.5** |
+| B0 bit5 | parity over `(B0 & 0x5F) ^ B1` | **197,193 / 197,193** |
+| B0 bit6 | alternating toggle | 50/50, independent of the data |
+| B2[4:0],B3 | duplicate of B0[4:0],B1 | identical in **100 %** of frames |
+| B4[4:0],B5 | **M_MAX** | 0 … +299.75 Nm |
+| B6[4:0],B7 | **M_MIN** | −300 … 0 Nm |
+
+The `0x212` request lies inside [M_MIN, M_MAX] in 99.997 % of samples and sits
+exactly on M_MAX in 1.07 %. Actual torque never leaves the band. **M_MAX collapses
+to +29.75 Nm while the brake switch is on** — +299.75 Nm in 100.0 % of 90,230
+brake-off frames, +29.75 Nm in 97.2 % of 1,650 brake-on frames, the residue being
+the transition. That is what `driver-inputs.md` recorded as an undecoded
+brake-correlated signal.
+
+The three-field layout and the M_MAX/M_MIN assignment were already in
+`plans/dlcm_zero_crossing_cal_proposal.md` and `dlcm-cal-flash-campaign.md`; this
+adds the source ECU, the duplicated field, the parity and toggle bits, the brake
+behaviour, and confirmation of that file's `[hypothesis]` that bytes 2-3 are
+achieved rather than requested torque — median error 0.90 Nm against `0x1C0`
+versus 1.25 Nm against the `0x212` request. The two references are themselves
+r = 0.99 to each other, so this supports the hypothesis without settling it.
+
+**Scale note.** `plans/dlcm_zero_crossing_cal_proposal.md` records
+`Nm = 0.23913 * tq_raw` for `0x212` against `0x1C0`. That is a regression of the
+*request* against *achieved* torque, which the limiter's dynamics bias low. The
+encoding is 0.25 Nm/count exactly, from `(v * 0x3333) >> 15` with
+`0x3333/0x8000 = 0.40000` and internal units of 0.1 Nm. Do not re-derive the scale
+by regression across the limiter.
+
+### 0x591 / 0x592 / 0x603 / 0x614 — the RCU/DLCM immobiliser handshake
+
+The factory manual's RCU immobiliser-functionality topic (internal-only)
+describes the RCU authenticating to the DLCM by ciphered exchange, with "maximum 4 attempts,
+approximately one each 100 ms" and a password paired into both modules. The four
+event-driven ids are that exchange:
+
+```
+0x603  02 FF 00 01 18 00 00     RCU  -> DLCM   idle / status   (237 of 313 frames)
+0x603  11 FF 00 00 18 00 00     RCU  -> DLCM   start
+0x603  20 01 00 01 18 00 00     RCU  -> DLCM   request challenge
+0x592  <8 bytes, all distinct>  DLCM -> RCU    challenge       (+10 ms)
+0x614  <8 bytes, all distinct>  RCU  -> DLCM   response        (+5 ms)
+0x591  A0 00 00 00 00 00 00     DLCM -> RCU    verdict         (+15 ms)
+```
+
+Corpus-wide `0x591` B0 takes **exactly two values**, `0xA0` (31 frames) and `0xB0`
+(12) — precisely what `FUN_8007385E` can emit, `(flag != 1) * 0x10 + 0xA0`.
+`FUN_80073A8C` builds the challenge from a random source plus a flash constant at
+`0x80043F2D`. The retry counter in `FUN_80073F24` latches a lockout at 4 attempts,
+matching the manual. All four are D CAN only and never gateway-rebroadcast, which
+fits the RCU being D CAN only.
+
+Which of `0xA0`/`0xB0` means pass is inferred from the ordering (`0xA0` follows a
+completed exchange, `0xB0` appears alone), not proved.
+
+`0x168` belongs to the same subsystem and has never been seen on a bus:
+`FUN_80073824` reads a 32-bit field from it and compares against a key derived
+with **`0x9D89EA36`, the SecurityAccess level-3 constant**, latching the same
+lockout flag. *Hypothesis:* the DLCM side of the scan-tool "Immobilizer Password
+Learn" procedure. `0x593` is read by the firmware but never observed; `0x595` has
+no publish call anywhere in the image. Both are dead on this build.
+
+### 0x051 and 0x08C
+
+`0x051` is received at 100 ms and consumed: `FUN_800806B4` returns B0, and
+`FUN_80074390` treats `0x00` or `0x55` as valid and otherwise raises DTC events
+`0x2D`, `0x76` and `0x64`. The payload is all-zero in **4,374,280 frames across
+1,022 corpus captures**. The transmitter is not identified anywhere in the DLCM
+image.
+
+`0x08C` is transmitted at 1 Hz with DLC 1 and carries one bit, bit 2, written by
+`FUN_800779D8` as a debounce-limited pulse: true while a condition holds *and* a
+counter stays below the CAL threshold at `0xA002187A`, with a CAL override at
+`0xA0021882`. Corpus-wide: 197,305 frames of `0x00` and **exactly two** of `0x04`,
+both in `coda_20260715_162457_T0.log` about two seconds after that session's
+`0x591 = 0xB0`. The bit's meaning rests on that single observation and is not
+established.
+
+### The nine M_CAN messages, assigned individually
+
+Zero frames across 1,030 captures and 26 GB. Content identifies each against MCM
+spec §7.1:
+
+| ID | Period | Firmware evidence | Spec message |
+|---|---|---|---|
+| `0x204` TX | 10 ms | enable/direction bitfields, 16-bit torque from `0xD00069D0`, CRC via `FUN_80080052` | TorqueCommandMessage |
+| `0x207` TX | 480 ms | constant `A5 A5 5A` | ResetCANWatchdogTimer |
+| `0x209` | 10 ms | four LE uint16 accessors | AccurateFeedbacks (→ `0x1C0`) |
+| `0x20B` | 10 ms | 2 x uint16 + CRC byte + 3-bit counter | AccurateFeedbacks_Elec (by elimination, 2026-10-09) |
+| `0x20C` | 10 ms | identical layout | AccurateFeedbacks_Mech (2026-10-09) |
+| `0x20A` | 25 ms | **24** distinct bit/byte accessors | SystemStatusMessage |
+| `0x20D` | 25 ms | exactly two byte accessors | limited_torque_percentage |
+| `0x20E` | 100 ms | exactly three byte accessors | Temperature (→ `0x241`) |
+| `0x20F` | 480 ms | never read anywhere in the image | CANWatchdogStatus |
+
+Two CRC-protected plus seven unprotected matches the spec's split exactly, and
+`0x207`/`0x20F` share the 480 ms watchdog period. **`0x20C` is AccurateFeedbacks_Mech and
+`0x20B` is AccurateFeedbacks_Elec** (resolved 2026-10-09, worklog §6H.69.5). The DLCM republishes
+0x20C's two words, B0..B1 on 0x308 (speed) and B2..B3 on 0x312 TorqueFeedback, and both match
+0x1C0 (the D-CAN relay of 0x209 AccurateFeedbacks) Motor_Speed / Torque on 99.2 / 99.1 % of frames
+on the C4c drive, 0x1C0 leading by 17.5 ms. So 0x20C carries speed and torque, and 0x20B, the other
+CRC-protected frame, is the current/voltage one by elimination. 0x20B is never logged, so its own
+words have not been compared with anything. `0x312`'s limits are finer-grained than a byte (893
+distinct values), so they are not a direct rescale of `0x20D`.
+
+### The DBC diff — a repeated defect shape
+
+Running the field map against the DBCs found one shape over and over: **a field
+declared a byte or a word too wide, swallowing a counter's neighbours, a parity
+bit or a validity bit.** Coda's house style is a 4-bit counter plus parity, and
+12/13/14-bit values with flags in the top of the MSB.
+
+| Message | Was | Is | Check |
+|---|---|---|---|
+| `0x208` BrakePressure | `23\|16@0` | 12-bit at `19\|12@0` + valid bit at `20\|1@0` | `FUN_8008062E` masks `0xF00`; `FUN_8008061C` reads B2 bit 4; both called from the same two consumers |
+| `0x200` byte 1 | `WheelSpeed_RollingCounter 15\|8@0` | BrakeSW bit 0, 4-bit counter bits 5-2, parity bit 6 | counter +1 in 68,687/68,687; parity 68,688/68,688; BrakeSW 99.94 % vs `0x315` |
+| `0x200` wheel speeds | `16@0` | `14@0` | B2/B4/B6 bits 7-6 = `0b11` in 196,707/196,707 — the source of "zero encoding 0xC000" |
+| `0x208` rear speeds | `16@0` | `14@0` | same, 197,248/197,248 — **wire evidence only**, the DLCM does not read them |
+| `0x315` RollingCounter | `7\|6@0` | `5\|4@0` + parity at `6\|1@0` | counter +1 in 98,596/98,596 (the 6-bit reading: 31.27 %); parity 98,597/98,597 |
+| `0x212` | "two sub-frames at 25 Hz" | one 50 Hz message; B2 bit3 / B4 bit7 toggles, B2 bit2 / B4 bit6 parity | toggles 50.00 %, both parities 100.00 % over 98,597 frames |
+| `0x308` ParkPinState | `7\|8@0` | 2-bit field at bits 6-5 | `FUN_80080C14` writes `DAT_d0006AF1 * 0x20 & 0x60` |
+
+The 0x200 and 0x208 wheel-speed narrowing **moves every decoded value down by
+49152**. The scale is unchanged, but anything that carried the `0xC000` offset in
+its own code must be rechecked, and InfluxDB content for those signals is stale
+until re-uploaded.
+
+`0x308` was resolved separately against the Vtrux EPRI definition and data from both
+vehicles, and the answer is bigger than a field width: **the DLCM transmits it and B0 is a
+park *request*, not a park pin state report.** The Vtrux `epri-pt-bus.dbc` already declared
+`SG_ ParkRequest : 5|2@1+` with `0 = OFF, 1 = Park, 2 = UnPark` and called the message the
+HCU park request command; the Coda firmware writes precisely those bits. Direction confirmed
+from data: the B0 change leads the TCM's own `0x55C` parkLockState in both directions on
+both vehicles -- Coda +76, +89, +88, +85 ms across two P-R-N-D-N-R-P cycles, Vtrux +55 and
++65 ms -- which a pin-state report cannot do on park engage. The consequence is that B1-B2
+is the DLCM *sending* motor speed to the TCM rather than the TCM reporting input shaft
+speed. Full write-up and the corrected cross-vehicle table are in `notes/borgwarner.md`;
+script `notes/artifacts/park_request_0x308_cross_vehicle.py`.
+
+### A parser bug that made half the field map wrong (2026-09-26)
+
+**62 of the 120 getters were recorded with a mask of `0xFF` when their real mask
+was a single bit or a small field.** `artifacts/dlcm_signal_map.py` extracted the
+mask with a regex matching only Ghidra's hex form, `& 0x..`, and Ghidra prints
+small masks in decimal — `& 4`, `& 7`, `& 0x3f00`. Every decimal case fell through
+to a default of "whole byte". No error was raised and the output looked ordinary.
+
+Six messages were wrong in what was published here: `0x168` B0, `0x200` B0,
+`0x20A` B0-B3, `0x370` B1, `0x55C` B0, `0x580` B1-B2. Two consequences beyond the
+table itself:
+
+- `0x200` B0 was recorded as a whole-byte read, which was quoted as evidence that
+  the DLCM reads `SubFrameID`. It does not — it reads bit 2 only. See the RX-path
+  section below.
+- `0x55C` B0 was recorded as a whole-byte read, which hid a DBC defect. The
+  firmware reads bits 2-0 (`FUN_80080940`), matching both `notes/borgwarner.md`
+  and the Vtrux EPRI DBC against the Coda DBC's 8-bit `TCMState`. Corrected in
+  `CODA-D-CAN.dbc` 2026-09-26.
+
+Fixed by matching `& (0x[0-9a-f]+|\d+)` and parsing with `int(x, 0)`. Worth
+keeping as an instance of the class in AGENTS.md → "Filters that fail silently":
+a pattern matcher that quietly defaulted rather than failing when it met a format
+it did not expect, across half a band, in a direction that looked plausible.
+
+### Fields the DLCM consumes that no DBC signal covers
+
+Not defects — gaps, and useful leads because they say the module cares.
+
+- **`0x580`** ("signal content unknown"): eight single-bit fields, no bytes —
+  B0 bits 4, 5, 6 and 7, B1 bits 2 and 6, B2 bits 1 and 3. Not a bare heartbeat.
+  *(Corrected 2026-09-26; B1 and B2 were previously given here as whole bytes.)*
+- **`0x370`**: seven fields feeding the DTC block in `FUN_80074478` — B0[3:0],
+  B0[6:4], B1 bit 0, B1 bit 1, B1[3:2], B3[3:0], B3[7:4].
+  *(Corrected 2026-09-26; B1 was previously given here as a whole byte, twice.)*
+- **`0x300`**: B4 bit 7 (50 % toggle), B1 bit 7 (the MTOG_ESP candidate), B4 bits
+  5 and 6 (both always 0 in 98,624 frames), and B2 masked `0x1F` with B3 as a
+  second 13-bit torque field, constant `0x12C0` = +700 Nm, so non-binding.
+  `MMAX_ESP_REGEN_TQ_REQ` at `36|13@0` is confirmed exactly by `FUN_80080572`.
+- **`0x208` B0 bit 6** — read by `FUN_8008060E`, never set in any frame observed.
+- **`0x491` B3 bits 3-0**, **`0x276` B2 bit 7**.
+
+Conversely the DLCM does **not** read `0x300` YawRate, `0x200` B6-B7
+(WheelSpeed_LF), or `0x208` ESPSysSts — the last of which is set in 197,078 of
+197,248 frames.
+
+---
+
+## Does the DLCM gate on 0x200 SubFrameID? No — and its silence is not confirmation (2026-09-26)
+
+Commissioned from `notes/artifacts/handoff_0x200_subframeid.md`, which asked two
+things: does the receive path gate on `SubFrameID`, and does it decode `0x14`
+through the same field layout as `0x00`. The handle is the accessor band.
+
+### The finding
+
+**Nothing in the image compares B0 against `0x00`, `0x14`, `0x1C`, `0x1E` or
+`0x20`.** Neither layer gates:
+
+- **COM layer.** The RX record for `0x200` carries a single signal record
+  (`sig 0x8005`, 8 bytes, no mux field), and `FUN_800686D8` copies *every*
+  `0x200` frame into `a0-0x1068` regardless of B0. The buffer holds whichever
+  sub-frame arrived last.
+- **Application.** `FUN_8006EF12` calls both wheel-speed getters
+  unconditionally and rejects only the value `0x3FFF`.
+
+The only part of B0 read anywhere is **bit 2**, by `FUN_800805EE`
+(`(a0-0x1068) & 0x04`). It has two consumers: `FUN_8006ED3C`, which turns it
+into a boolean at `a0-0x27C7`, and `FUN_800488C2`, the safety monitor, which
+stores it with its complement under a verify-or-trap at `a0-0xC60`/`a0-0xC48`,
+the same integrity treatment as brake pressure. It is a safety-relevant ESC
+status bit, not a frame selector.
+
+### What that does and does not establish
+
+It **does** establish that the DLCM applies one field layout to every sub-frame,
+because it has only one and no way to select between them.
+
+It does **not** corroborate the DBC's claim that `0x14` carries the same wheel
+speed layout as `0x00`. That is a claim about what the *ESC emits*, and the
+firmware never inspects the byte that would distinguish them — so the absence of
+a gate is silence, not agreement. If the ESC repurposed those bytes under `0x14`,
+the DLCM would read them as wheel speeds anyway and never notice. **Do not cite
+this section as firmware confirmation of the same-layout claim**; that claim
+still rests on log data alone.
+
+There is a weak argument in the other direction, worth only what it is: a
+safety-relevant consumer reading the field unconditionally suggests the ESC is
+not expected to repurpose it, since doing so would silently corrupt a
+safety-monitored input. That is an argument from design intent, not evidence.
+
+### Consequence: the DLCM ingests the startup frames as real wheel speeds
+
+With no gate, during the ~3.9 s ESC startup (`0x1E` then `0x1C`, payload
+`1E 44 C0 00 C0 00 C0 00` — all channels at the zero code) the DLCM reads both
+front wheel speeds as exactly zero. Zero is not the invalid sentinel, so nothing
+rejects it.
+
+### The invalid sentinel is 0x3FFF, which independently confirms the 14-bit width
+
+`FUN_8006EF12` rejects either front channel reading **`0x3FFF`** and raises DTC
+event `0x7A`. `0x3FFF` is the 14-bit all-ones and is only meaningful if the field
+is 14 bits — a 16-bit field would sentinel at `0xFFFF`. This is a second,
+independent confirmation of the narrowing applied to the DBC on 2026-09-24, which
+until now rested only on bits 7-6 being constant `0b11`.
+
+It also reframes a parts-car observation: `WheelSpeed_RR` stuck at wire `0xFFFF`
+is the ESC's own invalid code (`0x3FFF` in 14-bit terms), not an arbitrary
+stuck-at value.
+
+### Bit 2 partitions the sub-frames, measured
+
+| SubFrameID | B0 bit 2 | wheel-speed fields |
+|---|---|---|
+| `0x1E`, `0x1C` | 1 | all zero |
+| `0x00`, `0x20` | 0 | real data |
+
+Verified on `frombonnydoon` and `codadriveslowturnonwithdefroster2`.
+*Hypothesis, not established:* B0 is a status **bitfield** rather than an enum —
+`0x1E` = bits 4,3,2,1, then `0x1C` = bits 4,3,2, then either `0x00` or `0x14`.
+`0x0A`/`0x0B` fit the pattern trivially since they turn out not to be ESC frames
+at all.
+
+### Reproduction
+
+`artifacts/x200_subframeid_rxpath.py` for the log side. Firmware side:
+`ghidra/scripts/DlcmFuncContext.java` on `800805EE,800805FC,800805C2,800805D8`
+for the getters, then on their callers.

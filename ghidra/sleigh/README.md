@@ -1,6 +1,11 @@
 # ghidra/sleigh
 
-The modified Renesas SH-4 processor definition used for the Coda DLCM
+> **⚠ 2026-09-19: void.** The Coda DLCM is an Infineon TriCore, not an SH-4. Every
+> stub in here exists to push an SH-4 decoder past bytes that were never SH-4. Do not
+> install this spec; use stock `tricore:LE:32:default`. Kept as a record of the error.
+> See `projects/coda/notes/dlcm/coda-dlcm-decompile-notes.md` → Architecture.
+
+The modified Renesas SH-4 processor definition formerly used for the Coda DLCM
 (Continental EMS9180) firmware: stock Ghidra's `SuperH4.sinc` plus 529 NOP
 constructors for Continental variant opcodes, so disassembly walks past
 instructions that are not valid SH-4.

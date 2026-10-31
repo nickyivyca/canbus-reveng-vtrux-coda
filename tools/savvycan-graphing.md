@@ -84,7 +84,7 @@ on the other), this produces a noisy trace and degrades render performance.
 **Solution:** pre-filter the log to the correct bus and only the IDs needed, then load
 the small filtered log into SavvyCAN alongside the `.gdf`.
 
-**Plan for `tools/filter_log.py`:** see `tools/plans/filter_log.md`.
+**Plan for `tools/filter_log.py`:** see the internal `filter_log` plan.
 
 ---
 

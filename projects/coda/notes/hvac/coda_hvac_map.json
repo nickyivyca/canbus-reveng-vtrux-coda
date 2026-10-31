@@ -1,0 +1,116 @@
+{
+ "translation": "S12X local -> global (provisional, H1)",
+ "prog_base": "0x780000",
+ "segments": [
+  {
+   "seg": 0,
+   "file": "seg0_002020.bin",
+   "sent": "0x002020",
+   "global": "0x0FE020",
+   "global_end": "0x0FFB3E",
+   "bytes": 6943
+  },
+  {
+   "seg": 1,
+   "file": "seg1_00C000.bin",
+   "sent": "0x00C000",
+   "global": "0x7FC000",
+   "global_end": "0x7FD0D5",
+   "bytes": 4310
+  },
+  {
+   "seg": 2,
+   "file": "seg2_00EE10.bin",
+   "sent": "0x00EE10",
+   "global": "0x7FEE10",
+   "global_end": "0x7FEEFF",
+   "bytes": 240
+  },
+  {
+   "seg": 3,
+   "file": "seg3_E08800.bin",
+   "sent": "0xE08800",
+   "global": "0x780800",
+   "global_end": "0x780CAB",
+   "bytes": 1196
+  },
+  {
+   "seg": 4,
+   "file": "seg4_F98000.bin",
+   "sent": "0xF98000",
+   "global": "0x7E4000",
+   "global_end": "0x7E7C9C",
+   "bytes": 15517
+  },
+  {
+   "seg": 5,
+   "file": "seg5_FA8000.bin",
+   "sent": "0xFA8000",
+   "global": "0x7E8000",
+   "global_end": "0x7EBBF2",
+   "bytes": 15347
+  },
+  {
+   "seg": 6,
+   "file": "seg6_FB8000.bin",
+   "sent": "0xFB8000",
+   "global": "0x7EC000",
+   "global_end": "0x7EFECF",
+   "bytes": 16080
+  },
+  {
+   "seg": 7,
+   "file": "seg7_FC8000.bin",
+   "sent": "0xFC8000",
+   "global": "0x7F0000",
+   "global_end": "0x7F37B4",
+   "bytes": 14261
+  },
+  {
+   "seg": 8,
+   "file": "seg8_FE8000.bin",
+   "sent": "0xFE8000",
+   "global": "0x7F8000",
+   "global_end": "0x7FBF63",
+   "bytes": 16228
+  }
+ ],
+ "unflashed": [
+  [
+   "0x780000",
+   "0x7807FF"
+  ],
+  [
+   "0x780CAC",
+   "0x7E3FFF"
+  ],
+  [
+   "0x7E7C9D",
+   "0x7E7FFF"
+  ],
+  [
+   "0x7EBBF3",
+   "0x7EBFFF"
+  ],
+  [
+   "0x7EFED0",
+   "0x7EFFFF"
+  ],
+  [
+   "0x7F37B5",
+   "0x7F7FFF"
+  ],
+  [
+   "0x7FBF64",
+   "0x7FBFFF"
+  ],
+  [
+   "0x7FD0D6",
+   "0x7FEE0F"
+  ],
+  [
+   "0x7FEF00",
+   "0x7FFFFF"
+  ]
+ ]
+}

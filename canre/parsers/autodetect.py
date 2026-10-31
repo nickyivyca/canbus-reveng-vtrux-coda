@@ -74,7 +74,8 @@ def detect_format(path: Path | str) -> BaseParser:
     )
 
 
-def parse_file(path: Path | str, *, absolute: bool = False) -> Iterator[CANFrame]:
+def parse_file(path: Path | str, *, absolute: bool = False,
+               include_errors: bool = False) -> Iterator[CANFrame]:
     """Auto-detect format and parse a CAN log file, yielding CANFrame objects.
 
     This is the main convenience entry point. It combines ``detect_format``
@@ -87,6 +88,9 @@ def parse_file(path: Path | str, *, absolute: bool = False) -> Iterator[CANFrame
     absolute : bool
         If True, return absolute timestamps (e.g. seconds from midnight)
         instead of relative to first frame. Useful for chaining T-chunk files.
+    include_errors : bool
+        If True, also yield error frames (``CANFrame.is_error``). Only the
+        BUSMASTER parser has them (``ERR`` lines); other formats ignore this.
 
     Yields
     ------
@@ -94,4 +98,7 @@ def parse_file(path: Path | str, *, absolute: bool = False) -> Iterator[CANFrame
         Parsed CAN frames in chronological order.
     """
     parser = detect_format(path)
-    yield from parser.parse_file(path, absolute=absolute)
+    if include_errors and isinstance(parser, BusmasterParser):
+        yield from parser.parse_file(path, absolute=absolute, include_errors=True)
+    else:
+        yield from parser.parse_file(path, absolute=absolute)

@@ -28,8 +28,8 @@ import cantools
 from canre.parsers import parse_file
 
 DBC = "projects/vtrux/epri-pt-bus.dbc"
-ANDROID = "../../CANLogs/VtruxLogs"
-SESSION = "vtrux_20260802_123318"
+ANDROID = "projects/vtrux/logs"  # parts-truck session moved and renamed 2026-10-21
+SESSION = "partsdrive_20260802"  # was vtrux_20260802_123318 in CANLogs/VtruxLogs
 N_CHUNKS = 4          # startups are all in the first ~300 s
 
 MAINC_STAT_STATES = [

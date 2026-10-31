@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
+from canre.utils.buses import describe, resolve_files
 from canre.utils.merge import merge_files
 
 # ---------------------------------------------------------------------------
@@ -36,6 +37,18 @@ from canre.utils.merge import merge_files
 PT_BUS_ANCHOR  = 0x051   # exclusive to PT bus; identifies channel
 OBD_BUS_ANCHOR = 0x044   # exclusive to OBD bus (TRAC MCU speed)
 VEH_BUS_ANCHOR = 0x1E5   # exclusive to Vehicle bus (GMLAN)
+
+# Channels are resolved to buses per file by anchor fraction and time span
+# (canre/utils/buses.py), not by the first channel an anchor appears on:
+# Android T0 chunks re-number a bus several times in sequence (the PT bus of
+# vtrux_20260925_155857_T0 is ch 8, 10, 14, 16, 18), and first-seen locking
+# discarded everything after the first re-enumeration.
+BUS_ANCHORS = [
+    ("powertrain", {PT_BUS_ANCHOR}),
+    ("vehicle",    {VEH_BUS_ANCHOR, 0x500}),
+    ("obd",        {0x040, 0x041, 0x042, 0x043, OBD_BUS_ANCHOR}),
+]
+PT_BUS, OBD_BUS = "powertrain", "obd"
 
 # ---------------------------------------------------------------------------
 # Signal target IDs to accumulate (PT bus unless noted)
@@ -194,11 +207,11 @@ X460_BENIGN_STANDING = {(0xF7, 0x00, 0x00), (0xF8, 0x00, 0x00)}
 # ---------------------------------------------------------------------------
 
 def collect_frames(paths):
-    """Single pass: identify buses, accumulate target frames.
+    """Pre-scan each file to resolve channels to buses, then one merged pass
+    accumulating target frames.
 
     Returns:
-        pt_bus (int|None)
-        obd_bus (int|None)
+        buses (tuple): (per-file resolution lines, pt_found, obd_found)
         accumulated (dict[int, list[(t, bytes)]])  -- all buses merged by ID
         duration (float)
         frame_count (int)
@@ -206,35 +219,33 @@ def collect_frames(paths):
     # Bel Inverter extended IDs -- presence indicates a charging log
     BEL_IDS = {0x18FFD4C0, 0x18FFD5C0, 0x18FFD7C0, 0x18FFD8C0, 0x18FFD9C0}
 
-    pt_bus = obd_bus = None
+    bus_map = resolve_files(paths, BUS_ANCHORS)
+    named = {n for m in bus_map.values() for n in m.values()}
     accumulated = {aid: [] for aid in ALL_TARGETS}
     duration = 0.0
     frame_count = 0
     bel_seen = False
 
-    for frame in merge_files(paths):
+    for frame in merge_files(paths, bus_map=bus_map):
         frame_count += 1
         duration = frame.timestamp
         if frame_count % 5000 == 0:
             print(f"\r  reading... {frame_count:,} frames  t={duration:.1f}s",
                   end='', flush=True, file=sys.stderr)
 
-        if pt_bus is None and frame.arbitration_id == PT_BUS_ANCHOR:
-            pt_bus = frame.bus
-        if obd_bus is None and frame.arbitration_id == OBD_BUS_ANCHOR:
-            obd_bus = frame.bus
         if not bel_seen and frame.arbitration_id in BEL_IDS:
             bel_seen = True
 
         if frame.arbitration_id in ALL_TARGETS:
-            is_pt_target  = (pt_bus is not None  and frame.bus == pt_bus  and frame.arbitration_id in PT_TARGETS)
-            is_obd_target = (obd_bus is not None and frame.bus == obd_bus and frame.arbitration_id in OBD_TARGETS)
+            is_pt_target  = frame.bus == PT_BUS  and frame.arbitration_id in PT_TARGETS
+            is_obd_target = frame.bus == OBD_BUS and frame.arbitration_id in OBD_TARGETS
             if is_pt_target or is_obd_target:
                 accumulated[frame.arbitration_id].append((frame.timestamp, frame.data))
 
     if frame_count >= 5000:
         print(f"\r  {frame_count:,} frames read ({duration:.1f}s)          ", file=sys.stderr)
-    return pt_bus, obd_bus, accumulated, duration, frame_count, bel_seen
+    buses = (describe(bus_map), PT_BUS in named, OBD_BUS in named)
+    return buses, accumulated, duration, frame_count, bel_seen
 
 
 # ---------------------------------------------------------------------------
@@ -935,7 +946,8 @@ def build_fault_summary(first_snap, events, x460_initial=()):
 # Main report
 # ---------------------------------------------------------------------------
 
-def print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel_seen, out):
+def print_report(paths, buses, accumulated, duration, frame_count, bel_seen, out):
+    bus_lines, pt_found, obd_found = buses
     def w(line=''):
         out.write(line + '\n')
 
@@ -947,8 +959,11 @@ def print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel
         files_str += f" (+{len(paths)-3} more)"
     w(f"  Files   : {files_str}")
     w(f"  Duration: {duration:.1f}s   Frames: {frame_count:,}")
-    w(f"  PT bus  : {'Bus' + str(pt_bus) if pt_bus is not None else 'NOT IDENTIFIED'}")
-    w(f"  OBD bus : {'Bus' + str(obd_bus) if obd_bus is not None else 'not found in log'}")
+    w(f"  PT bus  : {'identified' if pt_found else 'NOT IDENTIFIED'}")
+    w(f"  OBD bus : {'identified' if obd_found else 'not found in log'}")
+    w("  Channels (resolved per file):")
+    for b in bus_lines:
+        w(f"    {b}")
     if bel_seen:
         w()
         w("  *** WARNING: Bel Inverter (charger) messages detected in this log. ***")
@@ -1121,19 +1136,19 @@ def main():
         if not p.exists():
             sys.exit(f"File not found: {p}")
 
-    pt_bus, obd_bus, accumulated, duration, frame_count, bel_seen = collect_frames(paths)
+    buses, accumulated, duration, frame_count, bel_seen = collect_frames(paths)
 
-    if pt_bus is None:
+    if not buses[1]:
         print("WARNING: PT bus not identified (0x051 not seen). Output may be empty.",
               file=sys.stderr)
 
     if args.output:
         with open(args.output, 'w', encoding='utf-8') as f:
-            print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel_seen, f)
+            print_report(paths, buses, accumulated, duration, frame_count, bel_seen, f)
         print(f"Report written to {args.output}")
     else:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        print_report(paths, pt_bus, obd_bus, accumulated, duration, frame_count, bel_seen, sys.stdout)
+        print_report(paths, buses, accumulated, duration, frame_count, bel_seen, sys.stdout)
 
 
 if __name__ == '__main__':

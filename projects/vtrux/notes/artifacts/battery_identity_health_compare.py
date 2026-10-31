@@ -55,8 +55,8 @@ ALARM_NAMES = {0: "NONE", 1: "TYPE1", 2: "TYPE2", 3: "TYPE3"}
 
 
 # ------------------------------------------------------------------ shared ---
-def android_session(stem):
-    fs = glob.glob(f"{ANDROID}/{stem}_T*.log")
+def android_session(stem, root=ANDROID):
+    fs = glob.glob(f"{root}/{stem}_T*.log")
     return sorted(fs, key=lambda p: int(re.search(r"_T(\d+)\.log$", p).group(1)))
 
 
@@ -150,8 +150,8 @@ def add(label, files, date):
 
 
 # --- post-swap PARTS truck  => main-orig battery
-add("20260802 partstruck drive (NEW)", android_session("vtrux_20260802_123318"), "2026-08-02")
-add("20260801 partstruck", android_session("vtrux_20260801_175655"), "2026-08-01")
+add("20260802 partstruck drive (NEW)", android_session("partsdrive_20260802", L), "2026-08-02")
+add("20260801 partstruck", android_session("partsdrive_20260801", L), "2026-08-01")
 add("20260421 partstruck testdrive", [f"{L}/vtrux_partstruck_testdrive.log"], "2026-04-21")
 add("20260421 partstruck testdrive p4", [f"{L}/vtrux_partstruck_testdrive_part4.log"], "2026-04-21")
 add("20260408 partstruck reconnect", [f"{L}/vtrux__partstruck_reconnect.log"], "2026-04-08")
@@ -406,7 +406,7 @@ if PHASE5:
 
     db = cantools.database.load_file("projects/vtrux/epri-pt-bus.dbc")
     M410 = db.get_message_by_name("EPRI_BCM_Status_0410")
-    files = android_session("vtrux_20260802_123318")[:3]
+    files = android_session("partsdrive_20260802", L)[:3]
 
     print("=" * 104)
     print("PHASE 5 -- today's session (main-orig): bcm_alarm timeline vs pack state")

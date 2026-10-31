@@ -86,9 +86,9 @@ CM_ BO_ 288 "GM PPEI vehicle odometer. B0 not read. EPRI app displays in miles b
 
 CM_ BO_ 451 "GM PPEI engine torque. Both signals share scale/offset. Zero torque at raw=1696.";
 
-CM_ BO_ 707 "GM PPEI manifold absolute pressure. EPRI plist label 'PPEI_Engine_Torque_Status_3' is the PPEI message name (correct per GM spec); MAP is one of several signals. B0-B5, B7 not read by EPRI app.";
+CM_ BO_ 707 "GM PPEI manifold absolute pressure. EPRI plist label 'PPEI_Engine_Torque_Status_3' is the PPEI message name; MAP is one of several signals. B0-B5, B7 not read by EPRI app.";
 
-CM_ BO_ 977 "GM PPEI instantaneous fuel consumption. EPRI plist label 'PPEI_Engine_General_Status_2' is the PPEI message name (correct per GM spec); fuel rate is one of several signals (message also contains throttle, cruise speed, AC command).";
+CM_ BO_ 977 "GM PPEI instantaneous fuel consumption. EPRI plist label 'PPEI_Engine_General_Status_2' is the PPEI message name; fuel rate is one of several signals (message also contains throttle, cruise speed, AC command).";
 
 CM_ BO_ 1001 "GM PPEI vehicle speed and distance. plist index .2 is a placeholder (value=-1). B4-B7 not read.";
 

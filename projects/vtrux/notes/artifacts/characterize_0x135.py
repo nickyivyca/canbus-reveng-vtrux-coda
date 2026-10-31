@@ -136,6 +136,16 @@ emit()
 
 for fname, date_hint, role in LOGS:
     path = LOGS_DIR / fname
+    # Seven captures were quarantined to logs/unidentified-bus/ on 2026-10-04
+    # (each has a channel matching no anchor set, so its bus cannot be named).
+    # This list mixes moved and unmoved names -- vtruxoverflowrecoverytest
+    # moved while test5/6/7 did not -- so resolve rather than hardcode either
+    # location. Without this the moved ones would quietly print SKIP and the
+    # run would look complete.
+    if not path.exists():
+        alt = LOGS_DIR / "unidentified-bus" / fname
+        if alt.exists():
+            path = alt
     if not path.exists():
         emit(f"  SKIP  {fname}  ({date_hint}) -- not found")
         continue

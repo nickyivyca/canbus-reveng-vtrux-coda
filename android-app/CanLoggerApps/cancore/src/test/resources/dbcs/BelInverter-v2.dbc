@@ -131,11 +131,12 @@ CM_ BO_ 2566903232 "(SA=0xC0). Bel inverter/charger temperatures. EPRI app: INVC
 
 CM_ BO_ 2566903488 "(SA=0xC0). Bel inverter AC output. EPRI app: INVCH_Inv_Output.";
 
-CM_ BO_ 2566903744 "(SA=0xC0). Bel charger HV battery and AC input. EPRI app: INVCH_Bdc_Ibat. hvBatteryCurrent signed (bidirectional, positive=charging); other signals unsigned (corrected from previous DBC).";
+CM_ BO_ 2566903744 "(SA=0xC0). Bel charger HV battery and AC input. EPRI app: INVCH_Bdc_Ibat. hvBatteryCurrent is signed (bidirectional); other signals unsigned (corrected from previous DBC). SIGN CORRECTION 2026-08-03: the value is NEGATIVE while the pack is charging -- the previously documented positive=charging convention is WRONG. Verified across 16 charge sessions: negating gives |E_dc|/E_ac = 90-93% (a sane charger efficiency) and agrees with BMS pack energy from 0x410. chargerInputVoltage/Current are RMS, so V*I is APPARENT power (VA) not real power; at light load PF degrades and efficiency computed from them is a lower bound. See notes/charger-efficiency-and-grid-consumption.md.";
 
 CM_ BO_ 2566904000 "(SA=0xC0). Bel J1772 pilot and 12V monitoring. EPRI app: INVCH_Bdc_12Vbat. B2-B7 from previous DBC only.";
 
 CM_ BO_ 2566904256 "(SA=0xC0). Bel available charge current and vehicle state. Source: previous DBC. Not in EPRI plist.";
+CM_ SG_ 2566904256 BELINV_maxAvailableChargingCurrent "DC/pack-side charge current limit, NOT the J1772 AC advertised current. Tracks HV battery current (~13 A limit vs -12.4 A actual during a 5 kW charge). The J1772 advertised current is not on CAN -- derive it from BELINV_pilotDuty per SAE J1772. Confirmed 2026-07-14, live charge log. See android-app/notes/plans/vtrux-live-display.md.";
 
 CM_ BO_ 2566904512 "(SA=0xC0). Bel inverter module temperatures. Source: previous DBC. Not in EPRI plist.";
 

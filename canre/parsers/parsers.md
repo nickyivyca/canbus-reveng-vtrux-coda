@@ -35,7 +35,7 @@ There is no `canre.parsers.parsers` submodule. The function is `parse_file`, not
 Every `parse_file` yields frames; none returns a list. A second pass over the same result sees **nothing**, with no error. The usual trap is a bus-identification pass followed by an analysis pass: the second one comes back empty and reads as "the ID is absent". If you need more than one pass, materialise it first: `frames = list(parse_file(path))`. Found 2026-10-26, when an HVAC scratchpad reported every ID, its bus anchors included, as missing from all 20 captures.
 
 ## base.py — Core Data Types
-*Source last modified: 2026-09-25 17:06:04*
+*Source last modified: 2026-10-28 15:54:10*
 
 ### `CANFrame` dataclass
 
@@ -49,6 +49,7 @@ class CANFrame:
     is_extended: bool      # True = 29-bit extended ID
     dlc: int               # data length code
     is_tx: bool = False    # True = transmitted frame
+    is_error: bool = False # True = adapter error frame; arbitration_id is the error-class mask
 ```
 
 All parsers produce `CANFrame` objects. Timestamps are always in **seconds**. The BUSMASTER parser converts from `HH:MM:SS:TTTT` (TTTT = 10 kHz ticks, 0.1 ms resolution).
@@ -71,7 +72,17 @@ class BaseParser(ABC):
 ---
 
 ## busmaster.py — BUSMASTER `.log` Parser
-*Source last modified: 2026-09-27 16:40:16*
+*Source last modified: 2026-10-28 15:54:10*
+
+**Changed 2026-10-28 — error-frame (`ERR`) lines.** The Android logger now writes the
+adapter's CAN error frames as `HH:MM:SS:TTTT Rx <ch> 0x<class mask> ERR <dlc> <bytes>`
+instead of as standard data frames `0x004` / `0x00C` (Bug 11 in
+`android-app/notes/outstanding-changes.md`; plan `android-app/notes/plans/gs-usb-error-frames.md`).
+`parse_file` skips them unless `include_errors=True`, so every existing caller sees exactly
+the data frames it saw before; when yielded they carry `is_error=True`. An `ERR` line still
+sets the time origin if it comes first, so timestamps do not depend on `include_errors`.
+**Logs from before the fix carry the same reports as ordinary data lines `0x004` / `0x00C`**,
+which no flag can separate. Checked by `android-app/notes/artifacts/err_line_roundtrip.py`.
 
 **Changed 2026-09-26 — midnight rollover was measured against the wrong frame.**
 The check was `rel_time - t_origin < -1.0`, i.e. against the **first frame in the
@@ -126,9 +137,9 @@ Inherits from `BaseParser`.
 
 Returns `True` if any sample line matches `***BUSMASTER` or `***PROTOCOL CAN***` (case-insensitive).
 
-#### `parse_file(path, *, absolute: bool = False) -> Iterator[CANFrame]`
+#### `parse_file(path, *, absolute: bool = False, include_errors: bool = False) -> Iterator[CANFrame]`
 
-Streams through a BUSMASTER log, yielding one `CANFrame` per data line. Skips header/metadata lines (those starting with `***`).
+Streams through a BUSMASTER log, yielding one `CANFrame` per data line. Skips header/metadata lines (those starting with `***`), and `ERR` error-frame lines unless `include_errors=True` (see the 2026-10-28 note above).
 
 **Timestamp handling:**
 - Frame timestamps in the file are **session-relative** (reset to 0 at logging start), in `HH:MM:SS:TTTT` format where TTTT = 10 kHz ticks (0.1 ms, NOT milliseconds).
@@ -140,7 +151,9 @@ Streams through a BUSMASTER log, yielding one `CANFrame` per data line. Skips he
 - Tracks `***HEX***` and `***DEC***` markers mid-file. Default assumption is HEX mode.
 - Data byte tokens are clipped to `DLC` count (extra trailing tokens ignored).
 
-**Data line fields:** timestamp, direction (Tx/Rx), channel, arb ID (with 0x), frame type (`s`=standard, `x`=extended), DLC, data bytes.
+**Data line fields:** timestamp, direction (Tx/Rx), channel, arb ID (with 0x), frame type (`s`=standard, `x`=extended), DLC, data bytes. An error-frame line has type `ERR`, the error-class mask in the ID column, then DLC and payload; a free-text tail after `ERR` gives an empty payload.
+
+`scan_ids` (influx_upload's fast pass) counts data lines only.
 
 **Caveat:** Session start/stop markers do **not** reset the time origin. Multiple sessions in one file produce monotonically increasing timestamps from the first data frame.
 
@@ -268,7 +281,7 @@ frames are silently skipped.
 ---
 
 ## autodetect.py — Format Auto-Detection & Convenience Entry Point
-*Source last modified: 2026-02-16 00:38:08*
+*Source last modified: 2026-10-28 15:54:10*
 
 Automatic format detection and the primary public entry point for all log parsing.
 
@@ -282,9 +295,9 @@ Reads the first ~20 non-empty lines and tries each parser's `detect()` in priori
 
 Returns the first matching parser instance. Raises `ValueError` if none match.
 
-### `parse_file(path, *, absolute: bool = False) -> Iterator[CANFrame]`
+### `parse_file(path, *, absolute: bool = False, include_errors: bool = False) -> Iterator[CANFrame]`
 
-One-step convenience: detects format, then delegates to the matched parser's `parse_file`.
+One-step convenience: detects format, then delegates to the matched parser's `parse_file`. `include_errors` is passed only to the BUSMASTER parser; the other formats have no error frames here.
 
 ```python
 from canre.parsers.autodetect import parse_file

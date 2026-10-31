@@ -30,7 +30,7 @@ LOGS = [
     "projects/vtrux/logs/chargingafterturningaroundandnotusingextension.log",
     "projects/vtrux/logs/vtruxchargeafterevaplog-failed.log",
     "projects/vtrux/logs/vtruxchargeafterevaplogattempt2.log",
-    "projects/vtrux/logs/vtruxunpluggingchargehandleendofcharge.log",
+    "projects/vtrux/logs/unidentified-bus/vtruxunpluggingchargehandleendofcharge.log",
 ]
 
 def decode_le_signed(b0, b1):

@@ -148,6 +148,72 @@ Key-on runs a lamp-test sequence: `0x270` B0 `0x01`/`0x02` and `0x271` yellow/re
 pulses in the first few seconds. These are test patterns, not faults, and are
 excluded from all pathway analysis above.
 
+## `0x370` carries no fault code (measured 2026-10-04)
+
+`0x370` was the obvious remaining candidate for a fault code on the bus: the **factory DTC
+master list names it the GWM "Vehicle Faults" message** (it is the id behind `U0146`), it is
+GWM-native on B CAN, it is **not** a faithful gateway copy, and it has **no `SG_` defined in
+the DBC at all**. A message called "Vehicle Faults" with eight undocumented bytes is exactly
+where a code would be.
+
+It does not carry one. Byte census over the five 2026-10-04 captures, **113,715 frames of
+`0x370` across both buses** (`artifacts/fault-encoding/live_dtc_broadcast.py`):
+
+| Byte | Behaviour across all 113,715 frames |
+|---|---|
+| B0 | `15` in the four 15:48-16:07 captures, **`95` in the 16:55 capture** - i.e. bit 7 is a state flag |
+| **B1** | **constant `06` on B CAN, `02` on D CAN** - the bus tag |
+| B2 | varies: `88`/`89`/`8A` stepping slowly in the early captures, 11 values `82`..`8C` in the 16:55 one |
+| B3 | constant `14` |
+| **B4, B5** | **constant `00` in every frame** |
+| B6 | constant `31` |
+| B7 | constant `15` |
+
+**The load-bearing row is B4/B5.** Those two adjacent bytes are the only place a 16-bit
+fault code could sit, and they are identically zero across all 113,715 frames on both buses,
+in a capture set that includes a drive on a non-stock calibration. B3, B6 and B7 are likewise
+nailed down. What does move - B0 bit 7, and B2's range - moves like state, not like a code,
+and it is consistent with the use of `0x370` elsewhere in the project as
+**`VehiclePowerState`**, which `notes/key-cycle-detection.md` relies on to date 23
+mid-capture key cycles across 19 captures. So the factory *name* and the project's *use* are
+reconciled the boring way: the name is the factory's, the content is state.
+
+B1 being a per-bus constant also independently confirms the bus-tag finding recorded in
+`tools/tools.md` (B1 differs in 100 % of 34,919 matched gateway pairs).
+
+**Two caveats, both real:**
+
+- **B0 bit 7 and B2 are undecoded.** This census establishes that no byte of `0x370` holds a
+  fault *code*; it does not explain what B0 bit 7 or B2 are. The `VehiclePowerState` reading
+  is the existing hypothesis, not something measured here.
+- **All five captures are from one day**, and the only non-stock-calibration drive among them
+  is quarantined elsewhere (`dlcm/dcan_drive_capture_20261004_f7/`). The census was not run
+  over the faulting drive itself, so it measures normal operation.
+
+### The one module that does broadcast a live DTC
+
+The DC-DC converter. `0x469` `DCDCStatus1` carries `DTC_Index` (5 bits, a fixed 32-entry
+supplier table — see the `VAL_` in `CODA-B-CAN.dbc`) plus `DTC_Status` (3 bits: Not Supported
+/ Critically Disabled / No Status to Report / Diagnostic Passed / Diagnostic Failed), both
+verified against the Delphi U2C manual. It is worth knowing this exists, and worth not
+over-reading it: it is **one index at a time out of a private namespace**, not an SAE code,
+and no other module on this vehicle does anything equivalent.
+
+### The DLCM, from the firmware side
+
+Settled separately and in the firmware rather than on the bus: the DLCM materialises a DTC
+code **only inside a UDS response**. The event -> DTC lookup has two callers, both in the UDS
+handler band; the DEM status array has eight readers and none is a transmit path; the periodic
+task chain contains no DEM function; and its one indirect dispatcher resolves to exactly two
+callbacks, one of which is the UDS service dispatcher itself. Full chain and its stated
+bounds: `dlcm/dlcm-dtcs-investigation.md` §8.
+
+**Consequence for this file's central question.** "Why is the lamp on" cannot be answered from
+a capture for any module, by two independent routes now: `0x271` carries colour only
+(measured), and the DLCM has no code-publishing path at all (traced). A per-module UDS DTC
+read remains the only answer — and because a 12 V cycle clears codes, it must be taken before
+the recovery cycle, not after.
+
 ## Notes on modules that do NOT drive the lamp
 
 - **IPK `0x491`** — `IPK_FaultLamps` is constant per car (2 main car, 3 parts
@@ -172,3 +238,7 @@ excluded from all pathway analysis above.
    during the brake-switch yellow, so possibly a DLCM-fault marker).
 4. Whether other modules (ABS, airbag, HVAC) reach the lamp via `0x271` the way
    the DLCM does — untested; the parts car cannot isolate them.
+5. ~~Whether any message carries a fault code or source~~ — **CLOSED 2026-10-04 as a
+   negative, twice over.** `0x370` measures as power state (above) and the DLCM has no
+   code-publishing path in firmware (`dlcm/dlcm-dtcs-investigation.md` §8). The only
+   live indexed DTC on the vehicle is the DC-DC's `0x469`.

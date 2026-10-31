@@ -20,12 +20,16 @@ import java.io.InputStream
 class SlcanFrameSource(
     private val busIndex: Int = 0,
     private val readBufferBytes: Int = 4096,
-    extraBufferCapacity: Int = 1024,
+    /** The log writer reads this flow too, so it gets the log writer's buffer (Bug 4). */
+    extraBufferCapacity: Int = CanFrameSource.LOG_BUFFER_FRAMES,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) : CanFrameSource {
 
     private val _frames = MutableSharedFlow<CanFrame>(extraBufferCapacity = extraBufferCapacity)
     override val frames: SharedFlow<CanFrame> = _frames.asSharedFlow()
+
+    /** `tryEmit` results, always counted (Bug 4); see [FlowHealth]. */
+    private val health = FlowHealth.register(frames, "slcan.frames")
 
     @Volatile
     private var streaming = false
@@ -48,7 +52,7 @@ class SlcanFrameSource(
 
     override fun activeBusCount(): Int = 1
 
-    private fun newSource() = SlcanSource(busIndex, readBufferBytes, clock) { _frames.tryEmit(it) }
+    private fun newSource() = SlcanSource(busIndex, readBufferBytes, clock) { health.record(_frames.tryEmit(it)) }
 
     /**
      * Read [input] until it ends, publishing frames as they decode. Blocks, so call it on an IO

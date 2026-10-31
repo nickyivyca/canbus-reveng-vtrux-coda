@@ -9,7 +9,7 @@ to the reference capture from my Coda.
 
 # Part A -- Parts Car
 
-**Log:** `projects/coda/logs/codapartscarlog.log` (154 s, 378,200 frames, 169 IDs)
+**Log:** `projects/coda/notes/partscar_capture_20260304/codapartscarlog.log` (154 s, 378,200 frames, 169 IDs)
 **DTCs on parts car:** ABS C102B, C2202; Airbag B1382, B2505; DLCM C2100, U0110; HVAC B111D, B112D; BMS P1811
 
 Survey artifacts: `artifacts/survey_partscar.txt`, `artifacts/survey_normal.txt`
@@ -206,8 +206,8 @@ Artifacts: `analyze_308_partscar.txt`, `analyze_312_partscar.txt`, `analyze_308_
 
 | DTC | Module | CAN ID | Field | Fault indicator |
 |-----|--------|--------|-------|-----------------|
-| ABS C102B | ESC | 0x312 B6-B7 | RR wheel speed | 2 unique values vs 908 unique in normal |
-| ABS C102B | ESC | 0x312 B0 bits 2-0 | Fault status | 0x07 (faults) vs 0x00 (no fault) in normal |
+| ~~ABS C102B~~ | ~~ESC~~ | ~~0x312 B6-B7~~ | ~~RR wheel speed~~ | **WITHDRAWN 2026-09-24 — 0x312 is a DLCM torque frame; see below** |
+| ~~ABS C102B~~ | ~~ESC~~ | ~~0x312 B0 bits 2-0~~ | ~~Fault status~~ | **WITHDRAWN 2026-09-24** |
 | ABS C2202 | ESC | VIN frames | VIN mismatch | Deferred to Phase 4 |
 | Airbag B1382+B2505 | SRS | 0x3A0 B0 bit 7 | SRS fault flag | 1=fault, 0=no fault |
 | HVAC B111D | HVAC | 0x391 B4 | ReturnAirTemp | 0x58 (-40 degC sentinel) vs -7 to +7 degC normal |
@@ -215,6 +215,19 @@ Artifacts: `analyze_308_partscar.txt`, `analyze_312_partscar.txt`, `analyze_308_
 | DLCM C2100 | DLCM | -- | Key interlock | No candidate found; low priority |
 
 ### ABS C102B (RR Wheel Speed Sensor Circuit) -- 0x312, D CAN
+
+> **WITHDRAWN 2026-09-24.** `0x312` is not an ESC message and carries no wheel speeds. It is
+> transmitted by the DLCM (TX record 10) and carries a torque feedback field duplicated at
+> B0-B1 and B2-B3, **M_MAX** at B4-B5 and **M_MIN** at B6-B7, all at 0.25 Nm/count with zero
+> at 2000. See `notes/dlcm/coda-dlcm-decompile-notes.md`.
+>
+> The parts-car measurements below are real and are explained by that reading: B6-B7 in
+> {1860, 2000} is a regen limit of −35 … 0 Nm, i.e. a car sitting with HV off, and "B0 bits
+> 2-0 = 0x07 vs 0x00" is the top of a 13-bit torque value, not per-channel fault flags.
+> **No CAN indicator for ABS C102B has been identified.** The wheel speeds are on `0x200`
+> (front) and `0x208` (rear); re-run this comparison against those before concluding
+> anything about the RR sensor.
+
 
 0x312 is a 100 Hz frame containing 4 x BE uint16 wheel speed channels:
 B0-B1, B2-B3, B4-B5, B6-B7. The upper byte of each pair carries magnitude;

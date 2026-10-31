@@ -4,6 +4,11 @@
 **Buses:** B CAN (0x381) + C CAN (0x000-0x019)
 **Script:** `notes/artifacts/cell_index_mapping.py`
 
+> **Scope:** this file is about the **logical** index — which `CellN` a reported id refers
+> to. Where that cell physically sits in the pack is a separate question, answered in
+> [`pack-physical-layout.md`](pack-physical-layout.md) (2026-09-06). The two are
+> independent: the physical work changed nothing here or in the DBC.
+
 > **⚠ Cell numbering updated 2026-07-22.** The C CAN DBC (`CODA-C-CAN-cells.dbc`) is now
 > **1-based** (`Cell1…Cell104`), matching the BMS's own `VmaxId`/`VminId` directly
 > (VmaxId 82 = Cell82) — this file's whole finding. It was previously **0-based**

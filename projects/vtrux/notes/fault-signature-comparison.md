@@ -163,8 +163,31 @@ separated by a bus-wide silence, the interval is unmeasured, not measured-and-lo
 | **main-orig steady-state charge fault** (5 instances, incl. 2025-08-22) | running (charge) | `MAIN_P_CLOSED_CHARGE` | 1 (**stays closed**) | `0x7F->0xFF->0xCF` | **8.8–10.3 s** (TYPE1 lead) |
 | **Operator EVSE unplug** (not a fault — confound) | running (charge) | `MAIN_P_CLOSED_CHARGE` | **0 — drops first, causes trip** | `->0xCF` | none (**no TYPE1**) |
 | **Interlock trip while HV up** (truck3-2026-08-05) | running (charge) | `P_CLOSED_CHARGE` | **0 — opens first, +253 ms** | `0xBF->0xFF->0xCF` | none |
-| **Mid-drive interlock flutter** (main-orig 2026-06-10) | running (drive) | flaps `PN_CLOSED_DRIVE<->ALL_OPEN_SHUTDOWN`, recovers | **bounces 6x in 350 ms** | stays `0xBF` | **no EPO at all** |
-| **Drive-mode EPO trip, unexplained** (main-orig 2026-06-18) | running (drive) | `SHUTDOWN_REQUEST` | 1 (**stays closed**) | `0xBF->0xCF` direct (no 0xFF) | none; 0x460 pushes `AC 10 01` |
+| ~~Mid-drive interlock flutter~~ (main-orig 2026-06-10) — **RETRACTED 2026-09-06, see below. It was a normal key-off.** | stationary ~7 min | `PN_CLOSED_DRIVE`->`SHUTDOWN_REQUEST`->`ALL_OPEN_SHUTDOWN`, once | **one** transition, 1->0 | — | no EPO |
+| **0x400 heartbeat timeout** — laptop CAN bridge jam, not a truck fault (main-orig 2026-06-18) | running (drive) | `SHUTDOWN_REQUEST` | 1 (**stays closed**; opens by itself 20 s later while the VCM sits in FAILURE) | `0xBF->0xCF` direct (no 0xFF) | **168 ms after the last 0x400**; `hsc_bcm_epo` never set; 0x460 pushes `AC 10 01` (see `battery-fault-codes.md`) |
+| **VCM never enables the BMS** — laptop bridge one-way (main-orig 2026-06-17 21:56) | key-on bring-up | never leaves `ALL_OPEN`; no 0x400 at all | closes 0.30 s after BMS ready, opens 80 ms after `0x617 B7=CA` | `0x3F->0x0F` at wake, then static | **no EPO, no record**; VCM loops STBY/SHTDWN/WAIT4COOLING, 0x596 B6 (SoC echo) stays 0 |
+
+> **Retraction — the 2026-06-10 "mid-drive interlock flutter" (2026-09-06).**
+> There was no flutter. In `vtrux_20260610_202222_T6.log` (header 20:44:41.281),
+> read in file order, channel 4 carries **exactly one** hvil transition: 1->0 at
+> t+81.42 (20:46:02.7), followed by `mainc` 11 -> 13 -> 14. No EPO, no 0x460
+> record. `0x3E9 Vehicle_Speed_Average_Driven` reads **0.00 km/h for the whole
+> of T5 and T6**; the truck last moved at 20:39:15.5, so it had been stationary
+> for **6 min 47 s**. That is a normal key-off.
+>
+> The "six bounces in 350 ms" is a **timestamp-sorting artifact**. Channel 4's
+> timebase rewinds ~5.6 s partway through the file (one backward step, at
+> t=81.537 -> 75.896), so its post-key-off frames carry timestamps that collide
+> with its own pre-key-off frames. Sort the file's data lines by timestamp
+> instead of reading them in order and you get **13 hvil flips between t+75.91
+> and t+76.28** — 6 open/close pairs across 370 ms, which is the reported claim
+> exactly. The contactor "flapping" is the same artifact.
+>
+> Lesson for this corpus: **BUSMASTER data-line timestamps are per-channel and
+> not globally monotonic.** Never sort a multi-channel log by timestamp; read it
+> in file order, and filter to one channel before reading any state sequence.
+> Measured by `../notes/artifacts/fault_push_counter.py` and the per-channel
+> check recorded in `android-app/notes/plans/vtrux-fault-display.md`.
 
 ### Fastest way to classify a new fault
 

@@ -108,7 +108,7 @@ investigation. "Tab" = CODACAN tab where the ground-truth field is read.
 ## Flag - CODACAN likely can't decode (no ESC presence indicator)
 
 Run a quick `solo` first to confirm decodability before investing sweep time:
-0x312 (ESC speed_inv/fwd), 0x300 (M_ESP torque limits + parity), 0x200 / 0x208
+0x312 (DLCM torque/limits -- the "ESC speed_inv/fwd" label is withdrawn 2026-09-24; the negative CODACAN results here are unaffected), 0x300 (M_ESP torque limits + parity), 0x200 / 0x208
 (wheel-speed & brake-pressure scale). 0x330 Long_Accel needs a hard-braking
 timeseries, not a replay. 0x248 B6 (dimming), 0x536 / 0x600 (unidentified) have no
 obvious tab. 0x215 - hypothesis invalidated, no actionable replay.

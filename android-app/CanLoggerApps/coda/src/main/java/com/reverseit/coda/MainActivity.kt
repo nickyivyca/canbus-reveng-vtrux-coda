@@ -28,6 +28,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.reverseit.cancore.CanLoggingService
+import com.reverseit.cancore.watched
+import com.reverseit.tpms.GpsRateAccumulator
+import com.reverseit.tpms.GpsSpeedService
 
 class MainActivity : ComponentActivity() {
 
@@ -44,12 +47,25 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "POST_NOTIFICATIONS granted: $granted")
         }
 
+    /**
+     * GPS speed for the TPMS common-mode channel. Optional: denied or unavailable, the app loses
+     * only that channel. Asked once at start and again from page 3's GPS line.
+     */
+    private val locationPermissionRequest =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            DebugLog.log(TAG, "location permission result: $result")
+            startGpsIfPermitted()
+        }
+
     private val writeStoragePermissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             DebugLog.log(TAG, "WRITE_EXTERNAL_STORAGE granted: $granted")
         }
 
     private val pipeline get() = (application as CodaApplication).pipeline
+
+    /** Frames for the display and the logger: the dongles, or the SLCAN harness in an AVD. */
+    private val frameSource get() = (application as CodaApplication).frameSource
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -146,7 +162,13 @@ class MainActivity : ComponentActivity() {
         // replayed log when no dongle is present -- the emulator has no USB host
         // passthrough, so replay is the only way to exercise the display there.
         val replay = findReplayLog()
-        if (replay != null && usbManager.deviceList.values.none { isInnomaker(it) }) {
+        if ((application as CodaApplication).harness != null) {
+            // The harness feeds the real frame path, so the logger runs too -- start it now rather
+            // than on a dongle attaching, which in an AVD never happens.
+            DebugLog.log(TAG, "attaching SLCAN harness")
+            viewModel.attach(frameSource.frames.watched("viewmodel"))
+            startLoggingService()
+        } else if (replay != null && usbManager.deviceList.values.none { isInnomaker(it) }) {
             DebugLog.log(TAG, "no dongle present; replaying ${replay.name}")
             val source = com.reverseit.cancore.ReplayCanSource(
                 file = replay,
@@ -156,7 +178,7 @@ class MainActivity : ComponentActivity() {
             viewModel.attach(source.frames())
         } else {
             DebugLog.log(TAG, "attaching live pipeline")
-            viewModel.attach(pipeline.frames)
+            viewModel.attach(frameSource.frames.watched("viewmodel"))
         }
         DebugLog.log(TAG, "frame source attached")
 
@@ -175,23 +197,46 @@ class MainActivity : ComponentActivity() {
             .forEach { checkAndRequestPermission(it) }
         DebugLog.log(TAG, "USB device scan done")
 
+        if (!hasLocationPermission()) requestLocation() else startGpsIfPermitted()
+
         // Compose UI
+        viewModel.useTpmsStore((application as CodaApplication).tpmsStore)
         DebugLog.log(TAG, "setContent start")
         setContent {
             val state by viewModel.displayState.collectAsState()
             val specs by viewModel.specsState.collectAsState()
-            // Two discrete pages. HorizontalPager snaps to a whole page by
+            val lastTpmsCal by viewModel.tpmsStore.lastEntry.collectAsState()
+            val tpmsEstimate by viewModel.tpmsStore.estimate.collectAsState()
+            val tpmsUndoTarget by viewModel.tpmsStore.undoTarget.collectAsState()
+            val tpmsStorageError by viewModel.tpmsStore.storageError.collectAsState()
+            val gpsStatus by (application as CodaApplication).gps.status.collectAsState()
+            // Three discrete pages. HorizontalPager snaps to a whole page by
             // default, so there is no partial-scroll resting position.
             // GreenScreenView is a bare Canvas with no gesture handling, so it
             // does not compete with the pager for the swipe.
-            val pagerState = rememberPagerState(pageCount = { 2 })
+            //
+            // Page 2's buttons consume taps rather than drags, so they do not
+            // fight the pager either; its one text field only takes the
+            // horizontal drag while it is focused, which is also when the user
+            // wants the caret rather than a page change.
+            val pagerState = rememberPagerState(pageCount = { 3 })
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
                 when (page) {
                     0 -> GreenScreenView(state = state)
-                    else -> SpecsScreen(state = specs)
+                    1 -> SpecsScreen(state = specs)
+                    else -> SettingsScreen(
+                        lastEntry = lastTpmsCal,
+                        undoTarget = tpmsUndoTarget,
+                        estimate = tpmsEstimate,
+                        onSet = { viewModel.tpmsStore.set(it) },
+                        onUndo = { viewModel.tpmsStore.undoLast() },
+                        storageError = tpmsStorageError,
+                        gpsStatus = gpsStatus,
+                        onRequestGps = { requestLocation() },
+                    )
                 }
             }
         }
@@ -201,6 +246,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         viewModel.setForeground(true)
+        // Location may have been granted in system settings (see requestLocation) while away.
+        if (hasLocationPermission()) startGpsIfPermitted()
     }
 
     override fun onStop() {
@@ -259,6 +306,45 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun hasLocationPermission() =
+        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private var askedLocation = false
+
+    /**
+     * Ask for location, or -- once Android has stopped showing the prompt (denied twice, or "don't
+     * ask again") -- open this app's system settings page, so page 3's ALLOW never silently does
+     * nothing. The owner must choose **Precise**: approximate location gives no GPS speed.
+     */
+    private fun requestLocation() {
+        if (askedLocation && !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            try {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")))
+            } catch (e: Exception) {
+                DebugLog.w(TAG, "app settings intent failed: ${e.message}")
+            }
+            return
+        }
+        askedLocation = true
+        locationPermissionRequest.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
+
+    /** Start the GPS service while this activity is in front (Android 12 forbids it from background). */
+    private fun startGpsIfPermitted() {
+        val gps = (application as CodaApplication).gps
+        if (!hasLocationPermission()) {
+            gps.setState(GpsRateAccumulator.State.NO_PERMISSION)
+            return
+        }
+        try {
+            startForegroundService(Intent(this, GpsSpeedService::class.java))
+        } catch (e: Exception) {
+            DebugLog.e(TAG, "GPS service start failed", e)
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun Intent.usbDevice(): UsbDevice? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -269,7 +355,7 @@ class MainActivity : ComponentActivity() {
     private val serviceConnection = object : android.content.ServiceConnection {
         override fun onServiceConnected(name: android.content.ComponentName, binder: android.os.IBinder) {
             val service = (binder as CanLoggingService.LocalBinder).getService()
-            service.pipeline = pipeline
+            service.pipeline = frameSource
         }
         override fun onServiceDisconnected(name: android.content.ComponentName) {}
     }

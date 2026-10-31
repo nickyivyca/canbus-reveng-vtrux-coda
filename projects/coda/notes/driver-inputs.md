@@ -131,7 +131,14 @@ The LabVIEW inventory shows `Brake_SW` (Boolean) in the DLCM and FCM_1 clusters,
 | Transitional | 0x0B | 0xC3 | t=8.15 (release) |
 | Idle | 0x0C | 0x7F | t=8.17 |
 
-0x312 is an unidentified 100 Hz D CAN message (not in any disassembled VI). It may contain a brake indicator or status. D CAN exclusive — not rebroadcast to B CAN.
+**RESOLVED 2026-09-24.** 0x312 is transmitted by the DLCM, and B4-B5 is **M_MAX**, the
+positive torque limit, at 0.25 Nm/count with zero at raw 2000. The DLCM cuts it while the
+brake switch is on: the idle value 0x0C7F = 3199 is +299.75 Nm and the brake-active value
+0x0847 = 2119 is **+29.75 Nm**. Measured on driverinputpart4.log, brake switch off gives
++299.75 Nm in 100.0 % of 90,230 frames and brake switch on gives +29.75 Nm in 97.2 % of
+1,650 frames, the residue being the ~20 ms transition. It is not a brake indicator — it is
+the drive torque ceiling being pulled down while the brake is applied. See
+`dlcm/coda-dlcm-decompile-notes.md` → "What each configured message actually carries".
 
 ---
 
@@ -272,7 +279,7 @@ The following D CAN messages appear identically on B CAN:
 | 0x248 | Mode flags | Same transitions on both buses |
 | 0x278 | HV/drive status | Same on both buses |
 | 0x315 | Counter + flags | Same on both buses |
-| 0x370 | Death Counter batch | Same on both buses (different B0 count on B CAN) |
+| 0x370 | GWM Vehicle Faults / vehicle power state | **Corrected 2026-09-27:** the differing byte is **B1**, not B0. B1 is 0x02 on D CAN and 0x06 on B CAN -- bit 2 looks like a bus tag. Every other byte, B0 included, is identical in all 34,919 matched pairs, which is what makes B0 usable as a bus-independent key-state witness. B CAN is the source: present from +0.01 s with D CAN asleep. |
 | 0x600 | TPMS pressure | Same on both buses |
 | 0x276 | HVAC / body electronics status | Confirmed in Part 2 (driverinputpart4.log) |
 | 0x6FA | Rolling data | Same on both buses |
@@ -392,9 +399,13 @@ Cross-validation artifacts in `artifacts/`: `xval_throttle_0x210_B2.csv`, `xval_
 ## Next Steps (Part 1)
 
 - [x] ~~Find brake switch~~ — Found: 0x315 B0.bit0 (see Part 2 below)
-- [ ] Determine DHL/DHR wheel speed scale factor from a driving log (speeds > 0)
+- [x] Determine DHL/DHR wheel speed scale factor from a driving log (speeds > 0) --
+      **0.0567 km/h per count** (17.61 counts per km/h), equivalently 2.000 counts per
+      wheel rpm, the same encoding as `0x1C0` Motor_Speed and `0x308` InputShaftSpeed.
+      Anchored to `0x491` Primary_ODO. See `artifacts/vehicle_speed_chain.py`; now in
+      the DBC comments for all four wheel-speed signals.
 - [ ] Characterize brake pressure scale factor (need known physical reference)
-- [x] ~~Decode 0x312~~ — Initial observations in Part 3 below; interpretation is unclear. See `notes/traction-control-analysis.md` for the more complete decode.
+- [x] ~~Decode 0x312~~ — done 2026-09-24 from the DLCM firmware: it is a DLCM torque/limit frame. See `notes/dlcm/coda-dlcm-decompile-notes.md`; the `traction-control-analysis.md` decode is superseded.
 - [ ] Update D CAN skeleton DBC with confirmed signals
 - [ ] Investigate 0x418 B4 gear status byte intermediate values more carefully
 - [ ] Fix `--bus` filter in `extract_timeseries.py` — returned 0 samples when filtering by bus number in BUSMASTER multi-bus logs
@@ -613,7 +624,7 @@ status_events --bits run on both D CAN (Bus 2) and B CAN (Bus 3). Every tested i
 
 | CAN ID | Byte(s) | Signals carried | Bus | Update rate |
 |--------|---------|----------------|-----|-------------|
-| **0x080** | B2-B3 | Steering angle (BE uint16 ×0.1, center=2000) + B6 counter + B7 CRC8 | D+B CAN | 100 Hz |
+| **0x080** | B2-B3 | Relative steering angle (BE uint16 ×0.1, raw 20000 = position at EPS power-up) + B6 counter + B7 CRC8 | D+B CAN | 100 Hz |
 | **0x052** | B0 | Parking brake (bit 2) | D+B CAN | 20 Hz |
 | **0x248** | B1, B6 | Headlight on/off state | D+B CAN | 50 Hz |
 | **0x276** | B0-B6 | HVAC: mode knob (B1), heating/AC flags (B2), PTCHeaterPWM (B5), RadiatorFanPWM (B6) | D+B CAN | ~10 Hz |
@@ -628,7 +639,7 @@ status_events --bits run on both D CAN (Bus 2) and B CAN (Bus 3). Every tested i
 |--------|-----|-----|----------|----------|------------|
 | Brake Switch | D+B | 0x315 | B0.bit0 | Boolean (0=off, 1=brake applied) | **HIGH** |
 | Parking Brake | D+B | 0x052 | B0.bit2 | Boolean (1=engaged) | **HIGH** |
-| Steering Angle | D+B | 0x080 | B2-B3 | BE uint16 ×0.1, center≈2000 | **HIGH** |
+| Steering Angle | D+B | 0x080 | B2-B3 | BE uint16 ×0.1, relative: raw 20000 = position at EPS power-up | **HIGH** |
 | Headlight mode | B | 0x491 | B3 | Bitfield (see decode below) | **HIGH** |
 | HVAC heating active | D+B | 0x276 | B2.bit3 | Boolean | **HIGH** |
 | HVAC AC active | D+B | 0x276 | B2.bit4 | Boolean | **HIGH** |
@@ -651,18 +662,96 @@ status_events --bits run on both D CAN (Bus 2) and B CAN (Bus 3). Every tested i
 
 | Parameter | Value |
 |-----------|-------|
-| Bus | D+B CAN (both, origin unclear) |
-| Message ID | 0x080 |
+| Bus | D CAN native (EPS), gateway-rebroadcast byte-exact onto B CAN |
+| Message ID | 0x080 — factory name **EPS SAM_1** (CODACAN) |
 | Bytes | B2-B3 (big-endian uint16) |
-| Scale | ×0.1 |
-| Center | ~2000 (raw 19994 = 1999.4 scaled) |
-| Left lock | ~1392 (raw 13915 = 1391.5 scaled) |
-| Right lock | ~2523 (raw 25229 = 2522.9 scaled) |
+| Scale | ×0.1 deg/count (factory CODACAN VICD scaling; not physically measured — see below) |
+| Zero | **Relative.** Raw 20000 is the wheel position at EPS power-up, not straight-ahead — see *Relative angle* below |
+| Lock (this log only) | raw 13915 (left) and 25229 (right) in `driverinputpart4.log`; these belong to that one power cycle |
 | Update rate | 100 Hz |
 | Security | B6 = rolling counter, B7 = CRC8 J1850 checksum |
-| Confidence | **HIGH** |
+| Confidence | **HIGH** (role, layout); relative zero **CONFIRMED** 2026-09-27 |
 
-Matches LabVIEW VICD scaling exactly (center=2000, left lock≈1400, right lock≈2600). The smooth sweep profile during steering test (center→left lock→right lock→center at t=445–510s) is unmistakable. The 100 Hz rate + CRC8 is consistent with a safety-critical EPS steering angle message.
+Matches LabVIEW VICD scaling (x0.1). The smooth sweep profile during steering test (center→left lock→right lock→center at t=445–510s) is unmistakable. The 100 Hz rate + CRC8 is consistent with a safety-critical EPS steering angle message.
+
+**Correction 2026-09-27.** This table used to give "Center ~2000 (raw 19994)", "left lock ~1392", "right lock ~2523" as properties of the signal, and the text said "center=2000, left lock≈1400, right lock≈2600". They are properties of **one power cycle**. The locks in that log sit −608° and +524° from raw 20000 — an 84° asymmetry — while the physical stops are symmetric about true straight-ahead (below), so the wheel was about 42° off straight when the EPS powered up for that capture. "2000" was also the scaled value under the old −200.0 offset; in raw terms the power-up value is 20000.
+
+#### Relative angle, zeroed at EPS power-up (2026-09-27)
+
+Characterised across all 1,096 Coda captures in both log roots (869 with D CAN identified and
+0x080 on it; 20.46 M frames). Handoff from the TPMS work (`tpms-algorithm-spec.md` §1), which
+needed to know whether the steering reference can move within a drive and whether an absolute
+source exists. Scripts and full output: `artifacts/steering_0x080/` (see its `README.md`).
+
+**The factory tool calls it relative.** CODACAN's ICD names the message `EPS SAM_1` with fields
+*Relative Steering angle*, *EPAS Failure*, *S/W Calibrated*, *S/W Sensor Type*, *Steering Msg
+Number* and *crcCheck* (`CODACAN/ICD/GlobalData.xml`). The service manual's ABS DTC C123F reads
+"calculated steering wheel angle offset is out of the specified range", i.e. the ESC learns its
+own offset internally.
+
+**Byte map** (20.46 M frames): B0, B1, B4 always `0x00`; B5 `0x80` in every frame except 38,066
+where it is `0x90`; B6 message counter (steps +1 and +2); B7 CRC8-J1850. B5 bit 7 is set from
+the first frame after power-up (at raw 20000) in every capture, so whichever CODACAN flag it is,
+**no bit in 0x080 ever marks a change to a calibrated or absolute angle.** Which bit carries
+which CODACAN field is not established.
+
+**The zero is set at EPS power-up.** All 12 EPS restarts in the corpus (0x080 silent 0.45-101 s)
+resume with B6 = 1 and raw exactly 20000; 11 of 12 fall within 10 s of an ESC key-on (`0x200`
+SubFrameID `0x1E`); the car was stationary in all 12. Examples: `coda_20260507_162751_T0`
+18941 → 20000 after 1.9 s; `coda_20260807_192700_T2` 22175 → 20000 after 0.45 s.
+
+**Quantitative test.** If the zero is the power-up position and the wheel is not touched while
+parked, the next straight-ahead intercept is `20000 − (angle at shutdown − previous intercept)`.
+Over 102 consecutive capture pairs separated by a power cycle it lands within 2° in 66 %, 5° in
+96 % and 10° in 98 %. Assuming an absolute sensor instead (next intercept = previous) gives a
+median error of 21° and p90 205°. Straight-ahead intercepts come from a per-60 s fit of the
+angle against rear-wheel curvature `(RR − LR)/v` above 20 km/h.
+
+**Why a capture does not always open at 20000.** Of 273 `_T0` captures, 97 do not; 96 of those
+are already in Ready (`0x370` state 5) at their first frame and the remaining one in
+IgnitionOn with the counter mid-count — logging began after the EPS had booted.
+
+**No re-zero while driving was found.** Between counter-contiguous frames the largest step is
+146 counts, only while parking (below ~11 km/h); above 30 km/h (7.9 M frames) at most 77
+counts, above 60 km/h (3.7 M frames) at most 22. Every EPS restart happened stationary. Across
+consecutive chunks of one power cycle the intercept moves p50 0.8°, p99 3.5°, max 5.1°. Within
+a capture the 60 s intercept wanders p50 3.0°, p90 6.2° (range), which this method cannot split
+between estimator noise and real steering input (road camber etc.). **Limit:** a software re-zero
+smaller than about 5° without an EPS restart cannot be excluded by these tests.
+
+**EPS power-up marker in 0x080 itself:** silence > 0.3 s followed by B6 in {1, 2} **and** raw ==
+20000. B6 ≤ 2 alone is not enough — logger frame drops across the counter wrap mimic it.
+
+**No absolute steering source is broadcast.** Every id on every captured bus, in every layout the
+scan-completeness rule requires, correlated by level and by 1 s deltas against 0x080 on three
+captures (+454°, −363° and ~0° offsets): nothing but 0x080 itself moves with the wheel. Positive
+control, the B CAN rebroadcast copy: r = 1.000; partial control `0x300` YawRate: −0.08 to −0.42.
+Whether the ESC's learned offset is readable over UDS is untested.
+
+**Stops and range.** The physical stops sit at **straight-ahead ±5,710 counts (±571°)** wherever
+straight-ahead falls — maximum excursions 5,708 up and 5,713 down; e.g. intercept 25498 has its
+stops at 19785 and 31119. Corpus raw range 10281-31119 (−972° .. +1112° against 20000). No
+saturation, no wrap. 36 captures exceed the DBC's declared `[-540|540]` range.
+
+**Scale — consistent, not measured.** 0.1°/count is the factory VICD scaling. The stationary
+lock-to-lock sweep in `driverinputpart4.log` spans 11,314 counts, i.e. 3.14 turns at that scale;
+the owner's recollection is "about right" but the Coda's turns lock-to-lock have not been
+counted. A kinematic plausibility check gives an apparent steering ratio of ~16.4:1 at speed
+(median slope against rear curvature, 59 in rear track, and an assumed ~2.60 m wheelbase that is
+not verified in this repo). A physical check: turn the wheel exactly one full turn with ignition
+on and expect 3,600 counts.
+
+**B5 bit 4 (`0x90`) — meaning unknown.** 24 runs. 21 last 1.0-2.5 s, in Ready at 0-3.3 km/h,
+each starting during a very fast sweep towards a stop (350-750°/s at onset). Three last 90-129 s
+with the car parked and the wheel still, all on 2026-09-24. Never set above 3.3 km/h.
+
+**Data caveat.** This sweep ran before the Android-logger timestamp repair and used its own
+BUSMASTER reader, ordering each file by the 0x080 counter, because at the time
+`canre.parse_file` silently dropped negative-stamped lines (up to ~300 k in some captures) and
+the remainder overlapped the start of the file. Parser fixed and 55 clock-step captures repaired
+the same day; see `android-log-timestamp-defects.md`. The repair changes absolute timing only
+(payload streams byte-identical), and nothing above depends on absolute time within a capture,
+so these results stand.
 
 **0x212 does NOT carry the steering angle** as a continuous value. 0x212 alternates between exactly 2 fixed data patterns at 25 Hz each (multiplexed sub-frames), with no variation during steering input. It carries the brake switch in B2.bit0 and other status bits.
 
@@ -764,13 +853,14 @@ All in `artifacts/` — see `artifacts/README.md` for full inventory.
 - [x] Deep-dive 0x276: HVAC mode (B1), heating/AC flags (B2), PTCHeaterPWM (B5), RadiatorFanPWM (B6). B0/B3/B4 partially characterized. **Correction 2026-03-22**: B5/B6 were wrongly labelled blower/AC-request — see DBC.
 - [x] Deep-dive 0x248: B1 bit 3 = "lights on" boolean. B6 = unknown (dimming?). Low confidence — use 0x491 instead.
 - [x] Deep-dive 0x491 B3: headlight mode bitfield fully decoded (parking/low/high beam + flash-to-pass)
-- [x] Deep-dive 0x080 B2-B3: steering angle confirmed — BE uint16 ×0.1, center=2000, matches LabVIEW exactly
+- [x] Deep-dive 0x080 B2-B3: steering angle confirmed — BE uint16 ×0.1, matches LabVIEW scaling. The "center=2000" recorded here was one power cycle's value; the angle is relative, zeroed at EPS power-up (2026-09-27, see deep-dive)
 - [x] Ruled out 0x212 as steering angle — it's multiplexed sub-frames, not continuous data
 - [x] Deep-dive 0x3A0: driver buckle (B1.bit4), passenger buckle (B1.bit2), warning lamp (B0.bit3)
 - [x] Ruled out 0x392 as seatbelt — it's OCS weight/pressure data
 - [x] Ruled out 0x381 B7 as hazard/trunk — it's a slow counter
 - [x] Confirmed: turn signals, hazards, wipers, trunk NOT on CAN
-- [ ] Cross-validate steering angle (0x080) and headlight mode (0x491) against driving logs
+- [x] Cross-validate steering angle (0x080) against driving logs — done 2026-09-27 across the whole corpus, see *Relative angle, zeroed at EPS power-up*
+- [ ] Cross-validate headlight mode (0x491) against driving logs
 - [ ] Capture a log with passenger seated + unbuckled to differentiate 0x3A0 B0.bit3 (warning lamp vs driver-only)
 - [ ] Characterize 0x276 B0 (temperature-related) and B3 (cabin temp sensor) more precisely
 - [ ] Investigate 0x248 B6 further (interior dimming? light switch position?)
@@ -837,7 +927,7 @@ Zero B CAN-exclusive bytes showed brake-correlated shifts. All detected shifts w
 
 | Candidate | Result | Evidence |
 |-----------|--------|----------|
-| **0x312 B4-B5** | Discrete status, not analog pedal | 4 unique states when stationary; becomes analog only during driving (speed-dependent, see below) |
+| **0x312 B4-B5** | Not a pedal signal — it is M_MAX, the DLCM torque limit | 4 unique states when stationary because the limit is switched, not swept; analog while driving because the limit follows the motor power envelope |
 | **0x241** | Constant during brake | 1 Hz, all bytes constant (0x3D/0x3D/0x44/0x48/0x00/0x3D/0x3D/0x3C) — likely temperatures |
 | **0x315 B1, B3** | Zero throughout | Constant 0x00 in both quiet and brake windows |
 | **0x315 B5** | Battery voltage | Constant 0x8A-0x8B (13.8-13.9V at 0.1 scale = Batt_Volt from VICD) |
@@ -846,9 +936,23 @@ Zero B CAN-exclusive bytes showed brake-correlated shifts. All detected shifts w
 
 ---
 
-## 0x312 B4-B5 — Reclassified as ESC Deceleration / ABS Status
+## 0x312 B4-B5 — it is M_MAX, the DLCM positive torque limit
 
-> **SUPERSEDED (2026-03-20)**: The observations below are real but the "ESC deceleration" conclusion is wrong. 0x312 is a multiplexed frame: B0=[7:4] Gray-code 4-state counter, [3:0]=channel ID (6–12). B4-B5 is `speed_inv` (inversely proportional to vehicle speed at high speeds; saturates at 3199 at low/moderate speeds and during TC intervention). B6-B7 is `speed_fwd` (proportional to vehicle speed above a floor of 800; clamped to 800 during TC). The "discrete states" when stationary and the "analog sweep" during driving both reflect this speed-dependent clamping behaviour, not deceleration. See `notes/traction-control-analysis.md` (0x312 Structure Decoded section, 2026-03-20) for the authoritative decode.
+> **RESOLVED 2026-09-24, and the 2026-03-20 reclassification is also withdrawn.** 0x312 is
+> not an ESC frame at all: it is TX record 10 in the DLCM's own CAN transmit table and
+> `FUN_80080C14` writes all eight bytes. B4-B5 is **M_MAX** and B6-B7 is **M_MIN**, the
+> positive and regen torque limits, both at 0.25 Nm/count with zero at raw 2000; B0-B1 and
+> B2-B3 are one duplicated torque-feedback field. Neither the "ESC deceleration" reading nor
+> the `speed_inv` / `speed_fwd` reading that replaced it survives.
+>
+> Every number below is explained by the torque reading. The four stationary states are
+> torque limits, not clamped speeds: 3199 = **+299.75 Nm**, 2862 = **+215.50 Nm**,
+> 2119 = **+29.75 Nm**, 3011 = **+252.75 Nm**. The value goes "analog" while driving because
+> M_MAX follows the motor's constant-power envelope — measured mean +291 Nm at 2000-2499 rpm
+> falling to +84 Nm at 5000-5499 rpm — and it correlates with the BMS discharge-current limit
+> at r = +0.72. The lag behind the brake switch is the DLCM reacting to the switch, which is
+> exactly what a torque limit should do. Authoritative decode:
+> `notes/dlcm/coda-dlcm-decompile-notes.md`.
 
 ### Stationary behavior (pressingthrottlethenbrake.log)
 
@@ -873,7 +977,7 @@ During actual driving, 0x312 B5 becomes **fully analog** with 100+ unique values
 | Event 22 (3.7s) | Sharp decel | 61 | 36 | Analog |
 | Events 24-28 | Parking taps | 0 each | 1 | No response (low speed) |
 
-~~**Conclusion**: 0x312 B4-B5 is an ESC deceleration measurement.~~ **SUPERSEDED**: see note above. The 4 discrete states when stationary (3199/2862/2119/3011) are the clamped floor/ceiling values of `speed_inv` at zero vehicle speed. The "analog" behaviour during driving reflects actual speed variation in the signal. This is NOT a deceleration signal. Authoritative decode: `notes/traction-control-analysis.md`.
+~~**Conclusion**: 0x312 B4-B5 is an ESC deceleration measurement.~~ ~~**SUPERSEDED**: ... the clamped floor/ceiling values of `speed_inv`.~~ **Both readings withdrawn 2026-09-24** — see the banner above. B4-B5 is M_MAX, the DLCM positive torque limit.
 
 ### Timing (consistent across all logs)
 
@@ -882,7 +986,7 @@ During actual driving, 0x312 B5 becomes **fully analog** with 100+ unique values
 | pressingthrottlethenbrake | 6.608s | 6.652s | 6.709s | +44ms | +101ms |
 | driverinputpart4 | 525.792s | 525.830s | 525.872s | +38ms | +80ms |
 
-0x312 consistently LAGS both brake switch and brake pressure — it is a downstream measurement, not a pedal input.
+0x312 consistently LAGS both brake switch and brake pressure — which is now expected: the DLCM receives the brake state and then lowers M_MAX in response, so the lag is the control reaction, not a sensor chain.
 
 ---
 
@@ -987,7 +1091,7 @@ All in `artifacts/` — see `artifacts/README.md` for full inventory.
 | Signal | Bus | ID | Byte(s) | Encoding | Confidence |
 |--------|-----|-----|---------|----------|------------|
 | Analog brake pedal travel | — | — | — | — | **NOT ON CAN** |
-| 0x312 B4-B5 (ESC decel/ABS) | D CAN only | 0x312 | B4-B5 | Status when stationary; analog during driving | MEDIUM |
+| 0x312 B4-B5 = M_MAX (DLCM torque limit) | D CAN only | 0x312 | B4-B5 | 13-bit, 0.25 Nm/count, zero at 2000; cut to +29.75 Nm while the brake switch is on | HIGH (firmware + 92k frames) |
 | 0x315 B5 (Batt_Volt) | D+B CAN | 0x315 | B5 | uint8 x 0.1 = voltage (V) | MEDIUM |
 | BrakeCount (LabVIEW) | — | — | — | Likely = brake pressure (0x208) or local ADC input | Hypothesis |
 
@@ -995,8 +1099,8 @@ All in `artifacts/` — see `artifacts/README.md` for full inventory.
 
 ## Next Steps (Part 3)
 
-- [ ] Decode 0x312 B4-B5 scale/encoding during driving — how does it relate to actual deceleration?
-- [ ] Characterize 0x312 remaining bytes (B0-B3, B6-B7) — B0 appears to be a 50 Hz alternating pattern (0x27/0x47)
+- [x] ~~Decode 0x312 B4-B5 scale/encoding~~ — done 2026-09-24: M_MAX, 0.25 Nm/count, zero at 2000. Not a deceleration signal.
+- [x] ~~Characterize 0x312 remaining bytes (B0-B3, B6-B7)~~ — done 2026-09-24: B0-B1 and B2-B3 are one duplicated torque-feedback field, B0 bit 5 is parity and bit 6 a toggle (that is the 0x27/0x47 alternation), B6-B7 is M_MIN.
 - [ ] Verify 0x315 B5 = Batt_Volt by correlating with DCDC 14VMonitor (0x1D5 B3) in a driving log
 - [ ] Decode 0x1C0 byte assignments (B0=speed?, B2=temp?, B4=current?, B6=torque?) using driving log dynamics
 - [ ] Investigate whether regen torque magnitude is visible on CAN during driving brakes

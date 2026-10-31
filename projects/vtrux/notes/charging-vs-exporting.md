@@ -100,6 +100,15 @@ t=21.5s:  battV=399.80V  battI=+1.20A    (stable export at ~1.3A)
 
 ## Shutdown Sequence Comparison
 
+> **What actually ends a charge is documented in
+> [`charge-termination-behaviour.md`](charge-termination-behaviour.md)**, from a
+> 49-session survey: the VCU drops the energy-flow bit (`chgcmd_enable`) and
+> then commands `STAND_BY`, with the mode usually left at `CHARGER`.
+> `CHARGER_LOW_POWER` (mode 3) is a hold rather than a stop -- the charger sits
+> in state 12 at ~2.4 A DC / ~1.9 kVA -- and at a genuine top of charge that
+> hold is when the pack balances, lasting 7.7 h on the parts truck.
+
+
 ### Charging Shutdown - Failure Mode (rainychargedebug.log, t=3689s)
 
 **Status flag sequence:**
@@ -141,6 +150,17 @@ Last telemetry:
 ```
 
 **Theory:** Export shutdown is **instant power-off with NO CAN messaging**. The charger (and likely entire vehicle 12V system) cuts power immediately, causing the CAN logger to lose power mid-session.
+
+**Corrected 2026-10-13 (user; raw log re-read):** the logger does **not** lose
+power. It runs off the sequenced relay, which stays on for a while after export
+power is turned off; what stops suddenly is the HV sequencing. In the raw log
+the Bel's frames, the VCU's `0x18EFC000` and most powertrain traffic stop
+within about 1 s of `ExportPowerState` dropping (`exportpowerattempt`).
+The powertrain bus's own 100 Hz `0x051` and the VCU/HCU frames pause for ~12 s
+and come back without the Bel, and the other two buses log without a break to
+the end of the file, 16 s after the Bel's last frame. So the CAN bus does not go
+completely silent and the 12 V system is not cut. See "Bel power sequencing
+across the corpus" below.
 
 **Key observation:** Export mode has **no graceful shutdown sequence** - it just powers off completely, taking the entire CAN bus down with it. This is fundamentally different from charging mode which sends shutdown messages over ~2.5 seconds.
 
@@ -215,6 +235,9 @@ Last telemetry:
 - Possibly the entire vehicle 12V bus
 - All CAN messaging capability
 
+(Theory corrected 2026-10-13: the logger and the 12 V system stay up; the HV
+sequencing stops. See the correction under "Export Power Shutdown" above.)
+
 **This is fundamentally different from charging mode** which keeps 12V power active during graceful shutdown and sends status updates over ~2.5 seconds.
 
 ## Shutdown Behavior Comparison (All Modes)
@@ -222,7 +245,7 @@ Last telemetry:
 | Mode | Shutdown Type | CAN Activity | Key Observation |
 |------|---------------|--------------|-----------------|
 | **Charging** | Graceful | Status flags clear over ~2.5s | Charger sends shutdown messages, vehicle stays on |
-| **Export** | **Instant power-off** | **CAN goes completely silent** | **12V power cut immediately** |
+| **Export** | **Instant power-off** | **CAN goes completely silent** (corrected 2026-10-13: the Bel and the VCU stop; the powertrain bus pauses ~12 s; the other buses continue) | **12V power cut immediately** (corrected 2026-10-13: the HV sequencing stops; the 12 V logger stays up) |
 | **Driving** | Graceful | Normal CAN traffic continues for ~6s | HV powers down first, 12V follows |
 
 ## Mode Detection from CAN Data
@@ -238,6 +261,60 @@ ELSE
     MODE = DRIVING or ACCESSORY (use BMS presence / PT bus activity to distinguish)
 END IF
 ```
+
+---
+
+## Bel power sequencing across the corpus (2026-10-13)
+
+A raw-log scan of every session with a Bel frame on the powertrain bus: 80
+sessions, `artifacts/charger_wake_sequence.py` and its output
+`artifacts/charger_wake_sequence.txt`. Sessions copied into both log folders
+are counted twice. Times are relative to the switch edge as the HCU reports it
+on `0x592` (`EVSESwitchState`, `ExportPowerState`). Asked for to judge whether
+the charge interposer could keep its vehicle port silent while the Bel is.
+
+**Who wakes whom.**
+- **Plug-in:** in 37 of 39 plug-ins with the logger already running and no
+  logger gap, the Bel's first frame comes *before* `EVSESwitchState` rises
+  (median 0.09 s earlier, up to 0.27 s). A plugged-in Bel wakes on its own,
+  not on a VCU command.
+- **Export:** the Bel's first frame comes 0.03-0.09 s *after*
+  `ExportPowerState` rises, in 3 of 5 clean starts. In export the truck wakes
+  the Bel.
+
+**`BELINV_wakeOutput`** is 1 throughout every charge session and 0 in every
+export session (8 of 8). **Hypothesis** (user, 2026-10-13, not tested): the
+wake output is what keeps the truck up for the graceful charging shutdown, and
+its absence in export is why the export ending is abrupt.
+
+**Timing after plug-in** (typical): BMS `bcm_on_plug` at +0.15 s; the VCU's
+first `0x18EFC000` frame at about +0.1 s; `wakeOutput` reads 1 at +0.15 to
+0.3 s; the VCU turns `chgcmd_enable` on at +8.7 to 9.2 s (once +1.7 s, once
++16.7 s), and the Bel reaches state 12 just after. In export the VCU turns
+`chgcmd_enable` on at +1.3 to 1.4 s.
+
+**Charging ending:** at unplug the VCU commands STAND_BY, and the Bel's last
+frame comes within about 2.5 s of the plug signal dropping.
+
+**Export ending:** two patterns in the corpus.
+- **Abrupt** (4 sessions: `exportpowerattempt`, `vtruxexportafterucsc`,
+  `vtruxchargeafterafterucscexport2`, `vtruxexporttest`). When
+  `ExportPowerState` drops, the powertrain bus's 100 Hz `0x051` stops at the
+  same moment and stays off for 10-27 s while the logger keeps running. The
+  VCU sends no STAND_BY, and the Bel's frames end within 0.3 s of the switch.
+  In `vtruxexporttest` the Bel had already stopped exporting earlier, after a
+  STAND_BY.
+- **Graceful** (2 sessions: `vtrux_newcharger`, `candump-2026-08-05_135122`,
+  both exports of only 4-6 s). The VCU sends STAND_BY 0.1-0.2 s after the
+  switch drops, and the bus keeps running.
+
+No export session shows a change in `IgnitionKeyState`, so these logs cannot
+show what separates the two patterns. **Cause unknown.**
+
+**`BELINV_delayedSleepMode`** was never 1 anywhere in the corpus, and
+`rewakedFromDelayedSleep` sets only at the end of a session.
+
+**Thin:** 8 export sessions.
 
 ---
 

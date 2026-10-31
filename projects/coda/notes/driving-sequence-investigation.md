@@ -34,12 +34,27 @@ The first 8 event clusters map cleanly to the startup sequence:
 
 #### Ignition / Power State Signals
 
-| Signal | Bus | Evidence | Hypothesis |
-|---|---|---|---|
-| **0x248 B4** | B+C | Steps 0->4->5->4->3->1 through startup stages, reverses on shutdown | **Ignition position / key state** |
-| **0x248 B1** | B+C | Different value at each startup stage (0x41->0xC3->0x83->0x86->0x82->0x03->0x0B) | **Ignition sub-state / mode flags** |
-| **0x370 B0** | B+C | Steps up at each key position: 0x12->0x14->0x19->0x16->0x15 | **Vehicle operating mode** |
-| **0x370 B3** | B+C | 0xF1->0x11 at wake, then 0x12->0x14 at precharge | **Power sub-mode** |
+> **CONFIRMED 2026-09-27, independently of this capture.** The hypotheses below were
+> drawn from one deliberate slow key-on. They were then rediscovered from the opposite
+> direction: 23 mid-capture key cycles across 19 captures, found by looking for bytes
+> that change across a multi-module dropout and revert. Every ladder below reproduces
+> **in both directions**, and `0x370` B0 matches this capture's key-position timings to
+> 0.04 s. `0x370` B0[3:0] and B3 are now declared signals in `CODA-D-CAN.dbc` as
+> `VehiclePowerState`, `PowerSubMode` and `PowerSubMode_Valid`, with the sender
+> confirmed as the GWM from the factory DTC list. Method and corpus results:
+> `key-cycle-detection.md`.
+>
+> One caveat that survives: the **value names** are still inferred from ladder position.
+> `0x370` B0[3:0] covers the same state set as the spec's `Powermode` but is **not** that
+> signal — the spec compares Powermode ordinally and these codes are not ordered
+> (Crank is 9, Ready is 5).
+
+| Signal | Bus | Evidence | Reading | Status |
+|---|---|---|---|---|
+| **0x248 B4** | B+C | Steps 0->4->5->4->3->1 through startup stages, reverses on shutdown | **Ignition position / key state** | confirmed, both directions |
+| **0x248 B1** | B+C | Different value at each startup stage (0x41->0xC3->0x83->0x86->0x82->0x03->0x0B) | **Ignition sub-state / mode flags** | partly — moves with the key cycle, values not assigned |
+| **0x370 B0** | B+C | Steps up at each key position: 0x12->0x14->0x19->0x16->0x15 | **Vehicle operating mode** | confirmed; now `VehiclePowerState`. High nibble is a constant 0x1 — the ladder is B0[3:0] |
+| **0x370 B3** | B+C | 0xF1->0x11 at wake, then 0x12->0x14 at precharge | **Power sub-mode** | confirmed; now `PowerSubMode` + `PowerSubMode_Valid`. The 0xF high nibble is an asleep/invalid sentinel, read separately by the DLCM |
 
 #### HV / Drivetrain Signals
 
@@ -47,10 +62,10 @@ The first 8 event clusters map cleanly to the startup sequence:
 |---|---|---|---|
 | **0x052 B0** | B+C | Toggles 0x04<->0x0C repeatedly during cluster #3 only -- classic crank pattern | **Starter motor / crank request** |
 | **0x378 B6** | B only | Ramps 0->5->8->0A->0B->0C->0E->11->12 during crank/precharge. Returns to 0 at shutdown. | **DC link voltage (scaled)** -- ramp during precharge is characteristic |
-| **0x378 B0** | B only | 0x11->0x21->0x41 at precharge, reverses at shutdown | **HV system mode** (bit field?) |
+| **0x378 B0** | B only | 0x11->0x21->0x41 at precharge, reverses at shutdown | **HV system mode** (bit field?) -- CONFIRMED 2026-09-27, reproduces in both directions across the key cycles. An HV precharge cycle here is what rules out a capture artefact as the cause of a module dropout. |
 | **0x1D7 B0/B1** | B only | B0: 0->0x80 at precharge, 0x80->0 at shutdown. B1: drifts slowly during operation. | **DCDC converter status** -- B0 = on/off, B1 = output voltage? |
-| **0x270 B7** | B only | 0->0x08->0x88->0xC8 through startup, reverse at shutdown | **HV system state flags** (bit field accumulating) |
-| **0x271 B0** | B only | 0->1->5->6 through startup, 6->2->0 at shutdown | **Power stage state machine** |
+| **0x270 B7** | B only | 0->0x08->0x88->0xC8 through startup, reverse at shutdown | **HV system state flags** (bit field accumulating) -- CONFIRMED 2026-09-27, reproduces in both directions across the key cycles. |
+| **0x271 B0** | B only | 0->1->5->6 through startup, 6->2->0 at shutdown | **Power stage state machine** -- CONFIRMED 2026-09-27, reproduces across the key cycles. |
 | **0x275 B6** | B+C | 0->4->0xC at startup (confirmed: B0=discharge limit, B1=charge limit from bonnydoon) | **BMS status flags / limits active** |
 | **0x491 B3** | B+C | Only appears at "ready" (cluster #4): 0->0x30->0x33, goes to 0 at shutdown | **Traction inverter / drive readiness** |
 
@@ -62,7 +77,7 @@ The first 8 event clusters map cleanly to the startup sequence:
 | **0x418 B0/B4** | B+C | State changes at HVAC events. B4 cycles through 0xDD->0xBD->0xBB->0x00->0x11->0xDB->0xDD | **HVAC mode / compressor state machine** |
 | **0x55C B0** | C only | Toggles 0x42->0x04->0x85 near HVAC events | **Compressor or blower status** |
 | **0x240 B6** | B+C | Toggles between 0x08/0x10/0x18/0x1C during operation, modulating rapidly in later clusters | **HVAC duty cycle / modulation** |
-| **0x308 B0** | C only | Steps 0->0x20->0x40 through startup, reverses at shutdown | **Accessory power state** |
+| **0x308 B0** | C only | Steps 0->0x20->0x40 through startup, reverses at shutdown | ~~Accessory power state~~ **SUPERSEDED 2026-09-26**: 0x308 is the DLCM park request (`DLCM_ParkRequest`, signal `ParkRequest`), established from the DLCM firmware TX table and corroborated by the Vtrux EPRI DBC. Whatever B0 is doing here, it is not accessory power. |
 
 #### D CAN Signals
 
@@ -142,7 +157,7 @@ The first 8 event clusters map cleanly to the startup sequence:
 - **0x275 B0/B1**: Confirmed discharge/charge limits from bonnydoon-limp-analysis.md. B0=discharge limit (x2 for amps), B1=charge limit. B4=binary HV active flag. B6 seen here stepping 0->4->0xC at startup may be a status/mode byte.
 - **0x381**: Pack min/max cell voltages at 1 Hz (confirmed from bonnydoon analysis).
 - **0x279/0x27D**: Charger signals (confirmed from charging-analysis.md) -- not relevant during driving but share the B CAN bus.
-- **0x390 B0**: BMS status byte (confirmed from bonnydoon: 0x80=startup, 0x8D=driving). Seen here: B2/B3 change 0x80->0x89 at wake.
+- **0x390 B0**: ~~BMS status byte (confirmed from bonnydoon: 0x80=startup, 0x8D=driving)~~ **Corrected 2026-10-30: `FrontInletAirTemp`** (raw − 128 °C; see `bonnydoon-limp-analysis.md`, which already corrects it). Seen here: B2/B3 (`ReturnAirTempPsg`/`ReturnAirTempDrv`) change 0x80->0x89 at wake.
 
 ---
 

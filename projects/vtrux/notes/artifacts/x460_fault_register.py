@@ -132,7 +132,7 @@ TARGETS = [
     ("PRECHARGE M4_T20", ["projects/vtrux/logs/debuglog_M4_T20.log"]),
     ("PRECHARGE chargeagain2", ["projects/vtrux/logs/vtrux_partstruck_chargeagain2.log"]),
     ("PRECHARGE evapfuse", ["projects/vtrux/logs/vtrux_partstruck_evapfuseexperiment.log"]),
-    ("PRECHARGE 20260802", sorted(glob.glob("../../CANLogs/VtruxLogs/vtrux_20260802_123318_T[0-3].log"))),
+    ("PRECHARGE 20260802", sorted(glob.glob("projects/vtrux/logs/partsdrive_20260802_T[0-3].log"))),
     ("UNPLUG 20260714", ["../../CANLogs/VtruxLogs/vtrux_20260714_161319_T74.log"]),
     ("GEN-ISO part2", ["projects/vtrux/logs/vtrux_partstruck_testdrive_part2.log"]),
     ("GEN-ISO part3", ["projects/vtrux/logs/vtrux_partstruck_testdrive_part3_engine.log"]),

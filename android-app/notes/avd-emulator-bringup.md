@@ -165,6 +165,35 @@ Screenshot:
 "$ADB" exec-out screencap -p > <path>/shot.png
 ```
 
+### After hours of uptime the system server can crash-loop (seen 2026-09-26)
+
+At ~5 h uptime and load ~9, `adb install` failed with "Can't find service: package", then "Cannot
+access system provider: 'settings' before system providers are installed", while
+`sys.boot_completed` still read 1. `adb reboot`, then wait for `sys.boot_completed` 1 plus ~20 s,
+fixed it. Installed apps and their files survive.
+
+### Injected GPS fixes carry time since 1970, not since boot (found 2026-09-26)
+
+`adb emu geo nmea` (and the earlier `geo fix`) produce fixes whose `elapsedRealtimeNanos` is wall
+time since the epoch -- `dumpsys location` showed `et=+20723d...` with 1671 s of uptime. Anything
+that pairs a fix with other data by time sees it decades in the future. The app now guards against
+it (`GpsRateAccumulator.fixTimeNanos`). Read only the `et=` and `vel=` fields of `dumpsys location`
+if you check this: the full line has coordinates, and the AVD may still hold a position from an
+earlier `geo fix`.
+
+`adb reverse` also has a trap: a connect to a reversed port **always succeeds on the device**, even
+with nothing listening on the PC, and the stream then ends immediately.
+
+### Two adb traps when staging files for the app (found 2026-09-26)
+
+- **Git Bash rewrites device paths.** `adb shell ls /sdcard/...` from Git Bash becomes
+  `C:/Program Files/Git/sdcard/...`. Prefix commands with `export MSYS_NO_PATHCONV=1`.
+- **A file or folder the shell creates under the app's external files dir is not writable by the
+  app** (it is owned by uid 2000, and the app gets `EACCES`). Reading works, so logs pushed into
+  `CodaLogs/` are fine; a TPMS epoch file must be created by the app (press SET on page 3). The
+  shell can then append to the app-owned file. `run-as` cannot reach `/sdcard/Android/data`.
+  Never `mkdir` `CodaLogs/tpms` from the shell: the app then cannot create files in it.
+
 ### One-time storage permission grant
 
 On first launch the app immediately bounces to the system "All files access" settings page and
@@ -188,16 +217,25 @@ deployment — `adb install` ignores `uses-feature`, which is only enforced by a
 
 ---
 
-## USB CAN in the emulator — not possible
+## USB CAN in the emulator — not possible (Windows; superseded on Linux)
+
+**Superseded on the Linux box 2026-10-28:** a real Innomaker can be passed through to the
+AVD on a Linux host -- see [USB passthrough on the Linux box](#usb-passthrough-on-the Linux box-linux).
+What follows was written on Desktop (Windows) and was not re-tested there.
 
 The Android emulator has no USB host passthrough. `UsbManager.deviceList` is always empty inside
 an AVD and there is no exposed QEMU flag to bind a host USB device into the guest, so the
-Innomaker gs_usb dongle can never appear as a `UsbDevice`. `tools/can_replayer.py` does not help
+Innomaker gs_usb dongle can never appear as a `UsbDevice`. The shared replayer (`tools/can_replayer.py` in the can-tools git clone) does not help
 either — it puts frames on a physical bus, which requires a physical dongle on the guest side.
 
 Consequence: with the current code the app runs in the emulator but shows **default state only**
 (SoC 0%, ranges 0, `DNNN` background, notches at their zero positions). That is sufficient for
 layout work but not for verifying decode or display logic against real values.
+
+**Superseded 2026-09-26: real CAN traffic now reaches the app in the AVD through the SLCAN
+harness** -- `tools/slcan_bridge.py --busmaster` plus `debug.coda.slcan`; see `tools/tools.md`
+and `android-app/android-coda-tpms-implementation.md` § Emulator harness. What follows is the
+earlier analysis, kept for the record.
 
 Feeding real data in requires a code change, currently unimplemented:
 
@@ -216,6 +254,149 @@ abstraction.
 
 ---
 
+## the Linux box (Linux) bringup
+
+Set up 2026-10-18. User-local install, no sudo:
+
+| Component | Location | Version |
+|-----------|----------|---------|
+| Android Studio | `<home>/android-studio` | 2026.2.1.8 (rabbit1) |
+| Android SDK | `<home>/Android/Sdk` | cmdline-tools 23.0, platform-tools 37.0.1 |
+| Emulator | `~/Android/Sdk/emulator/emulator` | 37.2.12 |
+| Gradle JDK | `<home>/jdk-21` | Temurin 21.0.12 |
+| AVD | `~/.android/avd/7_WSVGA_Tablet_API_31.avd` | API 31, google_apis, x86_64 |
+
+`cmdline-tools;latest` is installed here, unlike Desktop, so `sdkmanager` and `avdmanager`
+are available. Package list installed:
+
+```bash
+export JAVA_HOME=$HOME/android-studio/jbr
+~/Android/Sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/Android/Sdk \
+  "platform-tools" "emulator" "platforms;android-31" "platforms;android-34" \
+  "build-tools;34.0.0" "system-images;android-31;google_apis;x86_64"
+```
+
+KVM is available and usable (`emulator -accel-check` prints `KVM (version 12) is installed and
+usable`). The user does not need to be in the `kvm` group: `/dev/kvm` carries a `user:<user>:rw-`
+ACL.
+
+### AVD creation
+
+```bash
+export JAVA_HOME=$HOME/android-studio/jbr
+echo no | ~/Android/Sdk/cmdline-tools/latest/bin/avdmanager create avd \
+  -n 7_WSVGA_Tablet_API_31 \
+  -k "system-images;android-31;google_apis;x86_64" \
+  -d "7in WSVGA (Tablet)"
+```
+
+Then edit `~/.android/avd/7_WSVGA_Tablet_API_31.avd/config.ini` to match the Desktop AVD:
+`hw.mainKeys=yes`, `hw.gpu.enabled=yes`, `hw.gpu.mode=host`, `hw.ramSize=2048`,
+`vm.heapSize=256M`, `disk.dataPartition.size=6G`, `hw.camera.back=none`,
+`showDeviceFrame=no`, `skin.path=_no_skin`, `skin.name=1024x600`,
+`hw.initialOrientation=landscape`. Resolution/density come from the stock profile as
+1024x600 @ 160 dpi. The AVD directory is the default `~/.android/avd/` because
+`ANDROID_SDK_HOME` is unset on this machine.
+
+### Launching
+
+GUI (once a desktop session is available):
+
+```bash
+~/Android/Sdk/emulator/emulator -avd 7_WSVGA_Tablet_API_31
+```
+
+or `studio` for the IDE. To test boot headlessly:
+
+```bash
+ANDROID_SDK_ROOT=$HOME/Android/Sdk ANDROID_HOME=$HOME/Android/Sdk \
+  $HOME/Android/Sdk/emulator/emulator -avd 7_WSVGA_Tablet_API_31 \
+  -no-window -no-audio -no-snapshot-load -gpu swiftshader_indirect -no-boot-anim
+```
+
+Use the background-process tool (or `nohup`/detach) rather than a foreground Bash call, so the
+emulator's lifetime is not tied to the command. A cold boot took ~40 s. `adb emu kill` performs a
+clean shutdown and leaves the snapshot saved for the next launch.
+
+### Build, install, run
+
+Gradle 8.4 / AGP 8.3.2 need Java 17-21, **not** the Studio JBR (Java 25). The tree now has a Unix
+`gradlew` script alongside `gradlew.bat`.
+
+```bash
+ANDROID_HOME="$HOME/Android/Sdk" JAVA_HOME="$HOME/jdk-21" \
+PATH="$HOME/jdk-21/bin:$PATH" \
+android-app/CanLoggerApps/gradlew -p android-app/CanLoggerApps :coda:assembleDebug --console=plain
+
+ADB=$HOME/Android/Sdk/platform-tools/adb
+$ADB install -r android-app/CanLoggerApps/coda/build/outputs/apk/debug/coda-debug.apk
+$ADB shell appops set --uid com.reverseit.coda MANAGE_EXTERNAL_STORAGE allow
+$ADB shell pm grant com.reverseit.coda android.permission.ACCESS_FINE_LOCATION
+$ADB shell pm grant com.reverseit.coda android.permission.ACCESS_COARSE_LOCATION
+$ADB shell am start -n com.reverseit.coda/.MainActivity
+```
+
+Note `POST_NOTIFICATIONS` cannot be granted on an API 31 image (the permission does not exist
+there; it was added in API 33).
+
+Verified 2026-10-18: cold boot succeeded, `wm size` reported `1024x600`, `wm density` 160,
+the app installed and `MainActivity` was the resumed activity, and logcat showed
+`isExternalStorageManager() = true` / `storage manager not needed`.
+
+## USB passthrough on the Linux box (Linux)
+
+Measured 2026-10-28 (plan `plans/gs-usb-error-frames.md` Step 2). The unfixed Vtrux debug
+build in `7_WSVGA_Tablet_API_31` opened the Innomaker through `UsbManager` and logged frames
+sent by the IXXAT on the same bus: `0x123` x200 and `0x124` x1200 complete and in sequence, an
+extended `0x18FF0001`, and after one 250 kbit burst the Bug 11 line
+`Rx 1 0xC s 8 00 30 02 00 00 00 00 FF` -- an error report logged as a data frame. So the app's
+real gs_usb code can be put in front of real bus faults on the desk. The rig (`canctl`, the
+IXXAT, the udev rule) is in `tools-reference.md`, *the Linux box SocketCAN rig*.
+
+1. **Release the adapter from the host:** `sudo -n /usr/local/sbin/canctl gs_usb unbind`
+   (`can0` disappears). `canctl gs_usb bind` gives it back once the emulator has exited.
+2. **Launch** (detached, as above) with the passthrough options appended:
+
+   ```bash
+   ANDROID_SDK_ROOT=$HOME/Android/Sdk ANDROID_HOME=$HOME/Android/Sdk \
+     $HOME/Android/Sdk/emulator/emulator -avd 7_WSVGA_Tablet_API_31 \
+     -no-window -no-audio -no-snapshot -writable-system -gpu swiftshader_indirect -no-boot-anim \
+     -qemu -device qemu-xhci,id=xhci -device usb-host,bus=xhci.0,vendorid=0x1d50,productid=0x606f
+   ```
+
+   Emulator 37.2.12's QEMU has libusb host support built in (`hw/usb/host-libusb.c`); the
+   guest kernel enumerates the adapter at boot (`/sys/bus/usb/devices/1-1`, `USB2CAN V3.4.3`).
+   Only this form was tested; the shorter `-usb -device usb-host,...` was not.
+3. **The image does not declare USB host support**, and without the feature
+   `UsbManager.deviceList` stays empty although the kernel sees the device. Done once,
+   2026-10-28: `adb root`, `adb remount`, reboot; write
+   `/vendor/etc/permissions/android.hardware.usb.host.xml` containing
+   `<permissions><feature name="android.hardware.usb.host" /></permissions>`; reboot. Then
+   `pm list features` shows `android.hardware.usb.host` and `dumpsys usb` lists the adapter under
+   `host_manager`. The file lives in the AVD's writable-system overlay, so **every passthrough
+   launch needs `-writable-system`**; without it the AVD boots its original image.
+4. **The guest kernel's own `gs_usb` driver claims interface 0 first.** The app takes it over
+   because `GsUsbDevice` calls `claimInterface(iface, true)`, as on a phone with that driver.
+5. **USB permission** is a system dialog. Headless, find the controls with
+   `adb shell uiautomator dump` and tap them with `adb shell input tap`; ticking
+   "Always open Vtrux when USB2CAN V3.4.3 is connected" before OK keeps the grant.
+6. **`BusmasterWriter` flushes every 1000 frames**, so a short test shows only the header in
+   the file. Send more than 1000 frames, or read the file after the segment closes.
+
+7. **Coda reads its USB permission as denied, even after OK** (found 2026-10-28, plan Step 5).
+   `coda/MainActivity` requests it with a `FLAG_IMMUTABLE` `PendingIntent`, so on this API 31
+   image the system cannot attach `EXTRA_PERMISSION_GRANTED` and the receiver logs
+   "USB permission denied". The grant itself is recorded: `am force-stop` and restart Coda, and
+   it opens the adapter through `hasPermission`. Vtrux uses `FLAG_MUTABLE` and is not affected.
+   Treated as an emulator trap, not a bug: the head unit runs a mix of Android versions and has
+   not shown it (owner, 2026-10-28).
+8. **Coda logs only while the screen is on** (screen trigger). `svc power stayon true` and
+   `input keyevent KEYCODE_WAKEUP` before a run; `input keyevent KEYCODE_SLEEP` afterwards closes
+   the segment and flushes it. `artifacts/gs_usb_fault_matrix.py run --mode app` does both.
+
+This replaces the phone's USB stack and timing with QEMU's, so "USB host and dongle
+lifecycle" under Limitations below still needs the real device.
+
 ## Limitations
 
 The emulator does not reproduce the A007 head unit's ROM-level quirks, all of which have
@@ -228,7 +409,10 @@ previously caused real bugs (see `android-app/android-coda-app-notes.md` Phase 2
 - USB host and dongle lifecycle
 - the head unit's real screen density
 
-**The head unit's actual resolution and density are not recorded anywhere.** The AVD assumes
+**Measured 2026-09-26** (the app's hardware report, `CodaLogs/diag/hardware_20260926T181152.json`):
+the head unit is **1024 x 600 px at 240 dpi, i.e. 682 x 360 dp** for the app. Run the AVD with
+`adb shell wm density 240` to see what the car sees; set it back to 160 afterwards. What follows
+was written before this was known. The AVD assumes
 1024 x 600 mdpi. This matters for any from-scratch Compose layout, because Compose lays out in
 dp: 1024 x 600 at mdpi gives 1024 x 600 dp, but the same panel at hdpi would give only about
 683 x 400 dp. The existing green screen is immune (all overlay positions are fractions of the

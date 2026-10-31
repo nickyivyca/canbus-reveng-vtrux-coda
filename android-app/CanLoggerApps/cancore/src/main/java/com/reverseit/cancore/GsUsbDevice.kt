@@ -23,6 +23,10 @@ import java.nio.ByteOrder
  *   4. controlTransfer OUT BITTIMING    -- set bitrate
  *   5. controlTransfer OUT MODE=START   -- enable CAN channel
  *   6. bulkTransfer IN (loop)           -- receive 20-byte frames
+ *
+ * Transmission uses the bulk OUT endpoint of the same interface and needs no extra negotiation --
+ * MODE=START with flags 0 is normal (non-listen-only) mode, so the channel is already able to
+ * transmit. See [send].
  */
 class GsUsbDevice(
     private val usbManager: UsbManager,
@@ -55,8 +59,19 @@ class GsUsbDevice(
     private var connection: UsbDeviceConnection? = null
     private var usbIface: UsbInterface? = null
     private var epIn: UsbEndpoint? = null
+    private var epOut: UsbEndpoint? = null
 
     @Volatile private var running = false
+
+    /**
+     * Serialises [send] against itself and against [close]. The read loop uses a different
+     * endpoint and is deliberately not covered: holding this lock across the blocking bulk IN
+     * transfer would stall every transmission for up to BULK_TIMEOUT_MS.
+     */
+    private val txLock = Any()
+
+    /** True once a bulk OUT endpoint has been found and the channel started. */
+    val canTransmit: Boolean get() = running && epOut != null
 
     /**
      * Open the device, negotiate protocol, and start the CAN channel.
@@ -73,18 +88,26 @@ class GsUsbDevice(
         }
 
         var inEp: UsbEndpoint? = null
+        var outEp: UsbEndpoint? = null
         for (i in 0 until iface.endpointCount) {
             val ep = iface.getEndpoint(i)
-            if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK &&
-                ep.direction == UsbConstants.USB_DIR_IN) {
-                inEp = ep
+            if (ep.type != UsbConstants.USB_ENDPOINT_XFER_BULK) continue
+            when (ep.direction) {
+                UsbConstants.USB_DIR_IN  -> inEp = ep
+                UsbConstants.USB_DIR_OUT -> outEp = ep
             }
         }
         inEp ?: throw IOException("No bulk IN endpoint on interface 0")
+        // A missing OUT endpoint is NOT fatal: receiving is the app's primary job and has worked
+        // on every dongle so far. Transmission simply reports itself unavailable -- see
+        // [canTransmit] -- so a firmware without it degrades to the read-only behaviour the app
+        // had before TX existed, rather than refusing to log.
+        if (outEp == null) Log.w(TAG, "gs_usb device=${device.deviceId}: no bulk OUT endpoint, transmit unavailable")
 
         connection = conn
         usbIface   = iface
         epIn       = inEp
+        epOut      = outEp
 
         // 0. MODE=RESET: put device in known state before configuring (matches Linux gs_usb driver)
         ctrl(conn, CTRL_OUT, GS_USB_BREQ_MODE,
@@ -145,8 +168,36 @@ class GsUsbDevice(
         }
     }
 
+    /**
+     * Put one frame on the wire. Returns true if the device accepted the full 20-byte packet.
+     *
+     * Blocking, so call it off the main thread. Safe to call concurrently with [readFrames], which
+     * uses the other endpoint.
+     *
+     * A transmitted frame is echoed back by the device on the bulk IN endpoint with our echo
+     * cookie, so it reappears through [readFrames] as a [CanFrame] with `isTx = true`. That echo,
+     * not this return value, is the evidence the frame actually reached the bus: true here only
+     * means the USB write succeeded.
+     */
+    fun send(id: Int, data: ByteArray, isExtended: Boolean = false, dlc: Int = data.size): Boolean {
+        val frame = GsUsbFrame.forTransmit(id, data, isExtended, dlc)
+        val bytes = GsUsbFrame.toBytes(frame)
+        synchronized(txLock) {
+            if (!running) return false
+            val conn = connection ?: return false
+            val ep = epOut ?: return false
+            val n = conn.bulkTransfer(ep, bytes, bytes.size, BULK_TIMEOUT_MS)
+            if (n != bytes.size) {
+                Log.w(TAG, "gs_usb device=${device.deviceId}: send id=0x%X returned %d".format(id, n))
+                return false
+            }
+            return true
+        }
+    }
+
     fun close() {
         running = false
+        synchronized(txLock) { epOut = null }
         val conn = connection ?: return
         try {
             ctrl(conn, CTRL_OUT, GS_USB_BREQ_MODE,

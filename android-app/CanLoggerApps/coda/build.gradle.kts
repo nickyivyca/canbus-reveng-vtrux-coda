@@ -13,13 +13,13 @@ android {
         // widgets). Harmless for the A007 head unit, which runs Android 12.
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
+            storeFile = rootProject.extra["projectKeystore"] as File  // root build.gradle.kts
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -29,6 +29,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // The project keystore, as debug builds use: car and phone loads are release builds
+            // (Change 15) and must install over the debug builds already there, keeping their data.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -48,6 +51,7 @@ android {
 
 dependencies {
     implementation(project(":cancore"))
+    implementation(project(":tpms"))
     implementation(project(":display"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.lifecycle.viewmodel.ktx)
@@ -61,4 +65,5 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.runtime)
+    testImplementation("junit:junit:4.13.2")
 }

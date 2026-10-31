@@ -204,6 +204,8 @@ Not yet investigated. If screen-based detection proves unreliable, implement CAN
 
 **Fix**: switched to discrete status bits from 0x276 B2 — `bit3=heating active`, `bit4=AC active`. No fan gate needed; the bits are only set when the respective system is actively running. Confirmed against `coda_20260322_160846_T0.log` (heater-then-AC sequence).
 
+**Superseded 2026-10-30** (`projects/coda/notes/hvac/coda-hvac-decompile-notes.md` section 9.4, step 6d): B2 bits 5:2 are the HVAC's mode nibble, so bits 3 and 4 are not heat/AC flags. Both icons now come from the nibble (`HvacMode.kt`, mapping in `projects/coda/notes/thermal-indicator-signals.md`), which also replaces the battery icon's coolant inlet-vs-return compare that flipped while the mode held still.
+
 **Root cause of fan gate confusion**: 0x276 B5 was previously documented in `driver-inputs.md` as "blower output." DBC fine sweep (2026-02-26) confirmed it is `PTCHeaterPWM` — it tracked fan knob steps only because PTC demand scales with fan speed during heating. No cabin blower byte is visible on B CAN. Corrected in `driver-inputs.md` (2026-03-22).
 
 ### Logger Notification Tap
@@ -283,6 +285,69 @@ Everything above was verified on the 7-inch AVD against replayed drive and charg
 
 ---
 
+## Indirect TPMS — UI and scaffolding complete (2026-09-21)
+
+**Implementation notes live in their own file: `android-coda-tpms-implementation.md`.**
+Read that for the settings page, the algorithm handoff seam, and the CAN transmit
+mechanism. What follows here is context only.
+
+The factory TPMS sensors are dead and are Coda-proprietary, so unreplaceable.
+A wheel-speed (indirect) replacement has been **shown feasible**: it resolves a
+**2.4 psi** front-axle differential at 3 sigma from a single qualifying drive,
+about 4x finer than the 25 % under-inflation a legislated direct TPMS warns
+at. Full method, validation and open items:
+`../projects/coda/notes/indirect-tpms-feasibility.md`.
+
+**App status:** page 3 (settings) carries the calibration entry and the detector's
+per-wheel output; the CAN transmit path exists with its interlocks and tests. The
+detection algorithm is owned by a separate session and has not landed. Nothing
+transmits on any bus. **`coda-debug (22).apk` went to the car 2026-09-23** — see
+the implementation file's "On the car — build 22" section for what to check first.
+
+**This app is the recommended first output**, ahead of the factory dash lamp.
+The lamp is reachable (`0x600` B7 bit 5 crosses the gateway to B CAN, i.e. OBD
+pins 2/3) but the RCU asserts it ~90 % of the time, so using it means removing
+the RCU and transmitting `0x600` continuously just to hold the lamp off. The
+app needs none of that, and the detection stage — the hard part, and the part
+already solved — is identical either way.
+
+What the app would need to compute, all from signals it already reads:
+
+- `DEL = (LF+RR)/(RF+LR)` from `0x200` (SubFrameID 0 only) and `0x208`
+- the filters in that document's section 2: >25 km/h, straight by steering
+  angle (`0x080`), steady speed, brakes off, torque <20 Nm (`0x1C0`)
+- ~800+ qualifying samples per verdict, and a learn phase recording `DEL` at
+  known-good pressures — the per-wheel mechanical baseline is the same size as
+  the signal, so absolute `DEL` means nothing without one
+
+### GPS constraint — no absolute position
+
+**Owner requirement, refined 2026-09-24:** *"I just don't want absolute GPS
+position stored. OK to store enough data to theoretically integrate someone's
+travel from it, but ideally we limit to only what is needed for GPS TPMS
+support."* An optional second channel detects *average* pressure (all four
+tyres together), which the ratio method cancels by construction. That needs an
+absolute speed reference, and GPS is the only viable one — the CAN
+accelerometer was tested and fails by ~24x.
+
+The rule is **no absolute position; otherwise only what GPS-TPMS needs.** This
+is satisfiable exactly: a least-squares slope depends only on `N, Σx, Σy, Σxy,
+Σx²`, which are sufficient statistics, so the app never retains a sample.
+Never write a `Location` object anywhere. Altitude is consumed in-handler and
+never stored; only Σ(grade²) per speed band leaves it. Sums are binned by
+speed because the tyre grows with speed roughly as v². Speed-binned sums do
+let a reader bound how far the car travelled in a drive; they do not say
+where, and the owner accepted that trade explicitly. Full rules in
+`../projects/coda/notes/tpms-algorithm-spec.md` §7 — read it before writing
+any location code. App-side implementation: `notes/plans/coda-tpms-gps.md` and
+`android-coda-tpms-implementation.md`.
+
+Note `ACCESS_FINE_LOCATION` currently exists **only** in the `companion`
+module, and only to read the WiFi SSID; no module calls a location API. Adding
+this means a new, user-visible location permission on an app that has never
+asked for one, so the feature must be optional and must degrade cleanly to
+differential-only when GPS is off or denied.
+
 ## Future Scope — Additional Display Screens
 
 Pages 0 and 1 exist as of Phase 4. Further screens slot into the same `HorizontalPager` without reworking the signal decoder or logging layers.
@@ -299,6 +364,8 @@ Not scoped. A future phase could use Diag CAN (second Innomaker dongle) to issue
 ---
 
 ## Phase 4 — LogFileServer (Complete, 2026-05-07)
+
+*Extended 2026-09-26 (build 29): a recursive, read-only `GET /tree` and sub-path `GET /files/<path>` so `CodaLogs/tpms/` and `diag/` can be read remotely; `/files` and DELETE deliberately unchanged. See `android-coda-tpms-implementation.md` § Storage and sync.*
 
 **Goal:** Expose completed log files over local WiFi so a companion app on a regular phone can pull them, bypassing the slow head-unit SeaDrive upload. See `notes/plans/companion-file-sync.md` for full architecture.
 
@@ -323,7 +390,7 @@ Filenames are constrained to `[A-Za-z0-9_.-]+\.log` to prevent path traversal.
 
 ### Discovery from a phone or laptop on the Coda hotspot
 
-The head unit's hotspot AP IP is the WiFi default gateway from any client's perspective. Verified value when on Coda hotspot: gateway `192.168.43.8`, SSID `Coda`. When the head unit is on home LAN instead, it's reachable at `<lan-ip>:9877` directly. The companion app does not hardcode either — it reads the gateway at sync time.
+The head unit's hotspot AP IP is the WiFi default gateway from any client's perspective. Verified value when on Coda hotspot: gateway `192.168.43.8`, SSID `Coda`. When the head unit is on home LAN instead, it's reachable on port 9877 directly, at whatever address DHCP gave it -- not static, so look it up (router client list) each time; do not record it here. The companion app does not hardcode either — it reads the gateway at sync time.
 
 ### Boot trace (visible in DebugLog stream on port 9876)
 
@@ -344,7 +411,7 @@ PowerShell test runner at `notes/artifacts/test_log_file_server.ps1`. Run it wit
 
 ```powershell
 .\android-app\notes\artifacts\test_log_file_server.ps1                         # auto-discover gateway
-.\android-app\notes\artifacts\test_log_file_server.ps1 -ServerHost <lan-ip>  # over LAN
+.\android-app\notes\artifacts\test_log_file_server.ps1 -ServerHost <head-unit-LAN-IP>  # over LAN; DHCP, look it up each time
 .\android-app\notes\artifacts\test_log_file_server.ps1 -TestDownload           # also pull smallest file
 .\android-app\notes\artifacts\test_log_file_server.ps1 -TestDelete             # destructive
 ```

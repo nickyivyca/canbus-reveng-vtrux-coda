@@ -13,21 +13,64 @@ Confirmed by exact CAN ID, DLC, byte encoding, and rate match across both vehicl
 
 ## CAN Signals
 
-Both IDs broadcast from the TCM at all times the vehicle is on. Present on PT bus (Vtrux) and D CAN (Coda).
+Present on PT bus (Vtrux) and D CAN (Coda) at all times the vehicle is on. **0x55C is a TCM broadcast. 0x308 is NOT** -- corrected 2026-09-24, see below.
 
-### 0x308 — Park Pin State
+### 0x308 — Park Request (controller → TCM)
 
-DLC=5, 100 Hz.
+DLC=5, 100 Hz. **Transmitted by the controller — the DLCM on Coda, the HCU on Vtrux — not by
+the TCM.** Corrected 2026-09-24; it had been recorded here as a TCM broadcast reporting the
+park pin's state.
 
 | Byte | Signal | Encoding | Confidence |
 |------|--------|----------|------------|
-| B0 | Park pin state | `0x20` = locked (Park), `0x40` = released (not Park) | CONFIRMED |
+| B0 bits 6-5 | **ParkRequest** | 2-bit command: `0` = OFF, `1` = Park (byte `0x20`), `2` = UnPark (byte `0x40`) | CONFIRMED |
+| B0 other bits | unused | never set: 0 frames of 3,855 on Coda, 0 of 6,423 on Vtrux | CONFIRMED |
 | B1–B2 | Input shaft speed | uint16 LE (B1 = LSB, B2 = MSB); `RPM = (value - 32128) × 0.5`; zero at 32128 (0x7D80). Same encoding as 0x1C0 B6-B7 on Coda. Pearson r = 0.9999 vs traction motor RPM on both vehicles. | CONFIRMED |
 | B3–B4 | Unknown | Constant `0x00` | — |
 
-**Timing (from Vtrux `generator on then off.log`):**
-- Park exit: B0 = `0x40` leads GMLAN 0x1F5 gear-change declaration by ~13 ms
-- Park entry: B0 = `0x20` lags GMLAN 0x1F5 Park declaration by ~65 ms (solenoid actuation delay)
+Three independent lines agree:
+
+1. **The Vtrux EPRI DBC already had it.** `epri-pt-bus.dbc` declares
+   `SG_ ParkRequest : 5|2@1+` — byte 0 bits 6-5 — with `0 "OFF" 1 "Park" 2 "UnPark"`, and
+   describes the message as the HCU park request command. That file is decoded from the
+   vendor's own logging app.
+2. **The Coda DLCM firmware writes exactly those two bits.** 0x308 is TX record 9 in the
+   DLCM's CAN transmit table at `0x80041B74` with a 10 ms period, matching the measured
+   99.7 Hz, and `FUN_80080C14` assembles all five bytes, ORing `DAT_d0006AF1 * 0x20 & 0x60`
+   into B0 and taking B1-B2 from `0xD00069CA`. The DLCM Functional Requirements describe
+   parkRequest as "command desired state every 10msec".
+3. **The request leads the TCM's own state machine, in both directions, on both vehicles.**
+
+| Vehicle | 0x308 edge | 0x55C parkLockState response | Lead |
+|---|---|---|---|
+| Coda | Park → UnPark @ 4.209 s | Parked → Unparking @ 4.285 s | +76 ms |
+| Coda | UnPark → Park @ 12.888 s | Unparked → Park @ 12.977 s | +89 ms |
+| Coda | Park → UnPark @ 23.358 s | Parked → Unparking @ 23.446 s | +88 ms |
+| Coda | UnPark → Park @ 30.448 s | Unparked → Park @ 30.533 s | +85 ms |
+| Vtrux | Park → UnPark @ 25.045 s | Parked → Unparking @ 25.100 s | +55 ms |
+| Vtrux | UnPark → Park @ 56.065 s | Unparked → Park @ 56.130 s | +65 ms |
+
+A pin-state report cannot lead the TCM's own state machine on park **engage**; a command
+must. The 55–65 ms figures previously recorded here as "solenoid actuation delay" are that
+command-to-acknowledge latency. Coda logs: `prndnrp-twice-...log`; Vtrux:
+`generator-on-then-off.log`. Script: `notes/artifacts/park_request_0x308_cross_vehicle.py`.
+
+**The GMLAN timing is consistent with this, not against it.** On Vtrux the chain is: the
+driver selects a gear, GMLAN `0x1F5` declares it, the HCU issues the 0x308 request, the TCM
+answers on 0x55C. So B0 = `0x20` "lagging" the 0x1F5 Park declaration by ~65 ms is the HCU
+reacting to the gear selection, and B0 = `0x40` leading the 0x1F5 gear-change by ~13 ms at
+park exit is the request going out before the declaration is published.
+
+**Consequence for B1-B2.** If the controller transmits the frame, the shaft-speed field is
+the controller *sending* motor speed to the TCM rather than the TCM reporting it. Everything
+measured about that signal still holds — it is input-side, not output-side, by the
+cross-vehicle gear-ratio argument below — but the direction is the reverse of what was
+assumed. A value that equals motor rpm exactly on two transmissions with different gear
+ratios is what a controller relaying motor speed looks like.
+
+**The third state, `0` = OFF, exists and was missing from the Coda DBC.** It appears in 288
+of 3,855 frames in the Coda PRND log, at the end of the sequence after the final Park
+request. It was never observed in the Vtrux log checked.
 
 ### 0x55C — Park Lock State
 
@@ -63,11 +106,12 @@ see `projects/coda/notes/codacan-replay-verification-queue.md`):
 - CODACAN's Driveline-tab park fields — **ParkLock / ParkSensor / DriveSensor** — are
   the **0x55C** signals (parkLockState / parkSensor / driveSensor above). At key-on
   stationary they read `ParkLock = StatusOff`, ParkSensor/DriveSensor = off.
-- **0x308 (ParkPinState) has no distinct CODACAN display field.** A byte-sweep of
+- **0x308 has no distinct CODACAN display field.** A byte-sweep of
   0x308 B0 across `0x00`–`0xF0` moved no Driveline field (the park state shown is
   driven by 0x55C, not 0x308). So CODACAN neither confirms nor adds to the 0x308 B0
-  `0x20`=Park / `0x40`=NotPark encoding — that rests on the log-analysis + the
-  cross-vehicle Vtrux match documented above, which remains the authority.
+  encoding — that rests on the EPRI definition, the Coda transmit code and the
+  cross-vehicle timing documented above. In hindsight the null result is expected: CODACAN
+  displays module state, and 0x308 B0 is a command the DLCM issues, not a state it reports.
 
 This is a CODACAN-method limitation (no displayed field), not evidence against the
 0x308 decode.
@@ -118,7 +162,7 @@ Phase 2 was conducted under the (incorrect) assumption that B1-B2 was a rotation
 
 Log sequence: 4H → 2H → neutral → 4Lo → neutral → motor revved → 2H. TC was in a neutral position during the motor rev. At t=24.92s the park pin releases and the motor ramps from 0 to ~10,800 RPM.
 
-B1-B2 tracked motor RPM continuously throughout the rev. Since the output shaft was mechanically decoupled (TC neutral), this confirms the speed signal originates on the **motor/input side** of the gearbox — consistent with 0x308 being a TCM message reporting input shaft speed.
+B1-B2 tracked motor RPM continuously throughout the rev. Since the output shaft was mechanically decoupled (TC neutral), this confirms the speed signal originates on the **motor/input side** of the gearbox — consistent with the 0x308 speed field being measured on the motor/input side of the gearbox. (The *transmitter* attribution in this paragraph is superseded — see the 0x308 section above; the input-vs-output-shaft conclusion is unaffected.)
 
 Supporting: at t=50–54s (TC neutral, motor at rest, pin electrically NotPark), B1-B2 oscillates 108↔146 — equivalent to ±19 RPM oscillation at ~9 RPM, consistent with driveline compliance with the park pawl engaged.
 

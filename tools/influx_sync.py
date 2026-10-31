@@ -19,7 +19,7 @@ Two layers, each catching what the cheaper one cannot:
 L1 alone cannot drive per-file repair: a session's field set is the UNION across
 its chunks, so after repairing 1 of 4 chunks it reports the message as current
 while three are stale. Per-file staleness is only knowable from the manifest's
-per-file `msg_hashes`. (Measured in Phase 1.2; see tools/plans/influx-sync.md.)
+per-file `msg_hashes`. (Measured in Phase 1.2; see the internal `influx-sync` plan.)
 
 Discovery is NON-RECURSIVE by design. Specialised folders -- one-off
 experiments, other people's vehicles, giant single captures -- must be opted
@@ -69,7 +69,17 @@ ROOTS = [
 
 # Add a subfolder here to bring it in scope, e.g.
 #   {"path": "projects/vtrux/logs/after-battery-swap-charges", "vehicle": "vtrux"},
-OPT_IN_SUBFOLDERS: list[dict] = []
+OPT_IN_SUBFOLDERS: list[dict] = [
+    # Brought in scope 2026-09-12 for the charge-termination characterisation.
+    # Discovery is non-recursive, so these sat outside the corpus entirely --
+    # and they hold exactly the three cases the question needs: the part-truck
+    # full charge on a badly imbalanced pack, the failed charges, and the
+    # post-battery-swap full charges. The termination survey run before they
+    # were added saw 44 charging sessions and only one evap-80 among them.
+    {"path": "projects/vtrux/logs/big-logs", "vehicle": "vtrux"},
+    {"path": "projects/vtrux/logs/actual-failed-charges", "vehicle": "vtrux"},
+    {"path": "projects/vtrux/logs/after-battery-swap-charges", "vehicle": "vtrux"},
+]
 
 # Hard deny-list, checked even when a path is named explicitly on the command
 # line. Truck 3 is a fellow owner's vehicle: it is a different physical
@@ -77,6 +87,18 @@ OPT_IN_SUBFOLDERS: list[dict] = []
 # privacy scrub in git-publish.md, so his name must never reach a session tag.
 EXCLUDE_PATHS = [
     "projects/vtrux/logs/truck3-logs",
+    # Parts-truck chunk kept under its capture name only because the gen-inhibit
+    # firmware replay suite names it. The same file is uploaded as
+    # partsdrive_20260802_T0.log (moved and renamed 2026-10-21, user decision);
+    # the old session tag vtrux_20260802_123318 was deleted from InfluxDB.
+    "projects/vtrux/logs/vtrux_20260802_123318_T0.log",
+    # Bench replays of generator-on-then-off.log recorded by the :vtrux app, not
+    # drives (quarantined 2026-10-30, user decision; the rest of both evenings is in
+    # android-app/notes/artifacts/vtrux_bench_replay_captures/). These two copies
+    # stay here because the gen-inhibit host harness and spec name them; their
+    # sessions were deleted from InfluxDB the same day.
+    "projects/vtrux/logs/vtrux_20260322_165622_T1.log",
+    "projects/vtrux/logs/vtrux_20260403_194203_T2.log",
 ]
 
 LOG_EXTS = {".log", ".asc", ".trc", ".csv"}
@@ -130,6 +152,159 @@ def load_manifest() -> dict:
         if prev is None or row["uploaded_at"] > prev["uploaded_at"]:
             latest[key] = row
     return latest
+
+
+def load_manifest_history() -> dict:
+    """-> {(vehicle, file_basename): [rows oldest-first]}
+
+    `load_manifest()` keeps only the newest row per file, which is right for
+    every staleness test that asks "what does this file look like now". The
+    bus-label test needs the opposite: what this file was uploaded AS before.
+    """
+    try:
+        res = q("SELECT * FROM upload_manifest")
+    except RuntimeError:
+        return {}
+    s = res["results"][0].get("series")
+    if not s:
+        return {}
+    cols = s[0]["columns"]
+    hist = defaultdict(list)
+    for v in s[0]["values"]:
+        row = dict(zip(cols, v))
+        hist[(row["vehicle"], row["file"])].append(row)
+    for rows in hist.values():
+        rows.sort(key=lambda r: r["uploaded_at"])
+    return dict(hist)
+
+
+def stale_points_in_window(vehicle, session, bus, t0, t1) -> int:
+    """Field-values stored under `bus` inside [t0, t1] for this session.
+
+    Split out of label_drift_work so the overlap and convergence tests can
+    drive it without a database.
+    """
+    try:
+        res = q(f"SELECT COUNT(*) FROM signals WHERE "
+                f"vehicle='{esc(vehicle)}' AND session='{esc(session)}' "
+                f"AND bus='{esc(bus)}' AND time >= {t0} AND time <= {t1}")
+    except RuntimeError:
+        return 0
+    ser = res["results"][0].get("series")
+    if not ser:
+        return 0
+    return int(sum(v for c, v in zip(ser[0]["columns"], ser[0]["values"][0])
+                   if c.startswith("count_") and v is not None))
+
+
+def label_drift_work(history) -> list:
+    """Series left behind when a file's BUS LABEL changed between uploads.
+
+    This is the one kind of staleness the three sync keys are structurally
+    blind to, and data-sources.md says so in general terms: file sha1, DBC
+    message hashes and the policy hash are all functions of the bytes and the
+    encoding, and a bus label is a function of neither. Re-uploading the file
+    writes the frames under the NEW bus tag and leaves the old tag's points
+    exactly where they were, so the same frames are then live under two bus
+    names at once and every later run reports the file as current.
+
+    Measured on 2026-10-04, when a new `min_anchor_hits` guard moved three
+    tail chunks off bus labels that rested on a single anchor hit:
+
+        coda_20260608_095955_T6   c_can -> ch1    211 field-values stranded
+        coda_20260722_102259_T6   d_can -> ch1    141 field-values stranded
+        coda_20260807_192700_T6   d_can -> ch1      0 (all ids d_can-excluded)
+
+    The manifest already holds everything needed to find them -- each row
+    records the `bus_map` that produced it -- so this costs one extra query and
+    no parsing.
+
+    THE WINDOW IS THE DANGEROUS PART. The repair must delete the old bus tag
+    only within the file's own recorded window, and that is sound only while no
+    other chunk of the session overlaps it; the Android logger can emit a T0
+    spanning 24 h with later chunks nested inside it, and a delete on the wider
+    window takes the nested chunks with it. Overlapping files are reported and
+    NOT queued, for the same reason `overlapping_files()` exists on the id
+    repair path.
+    """
+    # Every file's current window, per session -- the overlap test below needs
+    # ALL of them, not just the drifting ones. A first version compared the
+    # drifting files only against each other, which is the null-discriminator
+    # shape again: with one drifting file per session there is nothing to
+    # compare against, so the test passed vacuously and would have authorised a
+    # windowed delete straight over whatever non-drifting chunk shared the
+    # window.
+    session_spans = defaultdict(list)
+    for (vehicle, fname), rows in history.items():
+        latest = rows[-1]
+        t0, t1 = latest.get("t_start_ns"), latest.get("t_end_ns")
+        if t0 is None or t1 is None:
+            continue
+        session_spans[(vehicle, latest["session"])].append(
+            (int(t0), int(t1), fname))
+
+    by_session = defaultdict(list)
+    for (vehicle, fname), rows in history.items():
+        latest = rows[-1]
+        try:
+            now_map = json.loads(latest.get("bus_map") or "{}")
+        except (ValueError, TypeError):
+            continue
+        current = {v for v in now_map.values() if v}
+        was = set()
+        for r in rows[:-1]:
+            try:
+                was |= {v for v in (json.loads(r.get("bus_map") or "{}")
+                                    ).values() if v}
+            except (ValueError, TypeError):
+                continue
+        stale = was - current
+        if not stale:
+            continue
+        t0, t1 = latest.get("t_start_ns"), latest.get("t_end_ns")
+        if t0 is None or t1 is None:
+            continue
+        by_session[(vehicle, latest["session"])].append(
+            (fname, sorted(stale), int(t0), int(t1)))
+
+    out = []
+    for (vehicle, session), entries in sorted(by_session.items()):
+        spans = session_spans.get((vehicle, session), [])
+        overlapped = set()
+        for fname, _stale, t0, t1 in entries:
+            for b0, b1, bf in spans:
+                if bf == fname:
+                    continue
+                if b0 <= t1 and t0 <= b1:
+                    overlapped.add(fname)
+                    break
+        for fname, stale, t0, t1 in sorted(entries):
+            # The manifest finds CANDIDATES; the data decides. A bus_map
+            # history is append-only, so a label change is a permanent fact
+            # about the file and repairing it does not alter the record --
+            # emitting on the history alone makes the item re-fire on every
+            # run forever, repaired or not. That is the same never-converging
+            # loop as the `upload_new` captures and the `ch<N>` hash drift,
+            # built fresh. Observed immediately after the first --apply: all
+            # three items came straight back, two of them printing "nothing to
+            # do".
+            #
+            # So confirm there is actually something to delete. Only the few
+            # drifting files are queried, which is why this is affordable
+            # outside --check-existing.
+            present = [b for b in stale
+                       if stale_points_in_window(vehicle, session, b, t0, t1)]
+            if not present:
+                continue
+            out.append({"action": ("report_label_drift" if fname in overlapped
+                                   else "drop_label_window"),
+                        "vehicle": vehicle, "session": session,
+                        "file": fname, "keys": present,
+                        "windows": [[t0, t1]],
+                        "reason": ("bus_label_changed_but_windows_overlap"
+                                   if fname in overlapped
+                                   else "bus_label_changed_since_upload")})
+    return out
 
 
 def l1_sessions() -> set:
@@ -254,7 +429,8 @@ def current_hashes(vehicle) -> dict:
 def current_policy(vehicle, on_change=True, heartbeat=1.0) -> str:
     profile = iu.VEHICLE_PROFILES[vehicle]
     return iu.policy_hash(profile.get("exclude", []), [], on_change,
-                          heartbeat, False, None)
+                          heartbeat, False, None,
+                          profile.get("min_anchor_hits"))
 
 
 def overlapping_files(id_repairs) -> set:
@@ -303,6 +479,41 @@ def build_plan(args) -> list:
     for vehicle, paths in sorted(by_vehicle.items()):
         hashes = current_hashes(vehicle)
         pol = current_policy(vehicle)
+
+        # Messages the DBCs define now that NO upload has ever recorded.
+        #
+        # The drift check below walks `claimed` -- the hashes a file recorded at
+        # upload time -- so it can only ever notice a message whose definition
+        # CHANGED. A message ADDED to a DBC afterwards appears in no row's
+        # claimed set, is therefore never compared, and stays missing from
+        # InfluxDB forever however often the sync is run. That is how
+        # 0x18EFC000 (VCU_ChargerCmd, the charger mode/flow command) came to be
+        # absent from all 564 vtrux sessions while --plan reported nothing to
+        # do: every Bel charger message was present, the one the VCU sends was
+        # not, and no amount of syncing would have fixed it.
+        #
+        # "Never recorded anywhere" is the usable signal: a message that is
+        # genuinely in the captures would have been decoded by some earlier
+        # upload, so its absence across the whole manifest means it is new.
+        #
+        # "Defined but never recorded" alone is NOT enough to call a message
+        # new: the GMLAN DBC defines hundreds of standard GM messages this
+        # truck never sends, and they are equally absent from every manifest.
+        # Treating those as additions queued 33,625 backfills over 10.6 TB on
+        # the first attempt. Distinguishing a genuinely new definition from a
+        # never-present one needs a record of which ids each capture actually
+        # contains, which the manifest does not keep -- so the ids to backfill
+        # are named explicitly with --backfill-id, and "never recorded
+        # anywhere" is used only to skip ones already present.
+        # Note this is deliberately NOT filtered against known_anywhere. That
+        # set is global to the vehicle, so as soon as ONE file had been
+        # backfilled it contained the id and every remaining file silently
+        # dropped out of the plan -- 248 sessions collapsed to zero after a
+        # single-session test. Whether a file still needs the id is a property
+        # of that file's own manifest row, and is checked below.
+        wanted = set(getattr(args, "backfill_id", None) or [])
+        added_keys = sorted(k for k in ("%s|%s" % (b, c) for b, c in hashes)
+                            if k.split("|")[1] in wanted)
         keep = []
         for p in paths:
             if has_enough_frames(p):
@@ -319,6 +530,7 @@ def build_plan(args) -> list:
         for session, members in sorted(per_session.items()):
             new_files, reup_files = [], []
             id_repairs = defaultdict(list)   # can_id -> [(file, t0, t1)]
+            backfills = defaultdict(set)     # can_id -> {file}
             for p in sorted(members):
                 row = manifest.get((vehicle, p.name))
                 st = p.stat()
@@ -343,6 +555,27 @@ def build_plan(args) -> list:
                 # repair.
                 drift = [k for k, h in claimed.items()
                          if (hashes.get(tuple(k.split("|"))) or "") != (h or "")]
+
+                # Newly defined messages: backfill rather than repair. There is
+                # nothing stored to delete, and reupload_ids refuses a delete
+                # that matches no rows (correctly -- for a repair that means the
+                # manifest and the data disagree). Only offer buses this file
+                # actually carries, so a powertrain-only message is not queued
+                # against an OBD-only capture.
+                try:
+                    file_buses = set(json.loads(row.get("bus_map") or "{}").values())
+                except (ValueError, TypeError):
+                    file_buses = set()
+                for k in added_keys:
+                    bus, cid = k.split("|")
+                    if k in claimed:
+                        continue          # this file already has it
+                    if file_buses and bus not in file_buses:
+                        continue
+                    # A set, not a list: one can_id is defined on every bus in
+                    # the profile, so the same file arrives here once per bus
+                    # and would otherwise be uploaded three times over.
+                    backfills[cid].add(p)
                 for k in drift:
                     _bus, cid = k.split("|")
                     id_repairs[cid].append(
@@ -379,12 +612,21 @@ def build_plan(args) -> list:
                                         if overlapped and not any(
                                             f not in overlapped for f in reup_files)
                                         else "encoding/policy/size changed")})
+            for cid, bfiles in sorted(backfills.items()):
+                work.append({"action": "backfill_ids", "vehicle": vehicle,
+                             "session": session, "can_ids": [cid],
+                             "files": [str(f) for f in sorted(bfiles)],
+                             "reason": "message_added_to_dbc_since_upload"})
             for cid, entries in sorted(id_repairs.items()):
                 work.append({"action": "reupload_ids", "vehicle": vehicle,
                              "session": session, "can_ids": [cid],
                              "files": [str(f) for f, _a, _b in entries],
                              "windows": [[a, b] for _f, a, b in entries],
                              "reason": "msg_hash_mismatch"})
+
+    # Bus-label drift. Manifest-only, so it runs unconditionally alongside L0
+    # rather than behind --check-existing.
+    work.extend(label_drift_work(load_manifest_history()))
 
     # L1 is OPT-IN (--check-existing). It costs one full-session COUNT(*) per
     # session -- 212 of them against the current database, tens of minutes,
@@ -404,12 +646,44 @@ def build_plan(args) -> list:
             if not view:
                 continue
             hashes = current_hashes(vehicle)
-            orphans = [f"{b}|{c}" for (b, c) in view if (b, c) not in hashes]
+
+            # A series is an orphan only if NO definition could produce it AND
+            # its bus is one the profile names. The second half is not a
+            # refinement, it is the difference between a repair and data loss.
+            #
+            # `current_hashes()` is built over the named buses only, so no
+            # `ch<N>` pair can ever be in it -- see the note beside
+            # `is_unidentified_bus` in influx_upload. Testing membership alone
+            # therefore condemns EVERY unidentified-channel series, which is
+            # exactly what it did: 147 keys on 2026-10-04, 8 of them written
+            # minutes earlier by the uploader itself and 70 of them vtrux
+            # series holding 161,917 field-values that had nothing to do with
+            # the work in hand. L0 had already learned this lesson at its
+            # `drift` comparison; L1 never did, so the two layers disagreed
+            # with each other and both disagreed with the producer.
+            #
+            # The unidentified case is REPORTED, not dropped. The data is real
+            # -- frames were captured and decoded -- and what is missing is a
+            # bus label, which dropping the series does not supply. Whether
+            # those frames should have been uploaded at all is a question about
+            # the anchor sets (see notes/artifacts/anchor_discovery_audit.py),
+            # not something an orphan sweep can answer.
+            orphans, unidentified = [], []
+            for (b, c) in view:
+                if (b, c) in hashes:
+                    continue
+                (unidentified if iu.is_unidentified_bus(b) else orphans).append(
+                    f"{b}|{c}")
             legacy = [f"{b}|{c}" for (b, c), f in view.items() if "value" in f]
             if orphans:
                 work.append({"action": "drop_series", "vehicle": vehicle,
                              "session": session, "keys": sorted(orphans),
                              "reason": "not_defined_by_current_dbc_or_excluded"})
+            if unidentified:
+                work.append({"action": "review_unidentified_bus",
+                             "vehicle": vehicle, "session": session,
+                             "keys": sorted(unidentified),
+                             "reason": "channel_matched_no_anchor_set"})
             if legacy:
                 work.append({"action": "rebuild_session", "vehicle": vehicle,
                              "session": session,
@@ -472,6 +746,15 @@ def apply_plan(work, args):
                       f"in {Path(path).name}")
                 run_upload(item["vehicle"], item["session"], [path],
                            only_ids=[cid])
+        elif act == "backfill_ids":
+            # No delete. The id was never uploaded for these files, so there is
+            # nothing to remove and a DELETE would only risk taking out a
+            # neighbouring window.
+            cid = item["can_ids"][0]
+            for path in item["files"]:
+                print(f"    backfilling {cid} in {Path(path).name}")
+                run_upload(item["vehicle"], item["session"], [path],
+                           only_ids=[cid])
         elif act == "drop_series":
             for key in item["keys"]:
                 bus, cid = key.split("|")
@@ -480,6 +763,46 @@ def apply_plan(work, args):
                   f"session='{esc(item['session'])}' AND bus='{bus}' "
                   f"AND can_id='{cid}'", post=True)
                 print(f"    dropped {key}")
+        elif act == "drop_label_window":
+            # Remove the OLD bus tag's points inside this file's own window.
+            # Count first and skip a zero match rather than raising: unlike a
+            # per-id repair, zero here means the stale label is already gone,
+            # which is a clean state and not a manifest-vs-data disagreement.
+            t0, t1 = item["windows"][0]
+            for bus in item["keys"]:
+                before = q(f"SELECT COUNT(*) FROM signals WHERE "
+                           f"vehicle='{esc(item['vehicle'])}' AND "
+                           f"session='{esc(item['session'])}' AND "
+                           f"bus='{esc(bus)}' AND time >= {t0} AND time <= {t1}")
+                ser = before["results"][0].get("series")
+                n_before = sum(
+                    v for c, v in zip(ser[0]["columns"], ser[0]["values"][0])
+                    if c.startswith("count_") and v is not None
+                ) if ser else 0
+                if n_before == 0:
+                    print(f"    {item['file']}: no stale {bus} points in "
+                          f"window, nothing to do")
+                    continue
+                q(f"DELETE FROM signals WHERE "
+                  f"vehicle='{esc(item['vehicle'])}' AND "
+                  f"session='{esc(item['session'])}' AND bus='{esc(bus)}' "
+                  f"AND time >= {t0} AND time <= {t1}", post=True)
+                print(f"    {item['file']}: deleted {n_before:,} stale "
+                      f"{bus} values in {t0}..{t1}")
+        elif act == "report_label_drift":
+            print(f"    (reported, not executed -- {item['file']} changed bus "
+                  f"label off {' '.join(item['keys'])}, but its window "
+                  f"overlaps another chunk of this session, so a windowed "
+                  f"delete would take that chunk's data too)")
+        elif act == "review_unidentified_bus":
+            # Deliberately not executed. These series hold real decoded frames
+            # whose BUS is unknown; there is nothing here to repair without a
+            # decision about the anchor sets. Dropping them would be data loss
+            # dressed as a repair, which is what L1 used to propose.
+            print(f"    (reported, not executed -- {len(item['keys'])} "
+                  f"series on unidentified channels: "
+                  f"{' '.join(item['keys'][:8])}"
+                  f"{' ...' if len(item['keys']) > 8 else ''})")
         elif act == "rebuild_session":
             print("    (rebuild_session is reported, not executed -- it is "
                   "subsumed by the Phase 4 wipe)")
@@ -490,24 +813,39 @@ def apply_plan(work, args):
 # --------------------------------------------------------------------------
 
 def summarize(work):
-    by_action = defaultdict(lambda: {"items": 0, "files": 0, "bytes": 0})
+    # Count DISTINCT paths, not file references. Work items routinely share
+    # source files -- one log feeds every id defined in it -- so summing per
+    # reference multiplies the same bytes by however many items touch it. A
+    # redundant plan once reported 10.6 TB against a 104 GB corpus, which read
+    # as a storage problem rather than "reads the same file 29 times".
+    by_action = defaultdict(lambda: {"items": 0, "files": set()})
     sessions = set()
+    sizes = {}
+
+    def size_of(f):
+        if f not in sizes:
+            try:
+                sizes[f] = Path(f).stat().st_size
+            except OSError:
+                sizes[f] = 0
+        return sizes[f]
+
     for w in work:
         a = by_action[w["action"]]
         a["items"] += 1
-        for f in w.get("files", []):
-            a["files"] += 1
-            try:
-                a["bytes"] += Path(f).stat().st_size
-            except OSError:
-                pass
+        a["files"].update(w.get("files", []))
         sessions.add(w.get("session"))
+
+    all_files = set()
+    for v in by_action.values():
+        all_files |= v["files"]
+
     print(f"\n{'action':<18}{'items':>8}{'files':>8}{'GB':>9}")
     for k, v in sorted(by_action.items()):
-        print(f"{k:<18}{v['items']:>8}{v['files']:>8}{v['bytes']/1e9:>9.2f}")
-    print(f"{'TOTAL':<18}{len(work):>8}"
-          f"{sum(v['files'] for v in by_action.values()):>8}"
-          f"{sum(v['bytes'] for v in by_action.values())/1e9:>9.2f}")
+        nbytes = sum(size_of(f) for f in v["files"])
+        print(f"{k:<18}{v['items']:>8}{len(v['files']):>8}{nbytes/1e9:>9.2f}")
+    print(f"{'TOTAL':<18}{len(work):>8}{len(all_files):>8}"
+          f"{sum(size_of(f) for f in all_files)/1e9:>9.2f}")
     print(f"sessions touched: {len(sessions)}")
 
 
@@ -521,12 +859,27 @@ def main():
     ap.add_argument("--from", dest="from_file", metavar="FILE",
                     help="apply a previously written plan instead of recomputing")
     ap.add_argument("--limit", type=int, help="only act on the first N work items")
+    ap.add_argument("--backfill-id", nargs="+", metavar="ID",
+                    help="CAN id(s) newly added to a DBC, to upload into "
+                         "sessions that predate the definition (e.g. 0x18EFC000). "
+                         "Drift detection cannot find these on its own: it "
+                         "compares the hashes a file recorded at upload time, "
+                         "so a message that did not exist then is never "
+                         "examined. Backfill only ADDS points -- it never "
+                         "deletes -- and records the id in the manifest "
+                         "afterwards so it is not re-queued.")
     ap.add_argument("--check-existing", action="store_true",
                     help="also run the L1 data-derived scan over sessions already in "
                          "InfluxDB, to find orphan series and legacy-schema data. Costs "
                          "one full-session COUNT(*) per session (tens of minutes on the "
                          "current database) and is pointless before a wipe-and-rebuild.")
     args = ap.parse_args()
+
+    if args.backfill_id:
+        # Normalise to the "0xNNN" form the manifest and the can_id tag use.
+        args.backfill_id = ["0x%03X" % (int(x, 0) & 0x1FFFFFFF)
+                            for x in args.backfill_id]
+        print("backfilling can id(s): %s" % ", ".join(args.backfill_id))
 
     if args.from_file:
         work = [json.loads(l) for l in Path(args.from_file).read_text().splitlines() if l.strip()]

@@ -1,5 +1,6 @@
 package com.reverseit.coda
 
+import com.reverseit.tpms.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.reverseit.cancore.CanFrame
@@ -33,6 +34,22 @@ class CodaViewModel : ViewModel() {
 
     private val _specsState = MutableStateFlow(SpecsState())
     val specsState: StateFlow<SpecsState> = _specsState.asStateFlow()
+
+    /**
+     * Indirect-TPMS calibration. The settings page reads [TpmsCalibrationStore.lastEntry] and calls
+     * [TpmsCalibrationStore.set] from its SET button. The store is process-lifetime and owned by
+     * [CodaApplication], because drive rows reach it from the logging side with or without a UI.
+     *
+     * No default: there is deliberately no in-memory fallback that could be left wired by mistake
+     * and silently forget a calibration.
+     */
+    lateinit var tpmsStore: TpmsCalibrationStore
+        private set
+
+    /** Attach the application's store. Call before the UI first composes. */
+    fun useTpmsStore(store: TpmsCalibrationStore) {
+        tpmsStore = store
+    }
 
     private var inForeground = false
     private var attached = false

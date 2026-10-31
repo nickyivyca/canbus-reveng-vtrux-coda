@@ -13,12 +13,28 @@ The output goes into the vtrux flavor's bundled assets:
     android-app/CanLoggerApps/companion/src/vtrux/assets/live-display/dbcs/
 
 Run from project root:
-    py -3.12 tools/distill_dbcs.py
+    py -3.12 tools/distill_dbcs.py --wican-diag-dbc <path>
+
+The generator inhibitor's status page (0x7F1) comes from its decode DBC in the
+firmware repo, not from this folder (the reverse-it copy is frozen at schema
+7): extract it at the commit pinned in the Android repo's
+`notes/protocols/gen-inhibit-status-interface.md`, e.g.
+    git -C <esp-fw clone> show <commit>:gen-inhibit/diag/vtrux-wican-diag.dbc > <path>
+and pass it with --wican-diag-dbc. Without it the tool stops rather than
+silently dropping 0x7F1 (the display would then never show INHIBIT); pass
+--without wican to build without it on purpose.
+
+The app assets have drifted from this tool since 2026-09 (0x460, added by
+hand for the fault display, is not in SPEC; some comments differ), so do not
+overwrite them wholesale: generate with --out and carry over the changes.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+# Stands for the --wican-diag-dbc path in SPEC; resolved in main().
+WICAN_DIAG_DBC = "<wican diag DBC, --wican-diag-dbc>"
 
 # Per-bus distillation spec: bus_name -> source_dbc -> list of frame IDs to
 # include. IDs are decimal; comments give the hex form. Extended IDs (>= 1<<31)
@@ -44,6 +60,9 @@ SPEC: dict[str, dict[str, list[int]]] = {
             0x18FFD8C0,  # BELINV_j1772Info            -- BELINV_pilotDuty
             0x18FFD9C0,  # BELINV_chargeInfo           -- max available charging current
         ],
+        WICAN_DIAG_DBC: [
+            0x07F1,      # WICAN_Diag_Status        -- diag_schema_ver, diag_mode, diag_flags (EVAP INHIBIT)
+        ],
     },
     "obd": {
         "projects/vtrux/epri-obd-bus.dbc": [
@@ -53,7 +72,7 @@ SPEC: dict[str, dict[str, list[int]]] = {
             0x0442,      # TRAC_TrqFbk_0442 -- TRAC_TrqFbk
         ],
         "projects/vtrux/GMW8762_PPEI_GMLAN.dbc": [
-            0x03D1,      # Engine_General_Status_2 -- Throttle_Position (engine APP proxy per projects/vtrux/README.md)
+            0x00C9,      # Engine_General_Status_1 -- Accelerator_Actual_Position (generator tach throttle arc; Change 9)
             0x03FB,      # Engine_Fuel_Status -- Fuel_Alcohol_Composition (dual-native; also on Vehicle bus)
             0x04C1,      # Engine_General_Status_4 -- Engine_Coolant_Temperature. The EPRI DBC's
                          # definition for this message produced a stuck ~70 C
@@ -237,6 +256,12 @@ def main() -> None:
              "does have the spec DBC.",
     )
     ap.add_argument(
+        "--wican-diag-dbc",
+        metavar="PATH",
+        help="the generator inhibitor's decode DBC (gen-inhibit/diag/vtrux-wican-diag.dbc "
+             "at the pinned commit); required unless --without wican.",
+    )
+    ap.add_argument(
         "--out",
         metavar="DIR",
         help="write to DIR instead of the app asset folders (leaves the local "
@@ -245,10 +270,22 @@ def main() -> None:
     args = ap.parse_args()
     skip = tuple(args.without)
 
+    wican_skipped = any(s in WICAN_DIAG_DBC for s in skip)
+    if not args.wican_diag_dbc and not wican_skipped:
+        raise SystemExit("--wican-diag-dbc PATH is required (see the docstring), "
+                         "or --without wican to leave out 0x7F1 on purpose")
+    if args.wican_diag_dbc and not Path(args.wican_diag_dbc).is_file():
+        raise SystemExit(f"--wican-diag-dbc: not a file: {args.wican_diag_dbc}")
+    spec = {
+        bus: {(args.wican_diag_dbc if p == WICAN_DIAG_DBC and not wican_skipped else p): ids
+              for p, ids in sources.items()}
+        for bus, sources in SPEC.items()
+    }
+
     out_dirs = [Path(args.out)] if args.out else OUT_DIRS
     for out_dir in out_dirs:
         out_dir.mkdir(parents=True, exist_ok=True)
-    for bus, sources in SPEC.items():
+    for bus, sources in spec.items():
         used = {
             p: ids
             for p, ids in sources.items()

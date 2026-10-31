@@ -1,0 +1,36 @@
+
+coda_20261004_161521_T0 under f7 CAL: recorded resets 7, predicted 3
+   predicted   26.4392 s  reason 12   nearest recorded   26.4392 s  (+0.0 ticks)
+   predicted   63.7692 s  reason 12   nearest recorded   63.7819 s  (-1.3 ticks)
+   predicted  180.7092 s  reason 12   nearest recorded  180.7119 s  (-0.3 ticks)
+   recorded   26.4392 s  segment from    2.0000 s  MATCHED
+   recorded   34.9113 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded   42.3158 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded   63.7819 s  segment from   48.1119 s  MATCHED
+   recorded   68.0169 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded  180.7119 s  segment from   69.4520 s  MATCHED
+   recorded  184.1875 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded resets matched within 2 ticks: 3 / 3 scorable (7 recorded)
+
+coda_20261004_165539_T0 under c4c CAL: recorded resets 0, predicted 0
+
+coda_20261004_161521_T0 under c4c CAL: recorded resets 7, predicted 0
+   recorded   26.4392 s  segment from    2.0000 s
+   recorded   34.9113 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded   42.3158 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded   63.7819 s  segment from   48.1119 s
+   recorded   68.0169 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded  180.7119 s  segment from   69.4520 s
+   recorded  184.1875 s  NOT SCORABLE (no quiet point after the previous return)
+   recorded resets matched within 2 ticks: 0 / 3 scorable (7 recorded)
+
+coda_20261004_165539_T0 under f7 CAL: recorded resets 0, predicted 9
+   predicted   53.1865 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted   56.5965 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted   59.1465 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted   61.4865 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted   63.2365 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted   70.4565 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted  126.4865 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted  132.6065 s  reason 12   nearest recorded -  (+nan ticks)
+   predicted  147.9765 s  reason 12   nearest recorded -  (+nan ticks)

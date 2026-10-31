@@ -77,6 +77,10 @@ class BusIdentityResolver(
      * (after `decisionWindowMs`, latching the current best guess).
      */
     fun observe(frame: CanFrame): String? {
+        // An error frame's id is an error-class mask, not a message: it must not count as an
+        // anchor, and an adapter on a dead bus reports errors, so it must not keep the bus alive
+        // either. CanFrameSource.frames never carries one; this guards other feeds.
+        if (frame.isError) return _assignments.value.entries.firstOrNull { it.value == frame.busIndex }?.key
         val nowMs = frame.timestampMs
         lastSeenMsByBus[frame.busIndex] = nowMs
 

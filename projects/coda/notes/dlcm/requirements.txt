@@ -1,0 +1,10 @@
+# Dependencies for dlcm_flash_proxy.py (DLCM flash MITM proxy).
+# Install with:  py -3.12 -m pip install -r requirements.txt
+
+# Required: CAN bus access + the canbench.live.receiver interface detection helper.
+python-can>=4.0
+
+# Optional: only needed to detect gs_usb / candleLight (Innomaker) dongles.
+# Not required for ixxat / kvaser / pcan / socketcan interfaces.
+# libusb-package
+# pyusb

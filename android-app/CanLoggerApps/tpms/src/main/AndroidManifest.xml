@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        TPMS GPS common-mode channel: GPS SPEED only, never position (owner rule). Fine location
+        is required for GPS speed; Android 12 requires coarse to be requested alongside it.
+        FOREGROUND_SERVICE_LOCATION is enforced from Android 14 for GpsSpeedService. Declared here,
+        not in the app, so only apps that include this module ask for location.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!--
+        HardwareReport samples the head unit's motion sensors at their fastest rate; from Android 12
+        anything above 200 Hz needs this (a normal permission, granted at install, no prompt).
+    -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
+    <application>
+        <service
+            android:name=".GpsSpeedService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+    </application>
+
+</manifest>

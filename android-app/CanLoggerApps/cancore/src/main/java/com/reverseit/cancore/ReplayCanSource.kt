@@ -107,7 +107,7 @@ class ReplayCanSource(
                 val sleep = targetMs - now
                 if (sleep >= MIN_SLEEP_MS) delay(sleep)
 
-                emit(parsed.frame.copy(timestampMs = System.currentTimeMillis()))
+                emit(parsed.frame.copy(timestampMs = System.currentTimeMillis(), elapsedNanos = System.nanoTime()))
                 count++
             }
         }

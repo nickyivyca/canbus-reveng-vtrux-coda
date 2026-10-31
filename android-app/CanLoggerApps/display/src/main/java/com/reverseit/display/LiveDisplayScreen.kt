@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.reverseit.cancore.DataSourceStatus
 import com.reverseit.display.widgets.ColorBand
 import com.reverseit.display.widgets.ColorBandSlider
+import com.reverseit.display.widgets.FaultStrip
 import com.reverseit.display.widgets.ReferenceLine
 import com.reverseit.display.widgets.SliderMarker
 import com.reverseit.display.widgets.StatusWord
@@ -59,15 +61,30 @@ fun LiveDisplayScreen(
     val status by viewModel.status.collectAsState()
     val signals by viewModel.signalValues.collectAsState()
 
+    // One latch drives both readouts: the `Battery status` word in the battery
+    // column and the fault strip below the mode panel. Hoisted here so they
+    // cannot disagree about what the pack is doing.
+    val latchedFault = rememberLatchedFault(signals)
+
+    // Expansion is hoisted so the screen can follow the strip down when it
+    // grows. Keyed on the fault's start so a new event opens collapsed.
+    val scrollState = rememberScrollState()
+    var faultExpanded by remember(latchedFault?.startedAtMs) { mutableStateOf(false) }
+    LaunchedEffect(faultExpanded, scrollState.maxValue) {
+        // Re-runs once the expanded card has been measured, so maxValue is the
+        // new content height rather than the pre-expansion one.
+        if (faultExpanded) scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f).padding(start = 8.dp, end = 4.dp)) {
-                BatteryPanel(signals)
+                BatteryPanel(signals, latchedFault)
             }
             Column(modifier = Modifier.weight(1f).padding(start = 4.dp, end = 8.dp)) {
                 GeneratorPanel(signals)
@@ -76,6 +93,21 @@ fun LiveDisplayScreen(
 
         Spacer(Modifier.height(12.dp))
         ModePanel(signals)
+
+        // Fault statement. Renders nothing while the truck is healthy, so the
+        // resting layout is unchanged; on a trip it states the cause the pack
+        // latched at the moment it tripped, not whatever the signals happen to
+        // say later. See FaultLatch.kt for why that distinction matters.
+        if (latchedFault != null) {
+            Spacer(Modifier.height(10.dp))
+            FaultStrip(
+                latched = latchedFault,
+                expanded = faultExpanded,
+                onToggle = { faultExpanded = !faultExpanded },
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
+
         // Reserve room above the bottom status banner + floating cog.
         Spacer(Modifier.height(100.dp))
     }
@@ -88,7 +120,7 @@ fun LiveDisplayScreen(
 // --- panels ---------------------------------------------------------------
 
 @Composable
-private fun BatteryPanel(signals: Map<String, Double>) {
+private fun BatteryPanel(signals: Map<String, Double>, latched: LatchedFault?) {
     SectionTitle("Battery")
 
     ColorBandSlider(
@@ -138,7 +170,7 @@ private fun BatteryPanel(signals: Map<String, Double>) {
 
     val mainc = signals["bcm_mainc_stat"]?.toInt()
     val (cName, cColor) = contactorStateLabel(mainc)
-    val (fName, fColor) = faultStateLabel(signals, mainc)
+    val (fName, fColor) = batteryStatusLabel(mainc, latched)
     val isCharging = mainc == 12
     val balancing = signals["bcm_balancing"]?.toInt() ?: 0
     val balCount = signals["bcm_balancing_cnt"]?.toInt() ?: 0
@@ -483,50 +515,52 @@ private val motorTempBands = listOf(
     ColorBand(80.0, 100.0, Color(0xFFC62828)),
 )
 
+// States 0 and 14 used a pure-black chip, which is the screen background, so
+// the two states the truck sits in after every fault rendered as bare text
+// with no chip at all. Grey keeps them legible as states rather than gaps.
 private fun contactorStateLabel(value: Int?): Pair<String, Color> = when (value) {
     null -> "—" to Color(0xFF424242)
-    0 -> "ALL_OPEN" to Color(0xFF000000)
+    0 -> "ALL_OPEN" to Color(0xFF424242)
     7 -> "WAIT_PRECHARGE" to Color(0xFF00ACC1)
     8 -> "CLOSE_MAINP" to Color(0xFF00ACC1)
     11 -> "DRIVE_CLOSED" to Color(0xFF2E7D32)
     12 -> "CHARGE_CLOSED" to Color(0xFF2E7D32)
     13 -> "SHUTDOWN_REQ" to Color(0xFF00ACC1)
-    14 -> "ALL_OPEN_SD" to Color(0xFF000000)
+    14 -> "ALL_OPEN_SD" to Color(0xFF424242)
     else -> "STATE_$value" to Color(0xFF424242)
 }
 
 /**
- * Fault state derivation per spec §"Fault state derivation".
+ * The `Battery status` word.
  *
- * Interlock-fault suppression: HVIL is allowed to open whenever the BMS is
- * not actively maintaining the HV loop. Only states where contactors are
- * commanded closed (or transitioning to/from closed) treat HVIL=0 as a
- * fault. See `vtrux-live-display-ui.md` §"Interlock fault suppression".
+ * Replaces the old priority ladder, which derived a fault word from whatever
+ * the signals said at this instant. That ladder had two failure modes the
+ * owner hit in practice: `bcm_epo` outlived every other condition once the
+ * contactors opened, so real causes were overwritten by `FAULT: EPO`; and a
+ * normal EVSE unplug drops HVIL while `mainc` is still 12, so it painted a red
+ * `FAULT: INTERLOCK` on a routine end-of-charge. Both are gone -- the word now
+ * comes from [classify], which requires the pack's own trip record before it
+ * calls anything a fault.
+ *
+ * The headline only appears while the fault is ACTIVE. Once it clears, this
+ * word returns to describing the present (`OK` / `IDLE`) and the grey fault
+ * strip below carries the history, so the two readouts do not both sit on a
+ * stale cause.
  */
-// HVIL-eligible states: HVIL break here is a real fault. State 13
-// (SHUTDOWN_REQUEST) is intentionally excluded -- the BMS is in the
-// process of opening contactors and a legitimate HVIL drop happens
-// during normal truck-off. Same for state 14 and state 0.
-private val hvilEligibleStates = setOf(7, 8, 11, 12)
-
-private fun faultStateLabel(
-    signals: Map<String, Double>,
+private fun batteryStatusLabel(
     mainc: Int?,
+    latched: LatchedFault?,
 ): Pair<String, Color> {
-    val hvil = signals["bcm_hvil_mon"]?.toInt()
-    val epo = signals["bcm_epo"]?.toInt()
-    val gfd = signals["bcm_gfd"]
-    val alarm = signals["bcm_alarm"]?.toInt() ?: 0
-    val red = Color(0xFFC62828)
+    if (latched != null && latched.phase == LatchPhase.ACTIVE) {
+        val color = when (latched.verdict.severity) {
+            FaultSeverity.WARNING -> Color(0xFFEF6C00)
+            else -> Color(0xFFC62828)
+        }
+        return latched.verdict.headline to color
+    }
     return when {
-        hvil == 0 && mainc in hvilEligibleStates -> "FAULT: INTERLOCK" to red
-        epo == 1 -> "FAULT: EPO" to red
-        gfd != null && gfd < 500.0 -> "FAULT: ISOLATION" to red
-        // Alarm level 2 is suppressed -- treated as normal informational
-        // chatter. Levels 1 and 3 still surface as faults.
-        alarm > 0 && alarm != 2 -> "ALARM L$alarm" to red
         mainc == 11 || mainc == 12 -> "OK" to Color(0xFF2E7D32)
-        else -> "IDLE" to Color(0xFF000000)
+        else -> "IDLE" to Color(0xFF424242)
     }
 }
 

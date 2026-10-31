@@ -1,0 +1,20 @@
+
+coda_20260425_225558_T0 under stock CAL: recorded resets 3, predicted 0
+   recorded  173.8020 s  segment from    2.0000 s
+   recorded  185.7250 s  segment from  175.2359 s
+   recorded  208.5889 s  segment from  193.6190 s
+   recorded resets matched within 2 ticks: 0 / 3 scorable (3 recorded)
+
+coda_20260426_151050_T10 under stock CAL: recorded resets 1, predicted 0
+   recorded  293.7450 s  segment from    2.0000 s
+   recorded resets matched within 2 ticks: 0 / 1 scorable (1 recorded)
+
+coda_20260507_162751_T0 under stock CAL: recorded resets 1, predicted 0
+   recorded   62.6460 s  segment from    2.0000 s
+   recorded resets matched within 2 ticks: 0 / 1 scorable (1 recorded)
+
+coda_20260721_202537_T17 under stock CAL: recorded resets 3, predicted 0
+   recorded  182.8630 s  segment from    2.0000 s
+   recorded  194.7959 s  segment from  184.3070 s
+   recorded  217.0960 s  segment from  201.5090 s
+   recorded resets matched within 2 ticks: 0 / 3 scorable (3 recorded)

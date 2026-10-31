@@ -13,7 +13,7 @@ is known to be polled on the OBD bus whenever the engine runs:
       lower than during a cycle?
 
   Q3  Could the high duty explain the occasional stall during evap purge?
-      `notes/engine-stall-analysis.md` traces the stall to a VCM wind-down /
+      An internal-only note traces the stall to a VCM wind-down /
       ECM DFCO timing gap, and its outstanding question 4 is "why only when in
       evap purge?" -- which was unanswerable without a purge-flow signal.
 
@@ -503,7 +503,7 @@ def phase4(data):
             # cases.
             #
             # What does separate them is the APPROACH, which is also the
-            # mechanism engine-stall-analysis.md describes: a deliberate stop
+            # mechanism the internal-only stall analysis describes: a deliberate stop
             # decays from a healthy RPM in about a second, whereas a stall
             # wallows for seconds at sub-idle RPM first, and only then gets
             # cut by DFCO. So the metric is the length of the contiguous

@@ -48,14 +48,110 @@ All four buses are accessible at the OBD-II (J1962) connector.
 
 **Channel numbers in log files are arbitrary** (dongle insertion order varies per session). Always identify buses by their message content, not by channel number.
 
-| Bus   | Anchor IDs | Condition | Confidence |
-|-------|-----------|-----------|------------|
-| C CAN | 0x000–0x019 (cell voltages, 104 cells) | Always present | Definitive |
-| B CAN | 0x1D5, 0x48A (DCDC), 0x275 (BMS limits), 0x381 (cell min/max/avg), 0x383 (SoC) | Always present when key-on | High |
-| B CAN | 0x274–0x27D, 0x615–0x617 (charger) | Only during charging | Definitive |
-| D CAN | 0x308, 0x312, 0x325, 0x330, 0x580 (D CAN exclusive — not rebroadcast to B CAN) | Confirmed in 4 sessions | High |
+**Audited 2026-09-29** against 45 multi-channel captures
+(`notes/artifacts/anchor_exclusivity_audit.py`). Four ids this table previously published as
+anchors are gateway rebroadcasts and cannot identify a bus; they are listed as withdrawn below
+rather than deleted, because they appear in older analysis whose bus labels are therefore
+unevidenced.
+
+| Bus   | Anchor IDs | Condition | Status |
+|-------|-----------|-----------|--------|
+| C CAN | 0x000–0x019 **except 0x004 and 0x00C** (cell voltages, 104 cells) | Always present | **Audited exclusive**, 45 captures; 0x004 and 0x00C withdrawn 2026-10-09 (below) |
+| B CAN | 0x48A (DCDC), 0x381 (cell min/max/avg) | Always present when key-on | **Audited exclusive**, 45 captures |
+| B CAN | 0x615–0x617 (charger) | Only during charging | **Audited exclusive**, 45 captures |
+| D CAN | 0x308, 0x312, 0x325, 0x330, 0x580 | Always present when key-on | **Audited exclusive**, 45 captures |
+
+**Withdrawn as anchors — these are rebroadcast and identify nothing:**
+
+| Was listed as | IDs | Measured split |
+|---|---|---|
+| B CAN anchors, "High" | 0x1D5 (DCDC), 0x275 (BMS limits), 0x383 (SoC) | 50.00 % — e.g. 0x1D5 `{ch2: 5648, ch1: 5648}` |
+| B CAN charger range, "Definitive" | 0x274–0x27D **as a range**: 0x275 and 0x276 are rebroadcast | 50.00 % |
+| "an anchor such as 0x212" (C CAN section) | 0x212 | 50.00 % — `{ch2: 7299, ch1: 7299}` |
+
+**How the audit decides, and why presence is not the test.** The GWM rebroadcasts frame for
+frame, so a pass-through shows a near-exact even split between two channels — every confirmed
+case measured 49.93–50.00 % minority share, which is the same mechanism as the doubled-count
+hazard below. Stray traffic looks nothing like that: C CAN `0x004` and `0x00C` each appear once
+on a second channel against 901 real frames, with payloads that are plainly not cell voltages,
+and the cell range is exclusive as a *frame split*. A first version of the audit tested only "does this id appear
+on two channels" and reported the cell range as rebroadcast on the strength of those single
+frames — one frame deciding a verdict, the failure that AGENTS.md's discriminator rule exists to
+prevent. Verdicts here are taken from the frame split, and the counts are printed so they can be
+checked.
+
+**`0x004` and `0x00C` are withdrawn as presence anchors (2026-10-09).** The "stray" frames
+above are not noise. A sweep of all 1082 captures in `CANLogs/CodaLogs/` found `0x00C` on the
+D CAN channel in 3 captures and on the B CAN channel in 14, at 1–17 frames per capture, with
+payloads such as `00 00 02 00 00 00 00 1A` followed 2 s later by `00 00 04 00 00 00 00 23`.
+`0x004` (all-zero payload, 1–10 frames per capture) appears the same way on the B CAN channel
+of 28 captures (its withdrawal: user decision, 2026-10-09).
+
+**Corrected 2026-10-28: these are the gs_usb adapter's CAN error reports, not a rare message
+sharing the id.** The Android logger writes the adapter's error frames as ordinary standard
+frames whose id is the SocketCAN error-class mask (`0x004` controller, `0x00C` controller +
+protocol) -- see `android-app/notes/outstanding-changes.md` Bug 11. The `0x00C` payloads fit
+that layout: `data[2]` is the protocol error type (`0x02` form, `0x04` stuff), `data[7]` the
+receive error counter. The 2026-10-09 reasoning -- a corrupt frame cannot pass CAN's CRC, so
+the id must be shared with another message -- was written before this was understood: these
+are not frames another node sent; the adapter generates them when it detects an error on the
+bus.
+
+The withdrawal stands, for a different reason: an error report can appear on any channel, so
+it identifies no bus. A presence-based discriminator that lets any frame of another bus's
+anchor veto a channel (`tools/codasim/io/logreplay.py`) rejected the D CAN channel of
+`coda_20260801_122531_T0` on a single such frame. The remaining 24 cell ids are ample.
+
+Desktop BUSMASTER Kvaser captures also carry short `0x000` status frames (DLC 4) on any bus.
+canbench marks them as inferred errors (`tools/error-report-sweep/README.md`, "Kvaser
+id-0x000 status frames"), so `0x000` stays an anchor: the real cell frame is DLC 8.
+
+**NOT YET AUDITED, and the audit could not have found these.** The 2026-09-29 sweep tested
+exactly the ids this table already published, so by construction it could only *remove*
+anchors, never discover better ones. Two leads it therefore missed:
+
+- **A larger B CAN exclusive set already exists on the Android side.**
+  `CodaConstants.B_CAN_EXCLUSIVE_IDS` is `{0x378, 0x381, 0x382, 0x390, 0x391, 0x270, 0x271,
+  0x2C1}` — eight ids, against the two this table can now vouch for — and
+  `android-app/android-coda-tpms-implementation.md` records the same rebroadcast problem with
+  `0x275`/`0x383`/`0x1D5`, reached independently. If those eight audit clean, B CAN regains a
+  minimum-distinct-hits guard, which the 2-id set cannot support (2 of 55 channels carry only
+  `0x381`).
+- **`0x492`** was dropped from canbench's B CAN anchors on 2026-10-30 and is still unaudited;
+  the internal `can_logger_vehicle_support` plan still lists it.
+
+**canbench's table matches this one (2026-10-30, can-tools `f407e0f`).** The rebroadcast ids,
+`0x004` / `0x00C` and the never-audited `0x492` are gone from `canbench/live/vehicle_configs.py`.
+Its resolver names a channel only with at least 2 anchors of one bus and none of another, and
+raises on ambiguity rather than picking a winner. Nothing is named by elimination, so Diag CAN is
+never named, and a lone D CAN capture is no longer called B CAN. Phase 3 of
+`notes/artifacts/anchor_exclusivity_audit.py` checks the two tables against each other.
+`projects/coda/gui_profile.py` still carries the old set and is read by nothing (held GUI work).
+
+Do not copy the old set into a `can_display_server.py` bus-identity JSON either: its threshold is
+`min(3, len(anchor_ids))`, which three rebroadcast ids clear on D CAN traffic alone. Only
+`can_display_bus_identity_vtrux.json` exists today, so there is no Coda exposure there yet.
+
+Several
+per-investigation scratchpads under `notes/artifacts/` carry the old set too, and any bus label
+in older notes that cites `0x1D5`, `0x275` or `0x383` as its evidence — for example
+`notes/rcu_keyfob/rcu_keyfob_analysis.md` — is unevidenced rather than necessarily wrong.
+
+**Anchor sets are easy to invert.** `influx_upload.py`'s `exclude` list entry
+`{"can_id": 0x1D5, "bus": "d_can"}` means *exclude the D CAN copy* — so 0x1D5 is B CAN native.
+Read as "0x1D5 is a D CAN id" it produces an anchor set of exactly the wrong bus, composed
+entirely of rebroadcast ids, which then cannot separate in either direction. That happened on
+2026-09-29 in `notes/artifacts/powerstate_ladder_check.py`.
+
 
 D CAN exclusive IDs are never rebroadcast to B CAN by the GWM gateway. Most other D CAN IDs (0x1C0, 0x208, 0x210, 0x212, 0x418, etc.) are also present on B CAN via gateway pass-through. See `notes/driver-inputs.md` for full gateway rebroadcast inventory.
+
+**Counting hazard: pass-through means one frame can be counted twice.** A corpus count of a
+rebroadcast ID that does not deduplicate by bus comes out **exactly doubled**, and the doubled
+figure looks entirely reasonable on its own. Two instances so far: a `0x208` census reported at
+138,460 against a true 69,230, and a `0x200` TC-event burst at 300 frames against 150. An exact
+factor of two between two people's frame counts is the tell — suspect the gateway before
+suspecting the parser.
 
 ### Non-Cell IDs Visible on C CAN
 
@@ -66,6 +162,21 @@ additional status messages on its C CAN diagnostic port beyond just cell data.
 **Confirmed:** `codacharging.log` (Bus 1=C CAN, Bus 3=B CAN) shows zero shared IDs between
 the two buses, ruling out any electrical coupling or cross-bus leakage at the OBD connector.
 See `notes/charging-analysis.md` Goal 2. D CAN gateway rebroadcast behavior characterized — see `notes/driver-inputs.md` for full inventory.
+
+**Counting hazard: `0x200` and `0x300` are each two different messages.** The ESC message on
+D CAN and an unrelated C CAN message share both IDs. Any count, histogram or rate for these
+IDs that does not split by bus merges two unrelated populations, and the result reads as one
+message with more states than it has. This has produced a wrong answer three times: sub-frame
+values from the C CAN message written into the ESC message's `CM_` as ESC startup frames
+(2026-03, corrected 2026-09-26); an "undocumented sub-frame" reported and retracted
+(2026-09-25); and a filter-cost figure inflated several-fold (2026-09-26). Identify the bus by which channel carries an
+**audited-exclusive** anchor, per session — `0x308`/`0x312`/`0x325`/`0x330`/`0x580` for D CAN,
+`0x48A`/`0x381` for B CAN, the cell range for C CAN. The channel index differs between
+captures, so a fixed channel filter gives opposite answers on different files.
+**This paragraph recommended `0x212` until 2026-09-29, which was wrong**: `0x212` is a gateway
+rebroadcast present on both buses, named as such eleven lines above in this same file, so it
+returns a channel for every capture and can never fail to. Any bus label derived from it is
+unevidenced regardless of whether it happened to be right.
 
 ---
 
@@ -158,6 +269,38 @@ separate axis, unaffected.
 **Pack voltage cross-check:** `sum(104 raw cell values) / 1000` = pack voltage in V (~338V typical).
 Use this to anchor/validate any pack voltage signal found on B CAN.
 
+**Broadcast rate — depends on vehicle state.** The 26 frames go out as one
+back-to-back burst; what changes is how often the burst repeats. Measured by
+`notes/artifacts/cell_frame_sweep_rate.py`:
+
+| State | Burst period | Source |
+|-------|--------------|--------|
+| Driving | **0.15 s** (p10 0.14, p90 0.17, n=12,860) | `frombonnydoon.log`, 33 min |
+| Charging, bulk phase | **14.24 s** (p10 14.23, p90 14.25, n=351 — not one interval under 10 s) | `coda_20260722_173203_*`, first 90 min |
+| Charging, near end-of-charge | mixed: 69 bursts <0.3 s, 87 at 0.3–2 s, 51 still ≥10 s (n=208) | same session, after t=5608 s |
+
+The fast episodes during charging are intermittent, not a permanent switch — the rate
+flips to the 0.15 s driving cadence for a run of bursts, then back to 14.24 s. The first
+one begins at t=5608 s, 27 s after Cell82's peak. **Hypothesis, untested:** the OV
+excursion is what triggers them; it could equally be balancing activity or a charger
+state change.
+
+Practical consequence: a live cell display looks frozen for 14 s at a time on a
+plugged-in car. That is the BMS, not the tool.
+
+**Which captures carry C CAN.** C CAN needs a third dongle, so most Coda captures have
+only B and D. The sessions with cell frames:
+
+| Session | Path | Notes |
+|---------|------|-------|
+| 2026-07-22 charge to 100% | `../../CANLogs/CodaLogs/coda_20260722_173203_T0..T21` | Cleanest cell data; 75.7% -> 100% SoC past the OV cutoff. 602 complete sweeps over 106.8 min. |
+| 2026-02 Bonnydoon drive | `logs/frombonnydoon.log` | 33 min of driving; the 0.15 s cadence reference |
+| 2026-07-21 Android 3-dongle | `../../CANLogs/CodaLogs/coda_20260721_192435_T0..T2`, `_201109_T0/T1`, `_202031_T0` | Shorter |
+
+Rendering either mapping of these frames onto the physical pack:
+`coda-diagnostics/cell_viewer/`, in the `coda-diagnostics` submodule
+(see `notes/pack-physical-layout.md` for the mapping itself).
+
 ### 4. CODACAN LabVIEW Decompile and Replay (B+D CAN)
 
 `CODACAN/CODACAN.exe` is the original Coda engineering diagnostic application. Its LabVIEW
@@ -229,14 +372,15 @@ See `notes/charging-analysis.md` for encoding and full decode.
 | 0x052 | ParkingBrake_Crank | misc_Recvd | ParkingBrake, crank signal |
 | 0x080 | EPS_Steering | EPS | RelativeSteeringAngle; CRC8 protected |
 | 0x210 | ThrottlePedalPos | misc_Recvd | ThrottlePedalPos |
-| 0x215 | Unknown | misc_Recvd | 16-bit word, scale 1/128 (VICD). TCM.ParkLock hypothesis invalidated — see `notes/codacan-signal-decode-notes.md` Section 5c. |
+| 0x215 | Unknown (ESC suspected) | misc_Recvd | **B0:B1 = VehicleSpeed**, km/h x 128 BE, confirmed 2026-10-26 (odometer integration and r = 1.000 against the ESC wheel speeds); B2-B6 undecoded. The HVAC reads it with a precedence bug. See `notes/hvac/coda-hvac-decompile-notes.md` section 5.4. TCM.ParkLock hypothesis invalidated — `notes/codacan-signal-decode-notes.md` Section 5c. |
 | 0x271 | GWM_VehFaults | GWM | Gateway rebroadcast of B CAN 0x271 (same structure) |
 | 0x273 | IPK_ClusterData | IPK | Primary ODO, Interior Illum, Side Light Active, Low Beam Active |
-| 0x308 | TCM_ParkPin | TCM | ParkPinState, shaft speed. BorgWarner cross-vehicle match with Vtrux — see `notes/borgwarner.md`. |
-| 0x330 | Long_Accel | ESC? | Longitudinal acceleration |
+| 0x300 | ESC_0x300 | ESC | **Yaw rate** in B6-B7 BE (zero 32792, ~0.0094 deg/s/count, positive = left), plus **TWO 13-bit ESC torque limits** -- `ESP_BrakingTqLimit` in B2-B3 and `ESP_TractiveTqLimit` in B4-B5 -- **and an arming flag for the second of them in B4 bit 6**. Both limits 13-bit BE, `internal = (raw - 2000)/0.4` = `raw*2.5 - 5000` (confirmed from `FUN_8006F05A`), in internal torque counts where 1 count = 0.1 Nm. Read by `FUN_80080588` (B2-3) and `FUN_80080572` (B4-5) and applied as `min(magnitude, max(limit, 0))` in `FUN_800771FA`. Named for what they bound relative to **travel direction**, not sign, because `FUN_800768D6` negates one and passes the other per direction, so **forward, B2-3 is the regen limit and B4-5 the drive limit; they swap in reverse** -- a sign-based name is wrong in one gear. ~~It mirrors delivered torque rather than limiting it~~ / ~~NAMING CONFLICT, unresolved~~ -- **BOTH WITHDRAWN 2026-10-03: both fields are torque limits, both bind, and the naming is settled** (`MMAX_ESP_REGEN_TQ_REQ` was renamed `ESP_TractiveTqLimit`, which the firmware confirms is the drive-side limit). **The two behave very differently and the difference is one bit.** B2-3 is gated on CAL `0xA0021715` and fault flags only: it fires **5 times in 363 sessions**, goes to **exactly 0** for 2.5-21 s, with `ABS_BrakeEvent` coincident within one sample in all five, and on 2026-10-02 took all 156 Nm of regen. B4-5 additionally requires **B4 bit 6**, a runtime arming flag (`FUN_8008054E` -> `0xD0006844` -> the gate on `FUN_800771FA`'s tractive `min()`), set in only **0.0146 %** of 315,555 frames: it fires **34 times across 29 sessions**, for 0.02-0.86 s, and only partially (to 148-223 Nm of a ~300 Nm ceiling). **When B4 bit 6 is clear, B4-5 idles at a value equal to the `0x212` torque request** (MAE 0.28-0.39 Nm over six sessions, median residual 0), which is why the field read as a mirror for so long -- mirror and limit are the same data until the flag arms it. **Masking: mask the 13-bit VALUE with `0x1FFF`, but do not treat the remaining B4 bits as noise** -- bit 6 is the arming flag above, bit 7 is an alternate-frame toggle at exactly 50.0000 %, and bit 5 is never set in 315,555 frames (role unknown). B2 bits 5-7 are always 0: the braking side has no arming bit. 50 Hz, `B0 == 0x00`. **A different message shares this ID on C CAN** (BMS diagnostic port, muxed 8 ways) -- identify by content, and note a `B0 == 0` filter does NOT separate them since the C CAN mux includes 0. See `notes/yaw-rate-signal.md`, `notes/dlcm/esp-torque-intervention.md` |
+| 0x308 | DLCM_ParkRequest | **DLCM** | ParkRequest (B0 bits 6-5: 0=OFF, 1=Park, 2=UnPark) + shaft speed sent to the TCM. Corrected 2026-09-24 from "TCM_ParkPin / TCM": the DLCM transmits it and the request leads the TCM's 0x55C by 55-89 ms on both vehicles. BorgWarner cross-vehicle match with Vtrux — see `notes/borgwarner.md`. |
+| 0x330 | Long_Accel | misc_Recvd | **Longitudinal acceleration, confirmed 2026-09-20.** DLC is 8 (not 1): B0-B6 constant, **B7** is the signal, offset binary with zero at raw 123, 0.08 m/s2/count, 50 Hz, raw >= 200 invalid. Now an `SG_` in the DBC. See `notes/dlcm/dlcm-torque-limiter-code-trace.md` and `notes/dlcm/artifacts/accel_signal_hunt.py`. |
 | 0x370 | DeathCounters | misc_Recvd | Death counter batch |
 | 0x55C | TCM_State | TCM | TCMState. BorgWarner cross-vehicle match with Vtrux — see `notes/borgwarner.md`. |
-| 0x600 | TPMS_Pressure | RCU | Tire pressures; does not trigger TPMS indicator in CODACAN |
+| 0x600 | misc_0x600 | RCU | **B7 bit5 = TPMS telltale — CONFIRMED 2026-09-21** (`SG_ TPMS_TelltaleFault`): flipped at 11:09:56 against the owner's observation of the lamp at 11:10. Cleared by a 12 V disconnect, re-latches after **421 s (7 min) of driving above 30 km/h** (sd 1.07 s, 6 clusters). **Still not tyre pressure** (disproved 2026-09-20): B5/B6 is a monotonic ~1 Hz counter, B1-B4 frozen across all 985 corpus files, B0 a 4-phase tag with identical payload. DLC is 8, not 2. See `notes/indirect-tpms-feasibility.md` |
 
 **Note:** misc_Recvd IDs (0x052, 0x080, 0x210, 0x215, 0x271, 0x273, 0x330, 0x370, 0x600)
 are assigned to D CAN (RCU, TCM, ESC are D CAN modules), but most are also rebroadcast to
@@ -273,21 +417,41 @@ DBC: `BO_ 1786 GWM_VIN` with mux signals `VIN_C01`–`VIN_C17`. Identical messag
 
 Normal steady-state B0 = 0x20 (bit 5 only). Parts car steady-state B0 = 0xA0 (bits 7+5). Transient 0xAA during startup lamp test. Corresponds to DTCs B1382/B2505.
 
-#### 0x312 — ESC Internal Measurement Frame (D CAN, 100 Hz) -- 2026-03-20
+#### 0x312 — DLCM Torque and Torque Limits (D CAN, 100 Hz) -- corrected 2026-09-24
 
-Mux frame, NOT a simple 4-channel wheel speed message (previously mischaracterized).
-Full decode in `notes/traction-control-analysis.md` (0x312 Structure Decoded section).
+**This is a DLCM message, not an ESC message.** It is TX record 10 in the DLCM's own
+CAN transmit table at `0x80041B74`, 10 ms period, and `FUN_80080C14` writes all eight
+bytes from the `0xD00069Dx` torque mirror block. The "ESC Internal Measurement Frame"
+reading below it is withdrawn; so are the wheel-speed and ESC-deceleration readings in
+`notes/traction-control-analysis.md`, `notes/othercars-comparison.md` and
+`notes/driver-inputs.md`. Full derivation in
+`notes/dlcm/coda-dlcm-decompile-notes.md` ("What each configured message actually
+carries").
 
-| Byte(s) | Name | Encoding | Notes |
-|---------|------|----------|-------|
-| B0 | Mux/counter | [7:4]=Gray-code 4-state counter, [3:0]=channel ID (6-12) | 30 raw values → 7 channel IDs |
-| B1 | Torque echo | uint8, r=0.84 with 0x212 B5 (motor torque output) | B1=B3 (redundant); echoes 0x212 B5 -- confirmed 2026-03-20 |
-| B2 | Channel ID echo | Always = B0[3:0] | NOT independent data |
-| B3 | Torque echo | uint8 | Same as B1 |
-| B4-B5 | Speed_inv (BE uint16) | 2000=startup, 2119=stationary Ready, 3199=clamped (low speed / TC active); below 3199 inversely proportional to speed at HIGH speeds only | Resolved only at LR>1400 in defroster2 log |
-| B6-B7 | Speed_fwd (BE uint16) | 2000=startup only, 800=low speed floor or TC active, above 800 proportional to vehicle speed | Tracks LR (left rear) speed proxy |
+All three fields use the `0x212` encoding: **0.25 Nm/count, zero at raw 2000**, taken
+from the 13 low bits of each pair. Measured slope against `0x1C0` Torque is
+0.24993 Nm/count with zero at 1999.5.
 
-Channel distribution: ch 6-7 at high speed, ch 8 dominant at normal speed, ch 9-12 at low speed or TC/ABS.
+| Byte(s) | Name | Notes |
+|---------|------|-------|
+| B0[4:0],B1 | TorqueFeedback | tracks `0x1C0` Torque, r = 0.9994, median error 0.90 Nm |
+| B0 bit 5 | Parity | over `(B0 & 0x5F) ^ B1` — holds in 197,193 of 197,193 frames |
+| B0 bit 6 | Toggle | alternates, 50/50, independent of the data |
+| B2[4:0],B3 | TorqueFeedback copy | bit-identical to B0-B1 in 100 % of frames |
+| B4[4:0],B5 | **M_MAX** | positive torque limit, 0 … +299.75 Nm |
+| B6[4:0],B7 | **M_MIN** | regen torque limit, −300 … 0 Nm |
+
+The `0x212` request lies inside [M_MIN, M_MAX] in 99.997 % of samples and sits exactly
+on M_MAX in 1.07 %. **M_MAX drops to +29.75 Nm whenever the brake switch is on** —
++299.75 Nm in 100.0 % of 90,230 brake-off frames, +29.75 Nm in 97.2 % of 1,650 brake-on
+frames. That is the "brake-correlated signal" recorded as undecoded in
+`notes/driver-inputs.md`.
+
+Every observation behind the old ESC reading is explained by this one: "2000 stationary
+default" is 0 Nm, "3199 clamp" is +299.75 Nm, "800 floor" is −300 Nm, "B1 = B3
+redundant" is the duplicated field, and "B2 echoes B0[3:0]" is B2 being B0 without its
+two flag bits.
+
 Both B4-5 and B6-7 clamped to limits (3199 and 800) during TC intervention.
 Scale to km/h not yet determined; requires LR km/h calibration (pending motor-rpm → km/h conversion).
 
@@ -300,6 +464,10 @@ CIntTempRadOutlet (0x276 B3, radiator outlet temp) shows 0x58 = -40°C in parts 
 ### 9. Diagnostic Tool Reverse Engineering (Confirmed, Diag CAN)
 
 `coda-diagnostics/` contains Python scripts reverse-engineered from the Omitec dealer scan tool.
+It is the live, published tool. `Diagnostic/` is a separate, **private** folder holding
+diagnostic findings that are deliberately not published — principally the Coda
+SecurityAccess work — plus the scan-tool captures and the archived pre-repo scripts the
+tool grew out of. See `Diagnostic/README.md`.
 Supports reading and clearing DTCs from:
 - ABS (ESC module)
 - AC-Compressor (ACCM)
@@ -329,21 +497,47 @@ ECU 0x718. 90,112-byte image, plaintext ARM (entropy 4.95). MCU is an NXP LPC2xx
 
 ### DLCM — extracted, plaintext, documented
 
-ECU 0x7E8, Continental EMS9180. Two plaintext images: PROG (1.83 MB) and CAL (114 KB); SH-4 core, analyzed in Ghidra. The work targets the §10.7 State-Dependent Torque Gradient Limiter calibration LUTs (to widen the rate limit through the lash zone for throttle feel). Firmware build `1CI527_D003`. See `notes/dlcm/coda-dlcm-decompile-notes.md`.
+ECU 0x7E8, Continental EMS9180. Two plaintext images: PROG (1.83 MB) and CAL (114 KB); Infineon TriCore LE core (corrected 2026-09-19, previously recorded as SH-4), analyzed in Ghidra as `tricore:LE:32:default`. The work targets the §10.7 State-Dependent Torque Gradient Limiter calibration LUTs (to widen the rate limit through the lash zone for throttle feel). Firmware build `1CI527_D003`. See `notes/dlcm/coda-dlcm-decompile-notes.md`.
 
 > **Vehicle-state change — real DLCM reflashed with a modified CAL (two flashes).** The near-zero gradient-limiter V-curve floor was raised via the MITM proxy (`notes/dlcm/dlcm_flash_proxy.py`), PROG left byte-exact, no DTCs both times:
 > - **2026-07-21 (`vcurve-lash-5`):** idx5 `0xA0021532`/`0xA0021B6E` `1 -> 5`.
-> - **2026-07-22 (`vcurve-floor-20`, CURRENT on-car state):** idx2-5 on both copies (`0xA002152C..32`, `0xA0021B68..6E`) all raised to `20`, making the true curve minimum 20.
+> - **2026-07-22 (`vcurve-floor-20`):** idx2-5 on both copies (`0xA002152C..32`, `0xA0021B68..6E`) all raised to `20`, making the true curve minimum 20.
+> - **2026-09-20..24: six further CAL flashes** (FLOOR20, FLOOR40 + speed limb, negTrqLast x3, C1 creep 50, launch rate, C2 one-pedal, C4c pedal map). **C4c is the CURRENT on-car state.** Lineage and md5s: `notes/dlcm/dlcm-cal-flash-campaign.md`.
+> - **2026-10-04 16:10–16:27: flash 7 (7a IIR enable + 7c V-curve cut), FAULTED and REVERTED.** Seven DLCM resets then the Permanent Shut-off Path; cause established 2026-10-08 as 7a, a filter with no ECM2 twin — `notes/dlcm/flash7-reset-mechanism.md`. Its captures are quarantined in `notes/dlcm/dcan_drive_capture_20261004_f7/`, outside every sync root.
 >
-> **All Coda driveline logs after 2026-07-21 reflect a modified calibration** (floor 5 for logs on 07-21, floor 20 for logs on/after 07-22) and are not directly comparable to earlier logs for torque-gradient/lash behavior. **Finding: the floor change saturated** — floor 5 and floor 20 produce identical near-zero rate behavior (a fixed ~8 cts/update clamp binds below the floor), so the floor is not the effective driveability lever beyond ~5. Full analysis: `notes/dlcm/dlcm-torque-limiter-code-trace.md`. Procedure/verification: `notes/dlcm/flash_sim/README.md` roadmap step 6; logs `notes/dlcm/artifacts/proxy_real_flash_20260721.log`.
+> **All Coda driveline logs after 2026-07-21 reflect a modified calibration** (floor 5 for logs on 07-21, floor 20 for logs on/after 07-22) and are not directly comparable to earlier logs for torque-gradient/lash behavior. **Finding: the floor change saturated** — floor 5 and floor 20 produce identical near-zero rate behavior (a fixed ~8 cts/update clamp binds below the floor), so the floor is not the effective driveability lever beyond ~5. Full analysis: `notes/dlcm/dlcm-torque-limiter-code-trace.md`. Procedure/verification: `tools/flash_sim/README.md` roadmap step 6; logs `notes/dlcm/artifacts/proxy_real_flash_20260721.log`.
 
 ### BMS — extracted but encrypted (blocked)
 
-The BMS application image (249,856 bytes) was downloaded via the same UDS method but is **encrypted**: ~7.9992-bit entropy (AES-class), no readable strings or instruction patterns, despite the UDS request declaring no encryption; size is an exact multiple of the AES block size. Decompilation is not meaningful until decrypted, and the firmware-encryption key is a separate secret from the SecurityAccess key (not recoverable from the captured session). Not pursued further.
+The BMS application image (249,856 bytes) was downloaded via the same UDS method but is
+**encrypted**, despite the UDS request declaring no encryption. Re-measured 2026-09-24 with
+ISA-agnostic metrics: entropy 7.9992, chi-square 282 against uniform, longest single-byte
+run 3, zero repeated 4-grams, zlib ratio 1.000 — statistically indistinguishable from
+`os.urandom`, against 0.361 for the known-plaintext gateway image. Zero duplicate 16-byte
+blocks, so it is not ECB over anything structured. The cipher is **unidentified**; the
+earlier "AES-class" reading was an inference from entropy alone and is only a hypothesis,
+as is the ARM7TDMI-S core attribution, which was inferred from the gateway rather than
+observed on the BMS.
 
-### Green-screen / telemetry box — code-protected (parked)
+**Four-digit passcode hypothesis tested and closed 2026-09-26.** A former Coda engineer
+reported that firmware images were sometimes encrypted with a four-digit passcode — the
+last four of the VIN, later `2012`, and in some cases an engineer's own code. All three
+cases are four-digit numbers, so the whole `0000`-`9999` space was swept: ~765,800
+decryption attempts across AES, Camellia, SM4, CAST5, IDEA, DES, 3DES, Blowfish, RC4,
+ChaCha20, TEA, XTEA and six PRNG keystreams, **0 hits**, with a detector calibrated to
+recover a positive control at 0 false positives in 1,020 trials. The cipher class is now
+narrowed by measurement to a **stream cipher or chained block mode** — ECB and short
+repeating XOR are excluded outright. See `notes/coda-bms-decompile-notes.md`.
 
-The dashboard green-screen display box uses a Microchip **PIC32MX564F128L** (MIPS32). ICSP access was established (valid Device ID read), but the part is **code-protected** (DEVCFG0.CP fuse set) and there is no reflash protocol to capture, so flash readout is blocked. The only remaining path is voltage glitching, which is not being pursued for now. Extraction parked.
+The firmware-encryption key is a separate secret from the SecurityAccess key. That was
+originally an assumption and has since been **tested**: the SecurityAccess LFSR does not
+decrypt the image under its own constants, nor under *any* key — a detector that finds an
+injected keystream immediately finds nothing in the image. `0x23` and `0x35` are also not
+implemented on the BMS application, so the bootloader that holds the real key is not
+reachable from the extended session. Decompilation remains blocked; the open routes are
+JTAG, the programming session, or the Omitec tool binary.
+
+Full account: `notes/coda-bms-decompile-notes.md`.
 
 ### RCU (keyfob / immobilizer) — not yet extracted
 
@@ -383,7 +577,7 @@ ChargeLimit in `defroster2` started at 128 A and climbed to 146 A over the drive
 | File | Contents | Status |
 |------|----------|--------|
 | `CODA-B-CAN.dbc` | B CAN messages (BMS, DCDC, charger, ACCM, HVAC, SRS, IPK, GWM) | 35 messages. Confirmed signals documented in signal table above. Unconfirmed bytes use `Packet_N` placeholders; 0x410 B0 bit positions still unresolved. |
-| `CODA-D-CAN.dbc` | D CAN messages (ESC, DLCM, EPS, misc, GWM) | 22 messages. Confirmed signals documented in signal table above. 0x312 excluded — mux frame partially understood, see `notes/traction-control-analysis.md`. Unconfirmed bytes use `Packet_N` placeholders. |
+| `CODA-D-CAN.dbc` | D CAN messages (ESC, DLCM, EPS, misc, GWM, RCU) | 34 messages. Confirmed signals documented in signal table above. Ten messages added 2026-09-24 from the DLCM firmware's own CAN configuration tables (0x051, 0x08C, 0x168, 0x312, 0x591, 0x592, 0x593, 0x595, 0x603, 0x614); several field widths corrected in the same pass — see `notes/dlcm/coda-dlcm-decompile-notes.md`. Unconfirmed bytes use `Packet_N` placeholders. |
 | `CODA-C-CAN-cells.dbc` | Cell voltage/temp frames on C CAN | Cell voltage portion confirmed and complete — 26 frames, 104 cells. Additional non-cell IDs visible on C CAN (0x0FF, 0x200–0x203, 0x300–0x304, 0x621–0x627) not yet characterized; not in DBC. `CellN` = B CAN 0x381 VminId/VmaxId value N directly (1-based since 2026-07-22 renumber; was 0-based) — see `notes/cell-index-mapping.md`. |
 
 All multi-byte signals use Motorola byte order (@0+, big-endian). Unconfirmed bytes use
@@ -404,9 +598,9 @@ See `logs/README.md` for log file inventory.
 - [ ] **CODACAN signal decode — Phase 5 in progress.** Most signals confirmed; partial/open items tracked in `notes/codacan-signal-decode-notes.md` (Sections 5b, 5c, 6, 7). Key remaining: IPK gauge feeds (SoC%/speed source unknown), 0x410 B0 boolean bit positions, 0x050 B4-B7 characterization. (Resolved via Runs 1-3 + log verification — 0x491 ODO, 0x270 severity, 0x276 disable, 0x2C1 scale, 0x241 temps, 0x212 torque: see `notes/codacan-replay-verification-queue.md` and `notes/artifacts/cowork-results/promotion-staged-diff.md`.)
 
 ### Medium Priority
-- [ ] RCU — TPMS keepalive frame unknown. 0x600 carries pressure data (1.37 kPa/count) but does not trigger TPMS indicator. **Capture task:** trip the immobilizer to force RCU to broadcast its keepalive ID.
+- [ ] RCU — **0x600 still does NOT carry pressure data** (disproved 2026-09-20; a whole-bus sweep found no pressure-shaped channel on any ID). But it *is* the RCU's status frame and its **B7 bit5 is the TPMS telltale, confirmed 2026-09-21** — so the lamp state is on the bus even though the pressures are not. Remaining unknown: which bits, if any, encode per-wheel fault detail — B1-B4 are frozen at `01 01 07 00` in every corpus file, because all four sensors have been dead throughout. **Capture task:** a car with a working sensor, or a bench RCU, would move those bytes. See `notes/indirect-tpms-feasibility.md`.
 - [ ] **BMSmode (0x378 B2) unknown value range**: Normal car shows 0xD2 (210) driving, 0xA9 (169) charging. Another Coda and the parts car both show 0xF2–0xF8 (242–248) — unknown whether this indicates a fault/degraded state or firmware variant. **CODACAN echoes the raw B2 value (no semantic decode), so it cannot resolve the meaning** — needs firmware or cross-car log correlation.
-- [ ] Decode 0x215, 0x330 (and confirm 0x600) — see `notes/codacan-signal-decode-notes.md` Section 5c.
+- [ ] Decode 0x215 B2-B6 (B0:B1 = VehicleSpeed done 2026-10-26, see `notes/hvac/coda-hvac-decompile-notes.md` 5.4) (**0x600 partly done 2026-09-21** — B7 bit5 confirmed as the TPMS telltale; B1-B4 remain frozen and undecoded) — see `notes/codacan-signal-decode-notes.md` Section 5c. **0x330 DONE 2026-09-20**: B7 is the longitudinal accelerometer (see the signal table above); B0-B6 are constant and remain undecoded, but carry no variation in any drive examined.
 - [x] **Identify the bad cells (DONE 2026-07-22).** Weak/low cell = **Cell95** (UV/limp trigger, `frombonnydoon.log`). Failed-balance/OV cell = **Cell82** (VmaxId 82, hits 3778 mV at EOC in `coda_20260722_173203_*`). Highest-under-load cell = **Cell84** — distinct from both. See `notes/cell-index-mapping.md`, `notes/charging-analysis.md`, `notes/battery-degradation.md`.
 
 ### Lower Priority
@@ -436,6 +630,12 @@ projects/coda/
     ui_layout.json                # Captured GUI field layout (pixel positions, signal mappings)
     ICD/                          # Per-module CAN frame parsers (.vi + .bin VICD code)
     Globals/                      # Per-module global variable clusters (.xml + .vi)
+  Diagnostic/                     # PRIVATE diagnostic learnings — never published (see README.md)
+    README.md                     # Folder purpose, layout, and the publish rule
+    coda_security.py              # SecurityAccess key computation + unlock (private capability)
+    notes/                        # Private learnings, one .md per topic
+    logs/                         # Omitec scan-tool captures (cited by analysis notes — do not move)
+    precursor/                    # Archived pre-repo scripts, superseded by coda-diagnostics/
   coda-diagnostics/               # Reverse-engineered scan tool scripts — own git repo (see README.md)
     README.md                     # Overview, supported modules & CAN dongles
     read_dtcs_coda.py
@@ -455,6 +655,9 @@ projects/coda/
     README.md
     codacan_capture.py            # Automated CODACAN screen capture and signal mapping
     cowork_replay.py              # CAN log replay for CODACAN cowork validation sessions
+    flash_cal.py                  # Flash a named DLCM calibration (human front end)
+    flash_sim/                    # DLCM reflash stack + Omitec / gateway simulators (see flash_sim/README.md)
+    codasim/                      # Executable DLCM / ECM2 / driveline model (see codasim/README.md)
     dbc_skeleton_labview.py       # Generates DBC skeleton stubs from LabVIEW signal inventory
     labview_xml_extract.py        # Extracts signal clusters from LabVIEW Globals XML files
     update_skeleton_dbcs.py       # Updates DBC skeleton from labview signal inventory
@@ -470,19 +673,23 @@ projects/coda/
     codacan-signal-decode-notes.md # CODACAN bench replay signal decode — all phases
     gateway/                      # Gateway (GWM) firmware decompile (NXP LPC2xxx ARM) — CAN routing/firewall table recovered
       coda-gateway-decompile-notes.md # Gateway decompile notes (folder also holds coda_gateway.bin firmware image)
-    dlcm/                         # DLCM firmware decompile (Continental EMS9180, SH-4) — torque LUT analysis
+    dlcm/                         # DLCM firmware decompile (Continental EMS9180, TriCore LE) — torque LUT analysis
+      README.md                   # START HERE for the DLCM — folder map, document index, folder-wide units and table-duplication traps
       coda-dlcm-decompile-notes.md # DLCM decompile notes (folder also holds PROG/CAL .bin firmware images)
       dlcm-torque-flow.md         # §10.7 gradient-limiter Simulink block diagram (re-transcription of the flow-chart PNG)
       dlcm-torque-limiter-code-trace.md # Modern §10.7 vs old-scheme trace: behavioral verdict (speed-dependent limiter = §10.7) + code caveats (2026-07-08)
       dlcm-second-pass-hypotheses.md # Second-pass investigation angles for the CAL gradient-LUT hunt
+      dlcm-dtcs-investigation.md  # DLCM fault subsystem: event->DTC table (0xA002451E), per-event CAL config, P3115 roll-up chain, C0044 brake rationality (validated on the bus), which DTC inputs are on the un-tapped Motor CAN
     driver-inputs.md              # Throttle, brake, PRND, body electronics, gateway rebroadcast
     efficiency-calculation.md    # Wh/mile: drivetrain / HVAC / 12 V split (293.6 pack, 365.9 grid); method, validation, capture-coverage caveats
     driving-sequence-investigation.md  # Startup sequence, HVAC, AC compressor signals
     othercars-comparison.md       # Signal comparison with other Coda vehicles
     outside-air-temp-investigation.md  # Outside-temp display dropped — no reliable ambient sensor on CAN
     thermal-behavior-investigation.md  # Pack heater / cold-start thermal behavior
-    traction-control-analysis.md  # ESC 0x312 mux frame decode
-    plans/                        # Analysis plan files (empty — all executed)
+    traction-control-analysis.md  # TC events via 0x208 REAR-axle divergence (0x208 is the non-driven
+                                  #   rear pair, not halfshafts -- its 'DHL/DHR halfshaft' labels and its
+                                  #   0x312 decode are both superseded; see dlcm/esp-torque-intervention.md)
+    plans/                        # Analysis plan files (rcu_firmware_extraction; dlcm_ram_read_mapping + dlcm_variant_opcode_decode, 2026-09-13)
     artifacts/                    # Generated data files: CSVs, JSONs, survey outputs (see artifacts/README.md)
       cowork-results/             # Cowork-driven CODACAN validation output (see README.md)
 ```

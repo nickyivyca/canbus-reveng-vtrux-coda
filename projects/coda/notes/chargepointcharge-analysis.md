@@ -211,9 +211,9 @@ In `codacharging.log` (home L2, cold session): B0 = 0x08 → 0x06 → 0x01 (0.8 
 
 In `chargepointcharge.log` (Chargepoint, warmer conditions): B0 = **0x00** (0 kW) throughout — PTC heater not active. Post-EOC transitions to 0x33 then 0x00 are invalid sentinels matching the same pattern seen in 0x382 Cell_T_avg at charge stop.
 
-### Startup Handshake Timing (0x390 B0, 0x439 B0)
+### ~~Startup Handshake Timing (0x390 B0, 0x439 B0)~~
 
-Not extracted for direct comparison in this session. Recommended for a follow-up capture that begins before plug-in.
+Withdrawn 2026-10-30: there is no handshake to compare. `0x390` B0 is `FrontInletAirTemp`, and `0x439` B0 is the A/C compressor's `COMPRESSOR_STATUS`. `codacharging.log` began with charging already under way. See the corrected Clusters 1–2 in `charging-analysis.md`. A capture that begins before plug-in is still the way to see real charge-start signalling.
 
 ---
 

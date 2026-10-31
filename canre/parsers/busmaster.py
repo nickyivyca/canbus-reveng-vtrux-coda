@@ -5,6 +5,8 @@ BUSMASTER log format (v3.x):
     - Data lines: HH:MM:SS:TTTT Tx/Rx Channel 0xID s/x DLC D0 D1 ... D7
     - Timestamp TTTT is 10 kHz ticks (0.1 ms resolution)
     - Type 's' = standard (11-bit), 'x' = extended (29-bit)
+    - Type 'ERR' = error frame (Android logger, 2026-10-28 on); yielded only
+      with parse_file(..., include_errors=True)
     - Supports mid-file session restarts
 """
 from __future__ import annotations
@@ -54,6 +56,25 @@ _DATA_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Error-frame line, written by the Android logger since 2026-10-28 (plan
+# android-app/notes/plans/gs-usb-error-frames.md):
+#     HH:MM:SS:TTTT Rx <ch> 0x<class mask> ERR <dlc> <data bytes>
+# `ERR` is the token Wireshark's BUSMASTER reader takes as an error frame
+# (`<time> <dir> <ch> <id> ERR <free text>`); the DLC and payload after it are
+# this project's convention, so both are optional here.  _DATA_RE cannot match
+# such a line (its type group is [sx]), which is what kept older copies of this
+# parser from counting error reports as messages.
+_ERR_RE = re.compile(
+    r"^(-?\d{1,2}:-?\d{1,2}:-?\d{1,2}:-?\d{1,4})\s+"
+    r"(Tx|Rx)\s+"
+    r"(\d+)\s+"
+    r"(0x[0-9A-Fa-f]+|\d+)\s+"
+    r"ERR\b\s*"
+    r"(\d+)?\s*"
+    r"(.*)",
+    re.IGNORECASE,
+)
+
 _HEADER_RE = re.compile(r"^\*\*\*")
 _SESSION_START_RE = re.compile(r"^\*\*\*\[START LOGGING SESSION\]\*\*\*", re.IGNORECASE)
 _SESSION_STOP_RE = re.compile(r"^\*\*\*\[STOP LOGGING SESSION\]\*\*\*", re.IGNORECASE)
@@ -81,6 +102,32 @@ def _parse_timestamp(ts_str: str) -> float:
     seconds = int(parts[2])
     ticks = int(parts[3])
     return hours * 3600.0 + minutes * 60.0 + seconds + ticks * 0.0001
+
+
+def _error_frame(m: re.Match, timestamp: float, hex_mode: bool) -> CANFrame:
+    """CANFrame for an _ERR_RE match.  A tail that is not DLC + bytes (free
+    text, as BUSMASTER itself may write) gives an empty payload, not an error."""
+    _, direction, channel, id_str, dlc_str, data_str = m.groups()
+    arb_id = int(id_str, 16) if id_str.lower().startswith("0x") else int(id_str)
+    data_bytes = b""
+    dlc = 0
+    if dlc_str is not None:
+        try:
+            dlc = int(dlc_str)
+            tokens = data_str.split()[:dlc]
+            data_bytes = bytes(int(b, 16 if hex_mode else 10) for b in tokens)
+        except ValueError:
+            dlc, data_bytes = 0, b""
+    return CANFrame(
+        timestamp=timestamp,
+        arbitration_id=arb_id,
+        data=data_bytes,
+        bus=int(channel),
+        is_extended=False,
+        dlc=dlc,
+        is_tx=direction.upper() == "TX",
+        is_error=True,
+    )
 
 
 class BusmasterParser(BaseParser):
@@ -167,11 +214,23 @@ class BusmasterParser(BaseParser):
                        + int(parts[2]) + int(parts[3]) * 0.0001)
         return channel_ids, channel_counts, last_ts
 
-    def parse_file(self, path: Path | str, *, absolute: bool = False) -> Iterator[CANFrame]:
+    def parse_file(self, path: Path | str, *, absolute: bool = False,
+                   include_errors: bool = False) -> Iterator[CANFrame]:
         """Parse a BUSMASTER log file, yielding CANFrame objects.
 
-        By default the first data frame's timestamp becomes t=0 and all
-        subsequent timestamps are relative to that origin.
+        By default the first frame's timestamp becomes t=0 and all
+        subsequent timestamps are relative to that origin.  "First frame"
+        includes an error-frame (ERR) line, so the origin is the same whether
+        or not error frames are yielded.
+
+        Error frames (``ERR`` lines, written by the Android logger since
+        2026-10-28) are skipped unless *include_errors* is True, so every
+        existing caller sees exactly the data frames it saw before.  When
+        yielded they carry ``is_error=True`` and ``arbitration_id`` is the
+        SocketCAN error-class mask, which collides with real IDs.  Logs from
+        before the fix carry the same reports as ordinary data frames
+        ``0x004`` / ``0x00C``; see android-app/notes/outstanding-changes.md
+        Bug 11.
 
         If *absolute* is True, each frame's session-relative timestamp is
         offset by the wall-clock HH:MM:SS from the file's
@@ -207,12 +266,20 @@ class BusmasterParser(BaseParser):
                     # Session start/stop are noted but don't reset origin
                     continue
 
-                # ---- Data lines ----
+                # ---- Data lines, and error-frame (ERR) lines ----
+                # An ERR line takes part in the time origin and the rollover
+                # check whether or not it is yielded: the writer's origin is
+                # the first frame it wrote, of either kind, and
+                # canre/utils/timebase.py counts every Rx/Tx line the same way.
                 m = _DATA_RE.match(line)
+                is_error = False
                 if not m:
-                    continue
+                    m = _ERR_RE.match(line)
+                    if not m:
+                        continue
+                    is_error = True
 
-                ts_str, direction, channel, arb_id_str, frame_type, dlc_str, data_str = m.groups()
+                ts_str = m.group(1)
 
                 rel_time = _parse_timestamp(ts_str)
 
@@ -243,6 +310,12 @@ class BusmasterParser(BaseParser):
                     prev_rel = rel_time
                     timestamp = rel_time + day_offset - t_origin
 
+                if is_error:
+                    if include_errors:
+                        yield _error_frame(m, timestamp, hex_mode)
+                    continue
+
+                _, direction, channel, arb_id_str, frame_type, dlc_str, data_str = m.groups()
                 is_tx = direction.upper() == "TX"
                 bus = int(channel)
                 arb_id = int(arb_id_str, 16)

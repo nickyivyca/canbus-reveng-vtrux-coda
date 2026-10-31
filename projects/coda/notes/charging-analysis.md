@@ -1,7 +1,7 @@
 # Coda Charging Session Analysis
 
 **Log:** `codacharging.log` (31.7 MB, 402,847 frames, 594.94s ≈ 9.9 min)
-**Session:** Level 2 charging. Log started properly at charge startup. Log ended early — OBD adapter was removed while charging was still in progress (house meter confirms 6.5 kWh total over ~58 min; log captures only the first 9.9 min / ~1.11 kWh AC).
+**Session:** Level 2 charging. ~~Log started properly at charge startup.~~ **Corrected 2026-10-30: the log started with charging already under way** — the chargers' `ACInPower` (`0x27D`/`0x27B`) is 3.3–3.4 kW from the first frame (t=0.10s). Log ended early — OBD adapter was removed while charging was still in progress (house meter confirms 6.5 kWh total over ~58 min; log captures only the first 9.9 min / ~1.11 kWh AC).
 **Analyzed:** 2026-02-18
 
 > **⚠ Cell numbering updated 2026-07-22.** The C CAN DBC (`CODA-C-CAN-cells.dbc`) is now
@@ -256,7 +256,7 @@ From CODACAN replay screenshots (two moments during the charging session):
 - **PackVoltage lower than charger output** (349–350V vs charger HV out 352–353V): small drop through cable/contactor — confirms CC mode.
 - **PackCurrent 16.4A** stable across both screenshots, consistent with CMM 8.625A + CMS 8.594A = 17.22A (small cable/contactor loss).
 - **BattSentChargeLimit decreases 84A→62A** as SoC rises — BMS throttling allowed charge current. Integer amps (1 A/LSB).
-- **BMSmode 169→170** correlates with the pack conditioning activation event at t≈134.75s (Cluster 2). This is a meaningful state word, not a rolling counter — the increment marks conditioning turning on. Cross-corroborated by 0x390 B0 transitioning from 0x8D to 0x8C at the same event.
+- ~~**BMSmode 169→170** correlates with the pack conditioning activation event at t≈134.75s (Cluster 2).~~ **Withdrawn 2026-10-30:** in this log BMSmode (`0x378` B2) goes 169 → 170 at t=61.8s and keeps climbing to 175 by the end; nothing happens at 134.75s, and Cluster 2 is a temperature dithering (see Cluster 2). Original text: This is a meaningful state word, not a rolling counter — the increment marks conditioning turning on. Cross-corroborated by 0x390 B0 transitioning from 0x8D to 0x8C at the same event.
 - **VminId/VmaxId** (96/76 in both snapshots): 8-bit unsigned cell indices. Coincidentally the same in these two snapshots but not necessarily stable — they will change as relative cell voltages shift during charging. **Resolved 2026-07-21/22:** these are the C CAN cell numbers directly — `VminId 96 = Cell96`, `VmaxId 76 = Cell76` (both 1-based since the 2026-07-22 DBC renumber; historically the DBC was 0-based and the relation was reported id = old Cell + 1). See `cell-index-mapping.md`. These GUI-read values are unaffected by the 0x381 DBC byte-order error corrected 2026-07-15 (CODACAN reads the LabVIEW cluster, which was always correct).
 - **MinTempId/MaxTempId** (1/6 → 15/12): clearly dynamic — the module with the highest or lowest temperature can change as heat distributes through the pack.
 - **BattSentDischargeLimit and MotorDriveLimit track together** (both 348A → 336A), suggesting they come from the same or adjacent fields in the same CAN message.
@@ -561,62 +561,69 @@ The OutputValues messages **were** individually re-checked against this exceptio
 
 **Method:** Extracted all B CAN byte-level state transitions across the 594.9s session. Filtered to signals with ≤30 total transitions (discrete event markers only, excluding continuously-varying analogue bytes). Confirmed with full byte snapshots around each event window.
 
+> **⚠ Corrected 2026-10-30 (re-decoded with cantools against `CODA-B-CAN.dbc`):** neither Cluster 1 nor Cluster 2 is a charger or conditioning event. Charging was already running when the log began, so there was no startup to see. Cluster 1 is the HVAC winding down heating and cooling that were already running: PTC 0.8 → 0.1 kW, compressor stopped, ACCM power to 0. Cluster 2 is a temperature sensor (`0x390` B0 `FrontInletAirTemp`) dithering across a 1 °C step. The method's flaw: a slowly drifting analogue byte that crosses a single step has few transitions, so the ≤30-transition filter admits it as a "discrete event marker". The old labels are kept below, struck through.
+
 ---
 
-### Cluster 1 — Charge Startup / EVSE Handshake: t = 0–14s
+### Cluster 1 — ~~Charge Startup / EVSE Handshake~~ HVAC winding down: t = 0–14s
 
 Multiple B CAN signals undergo rapid state changes during the first 14 seconds, then lock into steady-state values for the remainder of the session.
 
 #### Key signals:
 
-**0x276 B0 — Charger State Machine:**
+**0x276 B0 — `PTC_PowerConsumption`** (0.1 kW/bit; formerly "Charger State Machine"). `0x276` is `HVACStatus`, sent by the HVAC:
 ```
-t= 0.9s   0x08 → 0x06   (phase 1: EVSE detected)
-t= 7.3s   0x06 → 0x01   (phase 2: negotiation complete)
-t= 9.4s   0x01 → 0x08   (brief revert — second handshake phase)
-t=10.5s   0x08 → 0x01   (permanent: charging active)
+t= 0.9s   0x08 → 0x06   (0.8 → 0.6 kW; formerly "phase 1: EVSE detected")
+t= 7.3s   0x06 → 0x01   (0.6 → 0.1 kW; formerly "phase 2: negotiation complete")
+t= 9.4s   0x01 → 0x08   (back to 0.8 kW; formerly "brief revert — second handshake phase")
+t=10.5s   0x08 → 0x01   (0.1 kW, steady from here; formerly "permanent: charging active")
 ```
-0x276 B5 tracks identically (correlated). Final steady value = 0x01.
+0x276 B5 is `PTCHeaterPWM` and moves with it: 16.9 % → 13.3 % (t=1.0s) → 6.3 % (t=7.4s), 16.9 % at t=9.4s, then 6.3 %. The PTC heater was turning down. `chargepointcharge-analysis.md` had already corrected B0.
 
-**0x439 B0 — EVSE Request Flag (binary):**
-```
-t= 8.0s   0x01 → 0x00   (charging request fulfilled — stays 0x00 forever)
-```
-B1 and B2 also go to 0x00 at t=8.0s (correlated multi-byte state).
+**A/C compressor stop (`0x410` / `0x439`), formerly read as charger flags.** Corrected 2026-10-30: these are the A/C compressor, not the charger -- `0x410` is the HVAC's compressor command (firmware packer, `hvac/coda-hvac-decompile-notes.md` 5.2; DBC `AC_Compressor_Command`), `0x439` the compressor's status. Re-decoded with cantools on this log: the compressor was running at 960 rpm when the log started and the HVAC stopped it at t=7.9 s.
 
-**0x410 B6 — Inhibit Flag (binary):**
+**0x439 B0 — `COMPRESSOR_STATUS`** (formerly "EVSE Request Flag"):
 ```
-t= 7.9s   0x10 → 0x00   (clears at same time as 0x439 B0)
+t= 8.0s   0x01 → 0x00   (Running → Standby; stays Standby to the end of the log)
 ```
+B1 (`ACTUAL_COMPRESSOR_SPEED`, 960–1,740 rpm before) and B2 (`ACTUAL_POWER_CONSUMPTION`, 0.2–0.8 kW) also go to 0x00 at t=8.0s.
 
-**0x410 B2 — Secondary Charger Flag:**
+**0x410 B6 — `target_compressor_speed`** (formerly "Inhibit Flag"):
 ```
-t= 9.1s   0x40 → 0x00   (drops at end of startup)
-t=41.7s   0x00 → 0x40   (returns during steady-state — likely charger mode confirmation)
+t= 7.9s   0x10 → 0x00   (960 rpm → 0: the HVAC stops the compressor; 0x439 follows 40 ms later)
 ```
 
-**0x390 B2 — Startup Negotiation Handshake:**
+**0x410 B2 bit 6 — `compressor_on_off`** (formerly "Secondary Charger Flag"):
 ```
-t= 1.6–4.5s   0x88 ↔ 0x89   (13 rapid toggles over 2.9s)
+t= 9.1s   0x40 → 0x00   (on/off bit cleared)
+t=41.7s   0x00 → 0x40   (set again while the speed target stays 0 and the compressor stays in Standby)
 ```
-Toggles at ~5 Hz during EVSE pilot negotiation, then stops completely. B2 settles at 0x89 and never changes again. This appears to be J1772 CP signal detection or PWM handshake.
 
-**0x390 B0 — Charging Confirmed Flag:**
+**0x390 B2 — `ReturnAirTempPsg`** (raw − 128 °C; formerly "Startup Negotiation Handshake"). `0x390` is the BMS's battery temperature message:
 ```
-t=13.9s   0x8C → 0x8D   (final startup step — charging fully established)
+t= 1.6–4.5s   0x88 ↔ 0x89   (8 ↔ 9 °C: the reading dithering on a 1 °C step, then settling at 9 °C)
 ```
-Stays at 0x8D until the conditioning event.
+~~Toggles at ~5 Hz during EVSE pilot negotiation … J1772 CP signal detection or PWM handshake.~~
+
+**0x390 B0 — `FrontInletAirTemp`** (raw − 128 °C; formerly "Charging Confirmed Flag"):
+```
+t=13.9s   0x8C → 0x8D   (12 → 13 °C; formerly "final startup step — charging fully established")
+```
+It stays at 13 °C until Cluster 2, where it dithers back down to 12 °C.
 
 **Timeline summary:**
-- t=0.9s: EVSE detected (0x276 B0 first move)
-- t=1.6–4.5s: J1772 pilot negotiation burst (0x390 B2 toggles)
-- t=7.9–8.0s: Charging request fulfilled (0x439 B0, 0x410 B6 both clear)
-- t=9–10.5s: Final handshake (0x276 B0 settles at 0x01)
-- t=13.9s: Charging confirmed (0x390 B0 → 0x8D)
+- t=0.1s: chargers already at 3.3–3.4 kW AC input (charging under way before the log)
+- t=0.9s: PTC power 0.8 → 0.6 kW (0x276 B0; formerly "EVSE detected")
+- t=1.6–4.5s: ReturnAirTempPsg dithers 8/9 °C (0x390 B2; formerly "J1772 pilot negotiation burst")
+- t=7.9–8.0s: A/C compressor stopped by the HVAC (0x410 B6 target → 0, 0x439 B0 → Standby); not a charger event (corrected 2026-10-30)
+- t=9.4–10.5s: PTC briefly back to 0.8 kW, then 0.1 kW for the rest of the log (0x276 B0; formerly "final handshake")
+- t=13.9s: FrontInletAirTemp 12 → 13 °C (0x390 B0; formerly "charging confirmed")
 
 ---
 
-### Cluster 2 — Pack Conditioning Activation: t ≈ 134.75–139.15s
+### Cluster 2 — ~~Pack Conditioning Activation~~ FrontInletAirTemp dithering 12/13 °C: t ≈ 134.75–139.15s
+
+> **⚠ Corrected 2026-10-30.** `0x390` B0 is `FrontInletAirTemp` (raw − 128 °C, confirmed on the CODACAN HVAC tab, see `codacan-replay-verification-queue.md`). 0x8D ↔ 0x8C is 13 ↔ 12 °C: the inlet air cooling across a 1 °C step, with the reading dithering on the boundary before it settles at 12 °C. It is not a conditioning flag. **The BMSmode corroboration does not hold either.** Decoded from this log, BMSmode (`0x378` B2) steps 169 → 170 at t=61.8s, drops to 168 and back to 169 at t=84.4–84.9s, and then climbs one step roughly every 70–90 s to 175 by the end of the log: 170 at 154.0s, 171 at 223.2s, … 175 at 522.7s. It does not change during 134.75–139.15s. The original text follows, superseded.
 
 The clearest single-signal event in the session. **Only 0x390 B0 changes** (on the B CAN bus-level event analysis). However, CODACAN replay screenshots also confirm a **BMSmode transition 169→170** that maps to this same event — giving two independent cross-corroborating signals from different system layers:
 
@@ -690,12 +697,12 @@ Previously mapped to J1772 button press / charger stop / unplug. The rapid 4-way
 
 | Signal | Total transitions | Role |
 |---|---|---|
-| 0x276 B0 | 4 | Charger state machine (0x08=idle, 0x06=negotiating, 0x01=charging) |
-| 0x439 B0 | 1 | EVSE request flag (1=pending, 0=fulfilled) |
-| 0x410 B6 | 1 | Charger inhibit bit (0x10=inhibited, 0x00=active) |
-| 0x390 B2 | 13 | J1772 pilot negotiation burst (startup only) |
-| 0x390 B0 | 14 | System state flag: 0x8C=charging+conditioning, 0x8D=charging-only; burst = conditioning activation |
-| 0x410 B2 | 2 | Secondary charger mode flag (drops at startup, returns at ~42s) |
+| 0x276 B0 | 4 | ~~Charger state machine~~ **CORRECTED 2026-10-30: `PTC_PowerConsumption`** (0.1 kW/bit; 0.8 → 0.6 → 0.1 kW, the PTC heater turning down) |
+| 0x439 B0 | 1 | ~~EVSE request flag~~ **CORRECTED 2026-10-30: `COMPRESSOR_STATUS`** (1=Running, 0=Standby); the A/C compressor stopping, see the Cluster 1 note |
+| 0x410 B6 | 1 | ~~Charger inhibit bit~~ **CORRECTED 2026-10-30: `target_compressor_speed`** (60 rpm/bit; 0x10 = 960 rpm → 0), sent by the HVAC |
+| 0x390 B2 | 13 | ~~J1772 pilot negotiation burst~~ **CORRECTED 2026-10-30: `ReturnAirTempPsg`** (raw − 128 °C) dithering 8/9 °C |
+| 0x390 B0 | 14 | ~~System state flag / conditioning activation~~ **CORRECTED 2026-10-30: `FrontInletAirTemp`** (raw − 128 °C) dithering 12/13 °C |
+| 0x410 B2 | 2 | ~~Secondary charger mode flag~~ **CORRECTED 2026-10-30: `compressor_on_off`** (bit 6); back on at ~42 s with the speed target still 0 |
 | 0x382 B0 | 3 | ~~Charge stage counter~~ **CORRECTED: `Cell_T_avg` (avg pack cell temp, T = raw−128 °C)** — the rising values are pack warming during charge, not SoC stages. See `chargepointcharge-analysis.md`. |
 | 0x27B B1 | many | ⚠ UNRELIABLE in this log — goes haywire at t=570-576s due to OBD adapter removal, not EVSE pilot loss |
 
@@ -710,9 +717,9 @@ Previously mapped to J1772 button press / charger stop / unplug. The rapid 4-way
 5. **DCDC standby:** Both 0x1D5 (B4=0x80 inhibit) and 0x48A (B0–B3=0) confirm DCDC offline. CMM maintains 12V bus at 13.5–14.5V.
 6. **Charger handshake:** the **BMS** commands via 0x050 (50 Hz); CMM and CMS report their own per-module state via 0x054 and 0x61A (50 Hz each); CMM echoes the BMS command via 0x616 (8.3 Hz). The GWM is not in this path — corrected 2026-07-23, see the clock-fingerprinting section above.
 7. **Cell balance in this session:** Min/max cell spread <25 mV throughout this 9.9-min session at mid-SoC (67.8–70.9%), consistent with good balance on the LFP plateau where all cells track together. Pack at 67.8% SoC at session start (confirmed by CODACAN replay). Note: a full charge session (`chargepointcharge.log`) later revealed ~79 mV resting OCV spread at end-of-charge — significant pack imbalance that only becomes apparent at high SoC.
-8. **Three event clusters confirmed (status bit analysis):**
-   - **Charge start (t=0–14s):** 0x276 B0 state machine (0x08→0x06→0x01), 0x439 B0 clears at t=8s, 0x390 B2 pilot negotiation burst (t=1.6–4.5s), 0x390 B0 → 0x8D at t=13.9s.
-   - **Pack conditioning (t=134.75–139.15s):** 0x390 B0 bursts 13 toggles (0x8C↔0x8D) over 4.4s then permanently settles at 0x8C. Clear, isolated event with no other concurrent B CAN state changes.
+8. **Three event clusters (status bit analysis) — all three since corrected: none is a charger or conditioning event:**
+   - **~~Charge start~~ HVAC winding down (t=0–14s; corrected 2026-10-30, charging was already under way):** PTC power 0.8 → 0.1 kW (0x276 B0), A/C compressor stopped (0x410 B6, 0x439 B0 → Standby at t=8s), ACCM power to 0; 0x390 B2/B0 are inlet/return air temperatures dithering on 1 °C steps, not pilot negotiation or a charging-confirmed flag.
+   - **~~Pack conditioning~~ (t=134.75–139.15s; corrected 2026-10-30):** 0x390 B0 = `FrontInletAirTemp` dithering 13/12 °C before settling at 12 °C. Not a conditioning event; BMSmode does not change in this window.
    - **Log end artifact (t=570–594s):** ⚠ Previously interpreted as end-of-charge events. Invalidated — house meter confirms charging continued for ~48 min after the log ended. The OBD adapter was removed mid-session; the bus disturbances and 0x382 B0 transitions at the log end are disconnection artifacts, not real charge termination signals.
 
 ---
@@ -723,10 +730,10 @@ Previously mapped to J1772 button press / charger stop / unplug. The rapid 4-way
 - ~~**Identify the OV cell**~~ — **RESOLVED 2026-07-22.** The full-charge log `coda_20260722_173203_*` (75.7% -> 100% SoC, C+B+D CAN) settles it: the OV cell is **Cell82** (VmaxId 82), which peaks at **3778 mV** — above the 3750 mV cutoff and ~400 mV clear of every other cell at EOC. It dominates the charge-session argmax (86.7% of samples). This is the same failed-balance cell pinned in `battery-degradation.md` (VmaxId 82). The earlier candidates are *not* the OV cell: prior CODACAN `VmaxId=76` (`Cell76`, 0x012 B6-B7) peaks only 3348 mV, and the bonnydoon high-under-load cell `Cell84` (0x014 B6-B7, VmaxId 84) does not enter the charge argmax top-6. See `cell-index-mapping.md`.
 - **Decode 0x383 B4:** Inversely correlated with SoC (0x8A→0x66 in short session). In `chargepointcharge.log` the charger current stepped down at t≈5400s — extract 0x383 B4 to confirm it maps to BattSentChargeLimit and find the step.
 - **Identify BMS Drive Limits CAN IDs:** Determine which B CAN messages carry PackVoltage, PackCurrent, BattSentChargeLimit, etc. Candidates: 0x391, 0x392. Requires BMS_Recvd.vi analysis or targeted byte extraction.
-- **Confirm BMSmode CAN ID:** Find which message carries BMSmode and extract timeseries to pinpoint the exact 169→170 transition timestamp and confirm it matches t≈134.75s (Cluster 2 conditioning event).
+- ~~**Confirm BMSmode CAN ID:**~~ **Done 2026-10-30:** `0x378` B2; the transition is at t=61.8s, not 134.75s (see Cluster 2). Original item: Find which message carries BMSmode and extract timeseries to pinpoint the exact 169→170 transition timestamp and confirm it matches t≈134.75s (Cluster 2 conditioning event).
 - **Decode 0x617 ChrgrSysSts:** From CODACAN/all_globals_signals.json, signals are ChrgrSysBusVoltage, ChrgrSysBusCurrent, ChrgrSys12VSysVoltage, ChrgrSys12VSysCurrent. Sample `0D BC 00 AB 83 00 00 00` — apply ÷32 and cross-check against 0x279 and CODACAN values.
-- **Decode 0x390 fully:** B0 and B2 are confirmed event markers. B1 (34 transitions), B3 (75 transitions), B4 — cross-correlate against pack temperature (0x277/0x27A) to confirm thermal management link.
-- **Decode 0x276 B0 difference:** In `codacharging.log` the active charging value is 0x01; in `chargepointcharge.log` it is 0x00 throughout. Capture a session that begins before plug-in to observe the full startup handshake and determine if the steady-state value differs by station or if the log started after handshake completion.
+- ~~**Decode 0x390 fully:**~~ **Done:** `0x390` is `BMS_HVBattTemp1` in the DBC (inlet/return air temperatures, AllowedCellTemp window, AllowedHumidity); B0 and B2 are temperatures, not event markers (corrected 2026-10-30). Original item: B0 and B2 are confirmed event markers. B1 (34 transitions), B3 (75 transitions), B4 — cross-correlate against pack temperature (0x277/0x27A) to confirm thermal management link.
+- ~~**Decode 0x276 B0 difference:**~~ **Done:** B0 is `PTC_PowerConsumption` (`chargepointcharge-analysis.md`); this log began mid-charge (corrected 2026-10-30). Original item: In `codacharging.log` the active charging value is 0x01; in `chargepointcharge.log` it is 0x00 throughout. Capture a session that begins before plug-in to observe the full startup handshake and determine if the steady-state value differs by station or if the log started after handshake completion.
 - ~~**Full charge session (priority)**~~ — **DONE** (`chargepointcharge.log`). OV limit confirmed at 3.750V. 0x382 B0 end-of-charge behavior confirmed. See cross-session section below.
 
 ---

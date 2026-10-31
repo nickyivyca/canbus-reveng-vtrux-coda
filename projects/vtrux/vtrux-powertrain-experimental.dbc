@@ -64,7 +64,7 @@ BO_ 1604 VCM_CruiseDiag_0644: 8 VCM
  SG_ cruise_mode : 23|4@0+ (1,0) [0|15] "" Vector__XXX
  SG_ cruise_speed_setpoint : 19|12@0+ (0.125,0) [0|511.875] "km/h" Vector__XXX
 
-BO_ 776 TCM_ParkPin_0308: 5 Vector__XXX
+BO_ 776 HCU_ParkRequest_0308: 5 Vector__XXX
  SG_ InputShaftSpeed : 8|16@1+ (0.5,-16064.0) [-12000|12000] "rpm" Vector__XXX
 
 BO_ 1442 VCM_TractMotor_05A2: 8 VCM
@@ -117,7 +117,7 @@ CM_ BO_ 1426 "VCM-sourced. 100 Hz, DLC=8. B2-B3=throttle position (this DBC). Br
 CM_ SG_ 1426 throttle_pos "Scale to physical % unconfirmed.";
 
 CM_ BO_ 1430 "BMS-sourced (drops when HV battery LV connector unplugged). ~1 Hz. Integer SoC percent at B6. NOT in EPRI plist.";
-CM_ SG_ 1430 bms_soc "Integer-rounded version of 0x411. Use 0x411 for sub-percent resolution.";
+CM_ SG_ 1430 bms_soc "TRUNCATED (floor), not rounded, version of 0x411 -- measured 2026-09-19 across 15280 paired samples: floor(hires)==int in 100.0%, round(hires)==int in only 46.7% (e.g. hires 12.68 reads 12). So a reading of N means real SoC is in [N, N+1), and this field lags the real value by up to 1%. Use 0x411 for sub-percent resolution and for any threshold comparison.";
 
 CM_ BO_ 1432 "VCM/HCU-sourced. ~1 Hz, DLC=8. Power statistics for ESS, generator, and traction channels. All three are offset-binary excess-32768 (zero at raw 0x8000), 0.01 kW/count. Sign convention: positive = providing energy to HV bus. Channel balance trac_power = ess_power + gen_power holds. B6-B7 = static bias, not power data. ESS and traction channels are stubbed in epri-pt-bus.dbc -- the EPRI app decodes them as plain signed int16 and is wrong. FILTERING DIFFERS BY CHANNEL: ess_power and trac_power are ~8 s rolling averages (the -Avg- in the EPRI names is literal); gen_power is instantaneous. This is why gen_power matches measured V*I far better than the other two -- it is a filtering difference, not a decode error. Confirmed 2026-08-02 by sweeping a moving-average window over measured V*I and re-correlating.";
 CM_ SG_ 1432 ess_power "Battery pack power. Positive = battery discharging; negative = charging/regen. Active during AC charging; near-zero when the generator fully covers traction load. Encoding corrected from the EPRI app's signed-int16 decode. TIME-AVERAGED, not instantaneous: agreement with measured 0x410 pack V*I peaks at a ~8 s boxcar-equivalent filter (r 0.807 raw -> 0.984 at 8 s). Do not use for energy integration -- use 0x410 pack V*I.";
@@ -130,7 +130,7 @@ CM_ BO_ 1604 "VCM-sourced (part of VCU cluster 0x639-0x64B). 100 Hz. Cruise cont
 CM_ SG_ 1604 cruise_mode "0x8=idle/standby, 0x9=throttle override/auto-disengage, 0xA=active cruise (speed controller running).";
 CM_ SG_ 1604 cruise_speed_setpoint "Zero when inactive. 1 km/h per button press.";
 
-CM_ BO_ 776 "BorgWarner TCM. 100 Hz, DLC=5. B0=ParkRequest/ParkPinState in epri-pt-bus.dbc. B1-B2=InputShaftSpeed (this DBC). B3-B4=constant 0x00. Cross-vehicle: identical encoding on Coda (CODA-D-CAN.dbc). See notes/borgwarner.md.";
+CM_ BO_ 776 "Park request to the BorgWarner TCM, from the HCU. 100 Hz, DLC=5. B0 bits 6-5 = ParkRequest, decoded in epri-pt-bus.dbc. B1-B2=InputShaftSpeed (this DBC). B3-B4=constant 0x00. Cross-vehicle: identical encoding on Coda (CODA-D-CAN.dbc), where the DLCM firmware is seen assembling the frame. Renamed 2026-09-24 from TCM_ParkPin_0308 -- the transmitter is the controller, not the TCM; the TCM answers on 0x55C 55-65 ms later. See notes/borgwarner.md.";
 CM_ SG_ 776 InputShaftSpeed "Zero=0x7D80 at rest. Input shaft (not output): ratio vs trac_rpm is 2.000 regardless of gear ratio, matching on both Vtrux and Coda.";
 
 CM_ BO_ 1442 "VCU-sourced re-broadcast of traction motor speed and torque. ~100 Hz, DLC=8. B0-B1 and B6-B7 uncharacterized. See notes/powertrain-messages.md.";

@@ -265,11 +265,35 @@ All Innomaker dongles share VID/PID (`0x1D50` / `0x606F`). Key design points tha
 
 `CanLoggingService` is a foreground service (`foregroundServiceType=connectedDevice`).
 
-Log format — replicates Python `can_logger.py` exactly:
+Log format (BUSMASTER, `BusmasterWriter`), following the header's column line
+`***<Time><Tx/Rx><Channel><CAN ID><Type><DLC><DataBytes>***`:
 ```
-HH:MM:SS:TTTT  <busIndex+1>  0x<ID>  Rx  d  <dlc>  <byte0> <byte1> ...
+HH:MM:SS:TTTT Rx <busIndex+1> 0x<ID> s|x <dlc> <byte0> <byte1> ...
+HH:MM:SS:TTTT Rx <busIndex+1> 0x<mask> ERR 8 <byte0> ... <byte7>
 ```
-TTTT = 10 kHz ticks (millisecond remainder × 10). Header block matches existing captures so `canre` tools parse them directly.
+TTTT = 10 kHz ticks (millisecond remainder × 10). `s` / `x` = standard / extended ID; `Tx` marks
+the app's own transmitted frames (gs_usb echo). Header block matches existing captures so
+`canre` tools parse them directly. (This section showed a different column order until
+2026-10-30; the line above is what the writer produces.)
+
+**`ERR` lines (since the 2026-10-30 builds, Bug 11):** a CAN error frame from the adapter is
+logged with type `ERR`, the SocketCAN error-class mask in the ID column (`0x4` controller,
+`0x8` protocol, `0x20` ACK, combined, e.g. `0xC`) and the 8-byte payload as received, e.g.
+`Rx 1 0xC ERR 8 00 30 02 00 00 00 6D FF`. Before those builds the same frames were written as
+ordinary standard frames `0x004` / `0x00C`. `canre/parsers/busmaster.py` skips `ERR` lines unless
+`include_errors=True`. Why the `ERR` token: `plans/gs-usb-error-frames.md` decisions table. An
+Innomaker reports its error state on a 1 s tick, so the lines count seconds in an error state,
+not errors (plan Step 5).
+
+**Drop counts (since the 2026-10-30 builds, Bug 4):** the notification ends with
+`drops 0`, or with each non-zero count, e.g. `drops pipe.log=412`. Names: `pipe.log` (frames
+the log writer lost, gs_usb), `pipe.frames` (live display, bus resolver, GPS; gs_usb),
+`slcan.frames` (`:p914`), `harness.frames` (Coda SLCAN harness), `gs_usb.overflowFlag` (frames
+the adapter flagged as overflowed, Bug 12). The same counts go to logcat every 10 s, tag
+`TryEmit`. The log itself carries no drop record (Change 13). The log writer's flows buffer
+16,384 frames (`CanFrameSource.LOG_BUFFER_FRAMES`). Debug builds of `:coda` also log collector
+backlog measurements and accept the `com.reverseit.cancore.DEBUG_STALL` broadcast; release
+builds do not (`FlowHealth.kt`).
 
 Segmentation: rolls on size (50 MB), time (5 min), or vehicle `LogSegmentPolicy`. Storage: prunes oldest files to stay under 2 GB cap. Logs go to `Context.getExternalFilesDir("logs")`.
 
@@ -302,6 +326,9 @@ Segmentation: rolls on size (50 MB), time (5 min), or vehicle `LogSegmentPolicy`
 | `SlcanSource` | Drives `SlcanReader` from an `InputStream` (serial port or TCP). Blocking `pump()` plus a `slcanFrames()` cold-flow wrapper. No Android imports, so the whole path is JVM-testable |
 | `CanFrameSource` | The three members `CanLoggingService` actually needs from a source: `frames`, `activeDeviceCount()`, `activeBusCount()`. `CanPipelineManager` implements it; widening the service's property to this interface let a non-gs_usb vehicle use the logging path without touching the multi-dongle code |
 | `SlcanFrameSource` | `CanFrameSource` over an SLCAN byte stream. One stream, one bus. Starts a fresh reader per `pump()`, because a reconnected stream can begin mid-frame and a carried-over partial token would splice two unrelated frames |
+| `LogFileServer` | NanoHTTPD server for the companion: `/health`, `/files` (log-root `.log`, flat -- what the companion pulls then DELETEs), `/tree` (recursive, read-only, `.log`/`.jsonl`/`.json`, since 2026-09-26), `GET /files/<path>` with canonical-path containment, DELETE log-root `.log` only, and `PUT /files/<putDir>/<name>.jsonl` (create-only, Coda `tpms` only, since 2026-09-27; `/health` version 3). Covered by `LogFileServerTest` (real HTTP on the JVM) |
+| `SlcanWriter` | Encodes a frame as an SLCAN `t`/`T` line, the inverse of `SlcanReader`. Covered by `SlcanWriterTest` |
+| `SlcanBusGroup` | N SLCAN streams (one per bus) as one `CanFrameSource` + `CanTransmitter` -- the Coda emulator harness's stand-in for N dongles. Stamps and emits under one lock, as `CanPipelineManager` does; `transmit()` writes the line up that bus's stream and emits an `isTx` echo, as gs_usb does; reconnects a dropped stream; counts drops. Covered by `SlcanBusGroupTest` and, with a bridge dump, `SlcanBridgeParityTest` |
 
 ---
 
@@ -406,7 +433,7 @@ ADB device (phone): connected over TCP at `<lan-ip>:39789` (port changes each wi
 
 ## CAN Log Replay
 
-Using `tools/can_replayer.py` with PEAK PCAN-USB dongle on PC → Innomaker on phone OTG.
+Using `tools/can_replayer.py` (now run from the can-tools git clone, `~/Git/can-tools/tools/can_replayer.py`; reverse-it's copy was deleted 2026-10-31) with PEAK PCAN-USB dongle on PC → Innomaker on phone OTG.
 
 `--bus N` filters to a single log channel. `--skip-confirmation` skips the "Press Enter" prompt (required when running non-interactively). Bus numbers vary by dongle insertion order — always identify by anchor IDs, not bus number.
 

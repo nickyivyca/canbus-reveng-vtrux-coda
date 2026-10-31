@@ -13,13 +13,13 @@ android {
         // works on 21+ but the embedded live-display UI requires 26.
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
+            storeFile = rootProject.extra["projectKeystore"] as File  // root build.gradle.kts
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -29,6 +29,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // The project keystore, as debug builds use: car and phone loads are release builds
+            // (Change 15) and must install over the debug builds already there, keeping their data.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

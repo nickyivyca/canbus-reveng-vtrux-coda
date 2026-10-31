@@ -4,34 +4,103 @@ How much AC energy the wall delivers per mile driven, and how badly the Bel
 on-board charger degrades at low power.
 
 **Status:** complete over 16 charge sessions / 118 kWh of AC input
-(2026-08-03). Companion to `energy-consumption.md` (Wh/mile at the HV bus) and
+(2026-08-03). **Corrected 2026-10-10** against real-power metering -- see the
+correction block below. Companion to `energy-consumption.md` (Wh/mile at the HV bus) and
 `fuel-to-electricity.md` (Wh/gallon).
 
 Scratchpad: `notes/artifacts/charger_efficiency.py`; per-session results in
 `notes/artifacts/charger_sessions.json`.
 
+> ## Correction, 2026-10-10 -- read this before any number below
+>
+> Two of the measurements this note rests on are wrong in ways the CAN data
+> alone could not show. Both were found by adding real-power metering (the
+> garage 14-50 Emporia CT, and the Enphase consumption CTs as a second meter):
+>
+> 1. **The AC side is apparent power, and the charger's AC current reads
+>    ~8 % low at full power.** Real power from the CT is 1.09-1.12x the
+>    charger's `V x I` at full power, and only 0.30-0.40x at the Low Power
+>    hold. Measured and written up in
+>    `Infrastructure/vehicle-cost-per-mile.md` section 6 (6.1-6.3), which
+>    this note never referenced. Every efficiency and wall-to-pack figure
+>    below that divides by CAN AC power is affected: high-power figures are
+>    optimistic, and hold figures are pessimistic.
+> 2. **`BELINV_hvBatteryCurrent` reads high at low output.** The error is
+>    ~0 above ~10 A, +0.14 A at 6-8 A, +0.4 A at 4-5 A and **+1.5 A at a
+>    2.0-2.5 A reading**. So the "~940 W of DC" at the hold is not produced;
+>    the true current is ~0.8-0.9 A. Details in
+>    [The charger's DC current reading at low output](#the-chargers-dc-current-reading-at-low-output-2026-10-10).
+>    The "HV aux" (`Idc - Ibat`) is inflated wherever low-current time is
+>    included.
+>
+> **What stands:** the full-power DC reading (cross-checked against the BMS in
+> export mode at 15-18 A), the voltage-dependence analysis (its contrasts are
+> within-session and at high current), and the charger-unit comparison.
+>
+> **Superseded:** the headline efficiency, wall-to-pack and Wh/mi figures (see
+> the CT-based column added to the headline table), and the "losses are
+> essentially fixed" mechanism. In real power, the charger loss is ~1.05 kW at
+> full power and at most ~0.5 kW at the hold.
+>
+> Scripts: `artifacts/charger_dc_error_fit.py`, `artifacts/hold_load_fit.py`
+> (phase 8), `artifacts/hold_burst_check.py`, `artifacts/hold_msgrate_check.py`.
+
 ---
 
 ## Headline
 
-| Metric | Value |
-|--------|------:|
-| **From-grid consumption** | **~750 Wh/mi** (typical mixed charging) |
-| — if always charging at 32 A | ~650 Wh/mi |
-| — if always charging at 16 A | ~890 Wh/mi |
-| Charger efficiency at 6.5 kW (32 A) | **92–93%** |
-| Charger efficiency at 2.9 kW (16 A) | **77–82%** |
-| Wall-to-pack at 32 A | **84–86%** |
-| Wall-to-pack at 16 A | **~63–65%** |
-| Pooled wall-to-pack, all productive sessions | **74.3%** |
+> **See also [`charge-termination-behaviour.md`](charge-termination-behaviour.md).**
+> `CHARGER_LOW_POWER` (mode 3) is a hold, not a stop: the charger keeps drawing
+> ~7.9 A at ~244 V (~1.9 kVA apparent). It is not brief -- the balance hold
+> at top of charge ran 7.7 h on the parts truck.
+>
+> **Corrected 2026-10-10:** the hold draws **~570-600 W real** (main truck;
+> ~1,020 W on the parts truck, whose pump adds ~220 W at 12 V), not 1.9 kW.
+> Its "~940 W of DC" was the charger's own reading, which is ~1.5 A high at
+> this output. The true DC is ~0.8-0.9 A, almost all of it consumed by HV aux
+> and the DC-DC. Wall-to-pack during the hold is ~3 %.
+
+
+| Metric | Original value (CAN apparent power) | **Real power (CT), 2026-10-10** |
+|--------|------:|------:|
+| **From-grid consumption** | ~750 Wh/mi (typical mixed charging) | **~786 Wh/mi** (vehicle-cost-per-mile 6.3) |
+| — if always charging at 32 A | ~650 Wh/mi | **~700 Wh/mi** |
+| — if always charging at 16 A | ~890 Wh/mi | not re-measured |
+| Charger efficiency at 6.5 kW (32 A) | 92–93% | **~85%** (real loss ~1,050 W) |
+| Charger efficiency at 2.9 kW (16 A) | 77–82% | not re-measured |
+| Wall-to-pack at 32 A | 84–86% | **79.5%** (6.2: 78.5%) |
+| Wall-to-pack at 16 A | ~63–65% | not re-measured |
+| Pooled wall-to-pack, all productive sessions | 74.3% | **71.1%** (18 sessions, 6.3) |
+
+The "~700 Wh/mi at 32 A" is 531 / (0.795 x 0.95). The 16 A rows have no CT
+data: the 16 A and weak-supply sessions were charged away from home.
 
 **Charging at 16 A instead of 32 A costs about 29% more grid energy for the
 same charge** — 15.4 kWh from the wall per 10 kWh into the pack, versus
-11.9 kWh at 32 A.
+11.9 kWh at 32 A. **Not re-measured, and its mechanism is contradicted
+(2026-10-10):** the claim rests on the fixed-loss picture below, which does
+not hold in real power. 16 A probably still costs more, because the HV aux
+and DC-DC run for longer, but the size of the penalty is unknown.
 
 ---
 
 ## Why: the losses are essentially FIXED, not proportional
+
+> **Superseded 2026-10-10 -- this section holds only in apparent power.** In
+> real power (CT) the charger loss is **~1,050 W at full power** (real
+> efficiency ~0.85; ~1,275 W / 0.82 on the parts truck). At the Low Power
+> hold, charger loss + DC-DC loss + HV aux total **~510 W** (478-524 W in
+> every hold on both trucks), so the charger alone is at most ~0.5 kW there.
+> The loss scales with power. The flat "loss W" column below was produced by
+> the AC current under-reading at high power and the power factor collapsing
+> at low power.
+>
+> The ~510 W can only be split with an assumption. If the HV aux stays at its
+> bulk value through the hold, the split is roughly ~220 W charger, ~150-340 W
+> HV aux, and a small DC-DC loss (`artifacts/charger_dc_error_fit.py`
+> phase 3). The CT alone gives only the sum.
+>
+> The tables below are kept as the apparent-power record.
 
 This is the whole story. Two overheads, both roughly independent of charging
 power:
@@ -83,6 +152,13 @@ every statistic. Accept only `80 <= Vac <= 300`, `0 <= Iac <= 60`.
 Pack-side energy is taken independently from the BMS (`0x410` `bcm_vbat` x
 `bcm_ibat`), so `E_dc - E_pack` gives the HV auxiliary load directly.
 
+> **2026-10-10:** that last step only holds at high charger current.
+> `hvBatteryCurrent` reads increasingly high below ~6 A (see
+> [the DC current section](#the-chargers-dc-current-reading-at-low-output-2026-10-10)).
+> Any `E_dc` integrated over a taper or a hold therefore over-counts, and the
+> `E_dc - E_pack` "HV aux" with it. `chargerInputCurrent` reads ~8 % low at
+> full power (vehicle-cost-per-mile 6.1).
+
 ### Three corrections that materially changed the answer
 
 1. **`hvBatteryCurrent` sign is documented backwards.** `BelInverter-v2.dbc`
@@ -94,6 +170,10 @@ Pack-side energy is taken independently from the BMS (`0x410` `bcm_vbat` x
    at ~1.9 kVA in / 0.95 kW out with only **2.45 A** of DC current — the charger
    idling against its setpoint. Pooling it produced a fake 49% efficiency bin
    that was 98.6% one session. Samples with `Idc < 3 A` are now excluded.
+   **(2026-10-10:** the "0.95 kW out" was never real. At a 2.45 A reading the
+   DC current is ~1.5 A high, and real input is ~570 W, not 1.9 kVA. The
+   `3 A` cut also leaves the 3-6 A taper in, where the reading is still
+   0.1-1.0 A high.)
 3. **Pack energy must be integrated over charging intervals only.** Integrating
    across the session span counts the pack *discharging* into HV aux during idle
    gaps. `@20260714_161319` charges 3.28 h inside a 5.63 h span; before the fix
@@ -311,6 +391,24 @@ opposite of the degradation hypothesis.
 **The low-power penalty is present on both units**, so it is a property of the
 design and its fixed overhead, not a symptom of a failing charger.
 
+> **2026-10-10 -- three units, and the low-current DC error is common to
+> them.** The parts truck has always had its own Bel unit; the main truck got
+> a new unit on 2026-05-03 (user, 2026-10-10). So the hold data covers three
+> units:
+>
+> - main original (another_M0, charge_M0, charge_M1, 80pctcv,
+>   full-charge-then-fail);
+> - main replacement (0503, 0726, 0816, 0912);
+> - the parts truck.
+>
+> At a 2.0-2.5 A reading the DC error is 1.30-1.50 A on the original and
+> 1.42-1.59 A on the replacement, which is indistinguishable. The parts truck
+> first appeared worse (2.07 A at a 2.5-3.0 A reading). That most likely
+> comes from the constant-HV-aux assumption failing on a truck with a
+> 270-320 W 12 V load. Its assumption-free bound (reported DC minus CT,
+> 314 W, so at least 0.8 A) is no larger than main's. **No difference between
+> the three units has been measured.**
+
 ### The pooled per-era totals differ, but not because of the unit
 
 | Era | E_ac | E_dc | E_pack | eta_chg | wall-to-pack | implied grid Wh/mi |
@@ -411,6 +509,16 @@ several hundred watts into a cold-soaked pack, and by the DCDC.
 stand as measured. An earlier draft of this file hedged the headline down to
 ~680 Wh/mi on the possibility of sensor error; that hedge is **withdrawn**.
 
+> **Scope, added 2026-10-10.** This check was made at ~15-18 A, and it holds
+> there. It says nothing about low output. Below ~6 A the charger's reading
+> is high by a current-dependent amount: not an additive offset, so the
+> offset argument above does not cover it, and not a gain error either. The
+> ~440 W aux at 6.3 kW is a real load. The "HV aux" at the hold (~850-970 W)
+> is not.
+>
+> The "~750 Wh/mi stands" consequence is also superseded on the AC side. Real
+> power gives ~786 Wh/mi (vehicle-cost-per-mile 6.3).
+
 ### Export also confirms the "high fixed loss" character
 
 From the same session, pack output **6,730 W** against AC output **5,740 VA** —
@@ -424,6 +532,116 @@ Note the low-power export sessions (`exportpowerattempt.log`,
 are badly unbalanced (1.6 A vs 7.2 A) and the AC reading is V_RMS x I_RMS, so a
 reactive load makes apparent power exceed real power — they compute to >100%
 efficiency, which is the artifact, not a measurement.
+
+---
+
+## The charger's DC current reading at low output (2026-10-10)
+
+Found by the charge-interposer review (`artifacts/hold_load_fit.py` phase 8)
+and finished here (`artifacts/charger_dc_error_fit.py`,
+`artifacts/hold_burst_check.py`, `artifacts/hold_msgrate_check.py`).
+
+### At the hold, the reported DC output exceeds the real AC input
+
+Settled windows, 20 min or more after the Low Power command, in all nine
+holds with CT coverage:
+
+| | CT real W | charger VA | reported DC W | pack W | 12 V W |
+|---|---:|---:|---:|---:|---:|
+| main truck (8 holds, Jan-Sep 2026) | 569-752 | 1,840-1,890 | 837-1,079 | 0-169 | 42-70 |
+| parts truck (1 hold) | 1,020 | 1,947 | 1,334 | 226 | 273 |
+
+A charger cannot output more than it draws, so the DC reading is high by at
+least `(reported DC - CT) / Vdc`, about 0.8-1.1 A, even at 100 % efficiency.
+
+**The CT is trustworthy at this load, confirmed by a second meter.** The CT
+had only been validated at ~6.8 kW (against the Coda, vehicle-cost-per-mile
+6.1). At every point where it fell from a steady plateau to ~0, the step was
+compared with the Enphase consumption CTs on the main panel, which have their
+own CTs and voltage reference:
+
+- 29 full-power ends: Enphase/CT 0.99 (quartiles 0.98-1.00);
+- 6 hold ends with a quiet house: 0.88 (0.80-1.22).
+
+For the DC reading to be physically possible, the CT would have to read
+1.4-1.7x low at the hold.
+
+**What stays fixed across every hold:** CT - pack - 12 V = **~510 W**
+(478-524 W). That holds on both trucks, from January to September, and in
+the 80 % hold. It is charger loss, DC-DC loss and HV aux combined, in real
+watts. The parts truck's extra ~220 W of 12 V load (its uncommanded pump)
+costs about the same ~220 W at the wall.
+
+### Shape of the error: grows as the current falls, not an offset
+
+**ASSUMPTION:** the non-DC-DC HV load stays at the value it has in that
+session's own bulk (Idc >= 10 A), where the sensors agree. Then
+`true Idc = ibat + (aux_ref + P12 / 0.9) / Vdc`. `aux_ref` is 144-341 W on
+the main truck. Main truck, 2,011 sixty-second windows:
+
+| Reported Idc | Implied true | Error |
+|---|---:|---:|
+| 13-16 A | 14.7 | ~0 (zero by construction) |
+| 10-13 A | 12.4 | +0.02 A |
+| 6-8 A | 6.1 | +0.14 A |
+| 4-5 A | 4.1 | +0.41 A |
+| 3.5-4 A | 2.9 | +0.85 A |
+| 3-3.5 A | 2.2 | +1.03 A |
+| 2.5-3 A | 1.4 | +1.31 A |
+| 2-2.5 A | 0.83 | **+1.49 A** (n=921) |
+
+- **An additive offset fits badly** (RMSE 0.74 A).
+- `reported = 0.891 x true + 1.51` fits to RMSE 0.23 A.
+- `sqrt(true^2 + 2.12^2)` fits to 0.21 A, but is **rejected** by the
+  parts-truck 83 % start (`vtrux_partstruck_chargeagain3`, 2026-04-25,
+  raised by the interposer review and reproduced here): the charger reported
+  a steady 1.40 A for ~43 s at a 0 A setpoint, which a quadrature form
+  cannot produce.
+- **The linear form is a fit, not a mechanism.** It comes from one truck plus
+  that one point. "Delivers ~0 at a 0 A setpoint" is a modelling choice the
+  reading allows, not a measurement: the CT rows around that start are
+  2 minutes apart, so they do not bound the wall power.
+
+**Consequence for the hold.** In the full-charge holds the setpoint and the
+reading track (set 2.30 A, read 2.35 A). If the charger regulates its own
+reading, a ~2.3 A setpoint delivers **~0.8-0.9 A true**, nearly all of it
+consumed by HV aux and the DC-DC, which leaves the pack at ~0.05 A. The
+reading does not follow the setpoint at 0 A (0 A set, 1.4 A read).
+
+### The real power factor, and what was ruled out
+
+Real W / charger VA is 0.30-0.40 at the hold (0.52 on the parts truck), and
+1.09-1.12 at full power, the latter from the ~8 % AC current under-read.
+
+- **No burst-mode transmit gating.** In the raw logs of all 10 hold sessions,
+  `0x18FFD7C0` runs at 9.99-10.00/s and `0x410` at 19.96-19.98/s, in bulk and
+  in the hold alike. That covers both main-truck units, the parts truck, and
+  both logger types. The reported Idc is never 0 in the hold; it swings
+  2.0-2.6 A on the ~11 s setpoint cycle.
+- **The "message rate drops to 55 % / 20 %" in vehicle-cost-per-mile 6.2 is
+  an InfluxDB point-count effect.** Influx stores on change plus a 1 s
+  heartbeat. Hold/bulk point-rate ratios are 0.55-0.68 for
+  `BELINV_hvBatteryCurrent` and 0.17-0.40 for `bcm_vbat`, against flat frame
+  rates. It is not known which fields 6.2 counted; the match in magnitude is
+  the evidence.
+
+### What this invalidates
+
+- "~940 W of DC" at the hold, here and in `charge-termination-behaviour.md`.
+- Any "HV aux" figure that includes taper or hold time. The 460-620 W "HV
+  auxiliary" in the loss table is a whole-session figure. Bulk-only HV load,
+  DC-DC input included, is ~220-410 W on the hold sessions.
+- **DC-DC efficiency estimates that relied on the hold** (the interposer
+  review's ~63-67 %). A bulk-only fit gives no usable estimate either
+  (session medians n=5, R^2 0.02). Treat DC-DC efficiency as unknown.
+
+### Open
+
+- Whether the parts-truck unit differs. One session, and the constant-aux
+  assumption is weakest there. A second parts-truck hold with CT data would
+  settle it.
+- The charger/HV-aux split of the ~510 W without the constant-aux assumption.
+- The physical mechanism of the error.
 
 ---
 
@@ -461,12 +679,20 @@ the productive pooling but is real grid consumption nonetheless.
   meter bills real kWh not kVA. The residual downward slope of the loss column
   (650 W -> 470 W) is consistent with exactly this. CAN carries no PF or
   real-power field, so the two cannot be separated from this data.
+  **Closed 2026-10-10:** the garage CT separates them (vehicle-cost-per-mile
+  6.1-6.3). The direction is mixed. At full power the CAN figures are
+  *optimistic* (the AC current reads ~8 % low, so real W/VA is 1.09-1.12). At
+  the hold they are *pessimistic* (W/VA 0.30-0.40). So the high-power figures
+  are not lower bounds.
 - **Pack round-trip efficiency is assumed, not measured.** 95% is a reasonable
   LFP figure at these rates but was not established from the logs.
 - No loss model is fitted. `P_loss` falls slightly with power, which no
   switching converter does — conduction loss rises with current. A linear fit
   returns a negative proportional term and extrapolates to -72% efficiency at
   0.5 kW, which is meaningless. The binned medians are the measurement.
+  **(2026-10-10:** in real power the loss does rise with power, from ~1,050 W
+  at full power to at most ~0.5 kW at the hold. The falling VA-based loss was
+  the measurement artefact.)
 - `vtrux_newcharger.log` / `_part2.log` (2026-05-03 15:52 and 17:14) mark the
   **Bel unit replacement** and are still undocumented in the logs README — worth
   adding. They were not analysed directly; the swap date was taken from their
@@ -474,11 +700,23 @@ the productive pooling but is real grid consumption nonetheless.
 - Two sessions show unusually high HV aux (`@20260714_102812` at 2090 W,
   `@20260714_161319` at 884 W) versus the typical ~500 W. Battery thermal
   management is the obvious suspect (see `battery-thermals.md`) but this was not
-  investigated.
+  investigated. **(2026-10-10:** these are whole-session `E_dc - E_pack`
+  figures, which the low-current DC over-read inflates wherever taper or hold
+  time is included. Bulk-only, `@20260714_102812` is ~400 W, and
+  `@20260714_161319` is still ~1,690 W
+  (`artifacts/hold_load_fit_p5.txt`).)
 
 ---
 
 ## Practical implication
+
+> **Superseded 2026-10-10.** This section rests on the fixed-loss picture,
+> which holds only in apparent power, and its 16 A row was never measured in
+> real power. In real watts the charger loss scales with power. What stays
+> roughly fixed is the HV aux and DC-DC load, ~220-410 W in bulk, which a
+> slower charge pays for over more hours. The 32 A row is ~12.6 kWh from the
+> wall per 10 kWh into the pack (79.5 % wall-to-pack, CT). The size of the
+> 16 A penalty is unknown.
 
 The fixed ~1 kW combined overhead means **charge rate matters a lot more than it
 would on a car with a well-loaded charger**. Per 10 kWh delivered into the pack:

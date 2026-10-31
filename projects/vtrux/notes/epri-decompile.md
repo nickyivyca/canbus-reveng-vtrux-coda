@@ -980,7 +980,7 @@ PPEI encoding but the nibble assignment should be cross-checked against a GMLAN 
 
 Format string: `"Manifold absolute pressure: %.1f kPa"`
 
-**Note on plist label:** The EPRI plist used 'PPEI_Engine_Torque_Status_3' as the message name — correct per GM spec (confirmed against GMW8762 PPEI DBC). The decompile reveals the EPRI app reads MAP from B6, one of several signals in the message.
+**Note on plist label:** The EPRI plist used 'PPEI_Engine_Torque_Status_3' as the message name (confirmed against GMW8762 PPEI DBC). The decompile reveals the EPRI app reads MAP from B6, one of several signals in the message.
 
 - **MAP**: CAN B6 single byte, signed int8 (`puVar20[8]`), × SIMDImm(0xF,0x60) = 0.5
   value = `int8(B6) * 0.5` kPa
@@ -991,7 +991,7 @@ Format string: `"Manifold absolute pressure: %.1f kPa"`
 
 Format string: `"ECM_InstFuelConsmpRate_volPt: %.3f ltrs/hr"`
 
-**Note on plist label:** The EPRI plist used 'PPEI_Engine_General_Status_2' as the message name — correct per GM spec (confirmed against GMW8762 PPEI DBC). The decompile reveals the EPRI app reads fuel rate, one of several signals in the message (which also contains throttle, cruise speed, and AC command).
+**Note on plist label:** The EPRI plist used 'PPEI_Engine_General_Status_2' as the message name (confirmed against GMW8762 PPEI DBC). The decompile reveals the EPRI app reads fuel rate, one of several signals in the message (which also contains throttle, cruise speed, and AC command).
 
 - **ECM_InstFuelConsmpRate_volPt**: 12-bit = `(B4 & 0xF) << 8 | B5`
   value = `raw * DAT_000447a0` = `raw * 0.025` L/hr
@@ -1040,12 +1040,12 @@ Note: DAT_000441b8 is the same -40.0 offset used by the thermal investigation (s
 
 | ID | Result | Notes |
 |----|--------|-------|
-| 0x00C9 | **Exact match** | DBC: Engine_Speed start=15 len=16 BE scale=0.25 → B1:B2 BE × 0.25 rpm |
-| 0x0120 | **EPRI authoritative** | DBC signal "Reserved_for_Platform_Vehicle_Odometer" is a placeholder (scale=1, no offset, covers B0:B3). EPRI reads B1:B4 × 0.015625 km — this is the actual Vtrux encoding. |
-| 0x01C3 | **Exact match** | DBC: Torque_Actual start=3 len=12 BE = (B0[3:0]<<8)\|B1; Torque_Requested start=19 len=12 = (B2[3:0]<<8)\|B3; both scale=0.5 offset=−848. All match. |
-| 0x02C3 | **Match with caveat** | DBC: Engine_Manifold_Absolute_Pressure start=55 len=8 BE scale=0.5 offset=0 = B6 × 0.5 kPa, **unsigned**. EPRI uses signed flag — gives wrong results for MAP > 63.5 kPa (raw > 127). DBC unsigned interpretation is correct (sea-level MAP ≈ 101 kPa = raw 202). |
+| 0x00C9 | **Exact match** | `Engine_Speed`; EPRI reads B1:B2 BE x 0.25 rpm (spec field layout not reproduced). |
+| 0x0120 | **EPRI authoritative** | The standard's "Reserved_for_Platform_Vehicle_Odometer" is a placeholder. EPRI reads B1:B4 × 0.015625 km — this is the actual Vtrux encoding. |
+| 0x01C3 | **Exact match** | The two torque signals `Torque_Actual` and `Torque_Requested`; EPRI's nibble-split extraction, 0.5 Nm/count and -848 Nm offset all match (spec field layouts not reproduced). |
+| 0x02C3 | **Match with caveat** | `Engine_Manifold_Absolute_Pressure` is B6 × 0.5 kPa, **unsigned**. EPRI uses signed flag — gives wrong results for MAP > 63.5 kPa (raw > 127). The unsigned interpretation is correct (sea-level MAP ≈ 101 kPa = raw 202). |
 | 0x03D1 | **Exact match** | DBC: Instantaneous_Fuel_Consumption_Rate — same signal, encoding agrees. |
-| 0x03E9 | **Exact match** | DBC: Distance start=20 len=13 BE scale=0.125; Speed start=6 len=15 BE scale=0.0156. Byte extractions identical; DBC speed scale 0.0156 is truncated from 0.015625 (= 1/64). |
+| 0x03E9 | **Exact match** | Distance and speed; byte extractions identical, and the standard's truncated speed scale resolves to 1/64 (spec field layouts not reproduced). |
 
 The `Throttle_Position` signal in 0x03D1 is present in the DBC but not
 extracted by the EPRI app. The three torque signals in 0x02C3 (Engine_Torque_Max/Min) are also

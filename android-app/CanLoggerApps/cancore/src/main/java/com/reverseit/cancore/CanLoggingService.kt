@@ -231,6 +231,9 @@ class CanLoggingService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Frame-loss counts to logcat (tag TryEmit), every build and every app (Bug 4). An app
+        // that started it earlier (Coda's debug build, every 2 s) keeps its period.
+        FlowHealth.start({ Log.i("TryEmit", it) }, periodMs = 10_000L)
         // Trigger mode isn't known yet (arrives in onStartCommand). Show a generic idle message.
         startForegroundCompat(buildNotification("Waiting..."))
     }
@@ -309,7 +312,8 @@ class CanLoggingService : Service() {
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CanLoggingService::logging")
         wakeLock?.acquire()
         logJob = scope.launch {
-            pipeline?.frames?.collect { frame ->
+            // logFrames, not frames: the log keeps the adapter's error frames (Bug 11).
+            pipeline?.logFrames?.watched("log-writer")?.collect { frame ->
                 val writer = currentWriter ?: return@collect
 
                 writer.writeFrame(frame)
@@ -317,7 +321,7 @@ class CanLoggingService : Service() {
                 val elapsed = System.currentTimeMillis() - segmentStartMs
                 if (writer.bytesWritten >= MAX_SEGMENT_BYTES ||
                     elapsed >= MAX_SEGMENT_MS ||
-                    segmentPolicy.shouldRoll(frame)) {
+                    (!frame.isError && segmentPolicy.shouldRoll(frame))) {
                     rollSegment()
                 }
 
@@ -331,6 +335,7 @@ class CanLoggingService : Service() {
     private fun stopLogging() {
         logJob?.cancel()
         logJob = null
+        currentWriter?.let { logOutOfOrder(it) }
         currentWriter?.close()
         currentWriter = null
         currentSegmentName = null
@@ -358,6 +363,7 @@ class CanLoggingService : Service() {
     }
 
     private fun openNewSegment() {
+        currentWriter?.let { logOutOfOrder(it) }
         currentWriter?.close()
         val logDir = logDir()
         val filename = "${vehicleName}_${sessionTag}_T${segmentIndex}.log"
@@ -380,6 +386,13 @@ class CanLoggingService : Service() {
         segmentIndex++
         openNewSegment()
         pruneOldLogs()
+    }
+
+    private fun logOutOfOrder(writer: BusmasterWriter) {
+        if (writer.outOfOrderFrames > 0) {
+            Log.e(TAG, "${currentSegmentName}: ${writer.outOfOrderFrames} frame(s) arrived out of " +
+                "time order -- a frame source is not emitting in stamp order")
+        }
     }
 
     private fun pruneOldLogs() {
@@ -459,7 +472,8 @@ class CanLoggingService : Service() {
         lastNotifUpdateMs = now
         val mb = writer.bytesWritten / (1024.0 * 1024.0)
         val buses = pipeline?.activeDeviceCount() ?: 0
-        val text = "$buses bus(es)  |  ${sessionTimeDisplay()}  |  seg T$segmentIndex  |  %.1f MB".format(mb)
+        val text = "$buses bus(es)  |  ${sessionTimeDisplay()}  |  seg T$segmentIndex  |  %.1f MB  |  %s"
+            .format(mb, FlowHealth.summary())
         updateNotificationText(text)
     }
 

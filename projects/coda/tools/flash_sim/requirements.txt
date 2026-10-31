@@ -1,0 +1,12 @@
+# Dependencies for the Coda DLCM flash simulators (gateway_sim.py, omitec_sim.py).
+# Install with:  py -3.12 -m pip install -r requirements.txt
+
+# CAN transport. The 'virtual' transport uses python-can's built-in
+# udp_multicast backend (no extra deps, no hardware, no admin rights).
+python-can>=4.0
+
+# Only needed for the 'real' transports (ixxat / kvaser / pcan / socketcan /
+# gs_usb) to auto-detect a dongle via canbench.live.receiver. Not needed for
+# the localhost virtual bus.
+# libusb-package
+# pyusb

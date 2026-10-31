@@ -272,4 +272,4 @@ class ScanResult:
 
 - `isotp` (`pip install can-isotp`) -- ISO 15765-2 transport (package is `can-isotp`, module imports as `isotp`)
 - `can` (`pip install python-can`) -- CAN hardware abstraction
-- `canbench.live.receiver` -- interface detection (`detect_all_can_interfaces`); migrated to the can-tools repo, mirrored at the reverse-it root as `canbench/`
+- `canbench.live.receiver` -- interface detection (`detect_all_can_interfaces`); lives in the can-tools repo, imported from the per-machine git clone (`tools-reference.md`, "can-tools")

@@ -19,7 +19,13 @@ public class DlcmCanTxDump extends GhidraScript {
 
     @Override
     public void run() throws Exception {
-        String outPath = "C:\\Users\\<user>\\AppData\\Local\\ghidra-projects\\dlcm_export\\can_tx_dump.txt";
+        // Honour args[0] when given.  Until 2026-10-06 this path was hardcoded to a
+        // Windows absolute path and args were ignored: on Linux the run "succeeded"
+        // and created a file literally named C:\Users\... in the CWD, while the
+        // requested output path did not exist.  A silently misdirected output.
+        String outPath = "can_tx_dump.txt";
+        String[] a = getScriptArgs();
+        if (a.length > 0 && a[0].length() > 0) outPath = a[0];
         out = new PrintWriter(new FileWriter(outPath));
 
         decompiler = new DecompInterface();

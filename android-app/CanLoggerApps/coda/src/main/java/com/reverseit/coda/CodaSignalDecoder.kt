@@ -30,16 +30,10 @@ class CodaSignalDecoder : SignalDecoder {
     // 0x1C0 MCM telemetry: B0-B1 LE uint16 motor torque
     @Volatile private var motorTorqueRaw: Int = MOTOR_TORQUE_ZERO_RAW
 
-    // 0x276 HVACStatus: B0=PTC kW*10, B1=ACCM kW*10, B2=HVAC flags, B7=BattFanPWM
+    // 0x276 HVACStatus: B0=PTC kW*10, B1=ACCM kW*10, B2=HVAC flags
     @Volatile private var ptcPowerRaw:  Int = 0
     @Volatile private var accmPowerRaw: Int = 0
-    @Volatile private var hvacFlags:    Int = 0   // B2: bit3=heating active, bit4=AC active
-    @Volatile private var battFanPwm:   Int = 0
-
-    // 0x390 BMS_HVBattTemp1: B0=FrontInlet, B1=RearInlet, B3=ReturnDrv (raw, T=raw-128)
-    @Volatile private var frontInletRaw:  Int = 128   // 0 degC
-    @Volatile private var rearInletRaw:   Int = 128
-    @Volatile private var returnDrvRaw:   Int = 128
+    @Volatile private var hvacFlags:    Int = 0   // B2: HVAC mode nibble in bits 5:2, see HvacMode
 
     // 0x391 HVACAirState: B4=ReturnAirTemp, B5=EvapAirOffTemp (raw, T=raw-128)
     @Volatile private var returnAirRaw:  Int = 128
@@ -87,6 +81,8 @@ class CodaSignalDecoder : SignalDecoder {
     // 0x439 / 0x410 AC compressor
     @Volatile private var compressorKwRaw:    Int? = null
     @Volatile private var compressorMaxKwRaw: Int? = null
+    // 0x410 B6 target_compressor_speed (x60 rpm): non-zero = compressor commanded on
+    @Volatile private var compressorTargetRaw: Int = 0
 
     // 0x241 MCM_Thermal -- whole payload; byte roles are unconfirmed so the
     // selection happens at display time via CodaConstants.MCM_THERMAL_BYTES.
@@ -127,14 +123,6 @@ class CodaSignalDecoder : SignalDecoder {
                     ptcPowerRaw  = d[0].toInt() and 0xFF
                     accmPowerRaw = d[1].toInt() and 0xFF
                     hvacFlags    = d[2].toInt() and 0xFF
-                    battFanPwm   = d[7].toInt() and 0xFF
-                }
-            }
-            CodaConstants.ID_BMS_HV_BATT_TEMP -> {
-                if (d.size >= 4) {
-                    frontInletRaw = d[0].toInt() and 0xFF
-                    rearInletRaw  = d[1].toInt() and 0xFF
-                    returnDrvRaw  = d[3].toInt() and 0xFF
                 }
             }
             CodaConstants.ID_HVAC_AIR_STATE -> {
@@ -192,7 +180,10 @@ class CodaSignalDecoder : SignalDecoder {
                 if (d.size >= 3) compressorKwRaw = d[2].toInt() and 0xFF
             }
             CodaConstants.ID_AC_COMPRESSOR_CMD -> {
-                if (d.size >= 8) compressorMaxKwRaw = d[7].toInt() and 0xFF
+                if (d.size >= 8) {
+                    compressorTargetRaw = d[6].toInt() and 0xFF
+                    compressorMaxKwRaw  = d[7].toInt() and 0xFF
+                }
             }
             CodaConstants.ID_MCM_THERMAL -> {
                 if (d.size >= 8) mcmThermal = d.copyOf()
@@ -236,22 +227,9 @@ class CodaSignalDecoder : SignalDecoder {
             else -> TorqueState.NONE
         }
 
-        // Battery thermal: gate on fan PWM, then compare inlet vs return temps
-        val batteryThermal = if (battFanPwm == 0) {
-            ThermalState.NONE
-        } else {
-            val inletAvg = (frontInletRaw + rearInletRaw) / 2.0f
-            if (inletAvg > returnDrvRaw) ThermalState.HEATING else ThermalState.COOLING
-        }
-
-        // Cabin thermal: use discrete status bits from 0x276 B2 directly.
-        // bit4=AC active, bit3=heating active. No fan gate needed — these bits are only
-        // set when the respective system is actively running.
-        val cabinThermal = when {
-            hvacFlags and 0x10 != 0 -> ThermalState.COOLING
-            hvacFlags and 0x08 != 0 -> ThermalState.HEATING
-            else                    -> ThermalState.NONE
-        }
+        // Cabin and battery thermal: the HVAC's own mode nibble in 0x276 B2 (see HvacMode).
+        val cabinThermal   = HvacMode.cabin(hvacFlags)
+        val batteryThermal = HvacMode.battery(hvacFlags)
 
         val socPct       = socRaw / 10f
         val expRangeMi   = expRangeRaw * CodaConstants.RANGE_SCALE + CodaConstants.RANGE_OFFSET
@@ -273,6 +251,7 @@ class CodaSignalDecoder : SignalDecoder {
             climatePowerKw  = climatePower,
             auxPowerW       = auxPowerW,
             battTempC       = battTempC,
+            compressorOn    = compressorTargetRaw > 0,
         )
     }
 

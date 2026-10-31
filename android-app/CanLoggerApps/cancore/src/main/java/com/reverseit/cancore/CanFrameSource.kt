@@ -22,12 +22,32 @@ import kotlinx.coroutines.flow.SharedFlow
  */
 interface CanFrameSource {
 
-    /** Frames from every active bus, merged. */
+    /** Data frames from every active bus, merged. Never carries an error frame. */
     val frames: SharedFlow<CanFrame>
+
+    /**
+     * What the log writer records: [frames] plus the adapter's error frames
+     * ([CanFrame.isError]), in one stream in timestamp order. Only [CanLoggingService] should
+     * collect this. An error frame's `id` is an error-class mask that collides with real message
+     * IDs, so keeping them off [frames] means no decoder, bus resolver or contention guard has to
+     * remember to skip them -- including ones not written yet.
+     *
+     * Sources that cannot produce error frames (SLCAN) inherit this default.
+     */
+    val logFrames: SharedFlow<CanFrame> get() = frames
 
     /** Sources currently delivering. Drives the "N dongle(s)" / "waiting" notification text. */
     fun activeDeviceCount(): Int
 
     /** Bus count for the BUSMASTER log header. */
     fun activeBusCount(): Int
+
+    companion object {
+        /**
+         * Buffer on the flow the log writer reads (Bug 4): 16k frames, about 2 s at Vtrux's
+         * ~7,100 fps, so a writer stall of that long loses nothing. Measured on a phone
+         * (2026-10-30): no loss from 1.2-7 s stalls at ~2,000 fps.
+         */
+        const val LOG_BUFFER_FRAMES = 16_384
+    }
 }

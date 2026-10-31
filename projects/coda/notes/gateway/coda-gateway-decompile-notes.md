@@ -4,7 +4,7 @@
 
 | Item | Value |
 |------|-------|
-| Source log | `projects/coda/logs/coda_gateway_flash.log` |
+| Source log | `projects/coda/logs/flash/coda_gateway_flash.log` |
 | Capture date | 2026-04-25 |
 | Tool | Omitec scanner, BUSMASTER 500 kbps |
 | Extracted binary | `projects/coda/notes/gateway/coda_gateway.bin` |
@@ -188,7 +188,32 @@ The dispatcher validates the incoming frame then switches on `(service_byte - 0x
 | 0x2E | 0x3E | TesterPresent |
 | 0x75 | 0x85 | ControlDTCSettings |
 
-Code at **0x01924** verifies the tester CAN ID == **0x710** before processing any request; non-matching IDs receive NRC 0x11 (serviceNotSupported).
+Code at **0x01924** verifies the tester CAN ID == **0x710** before processing any request.
+
+**CORRECTED 2026-09-24.** An earlier version of this line continued "...non-matching IDs
+receive NRC 0x11 (serviceNotSupported)". Both halves were wrong, read back off the
+disassembly:
+
+```
+0x0191C  ldr  r0, =0x400004A8      ; received tester id
+0x01920  ldr  r0, [r0]
+0x01924  cmp  r0, #0x710
+0x01928  bne  0x01D3C              ; MISMATCH -> branches away, emits nothing
+0x0192C  and  r2, r2, #0x7F        ; match: mask suppressPosRsp off the subfunction
+0x01930  cmp  r2, #0x1
+0x01934  beq  0x025F0
+0x01938  mov  r2, #0x7F  / strb [r3,#0]
+0x01940  mov  r2, #0x11  / strb [r3,#1]
+0x01948  mov  r2, #0x12  / strb [r3,#2]
+0x01950  mov  r0, #0x3            ; 3-byte negative response
+```
+
+A non-matching id **branches away** rather than producing a negative response. And the
+`0x11` in the block below is the **service byte** of `7F 11 12` — ECUReset refused with
+subFunctionNotSupported, reached only when the id *does* match and the subfunction is not
+`0x01` (hardReset). It is not an NRC.
+
+*Verified with:* `../artifacts/gateway_uds_routing_analysis.py`
 
 ### Finding 3: DID Dispatch Table
 
@@ -394,6 +419,62 @@ B4 is a *home-bus* flag encoding which physical bus is the native source of the 
 - `B4=4` = D CAN origin. On the D CAN table (B2=0x01): gateway receives it. On the B CAN table (B2=0x02): gateway is transmitting it there (rebroadcast from D CAN).
 
 This is consistent with every entry: no B CAN-origin message has B4=4 on the B CAN table, and no D CAN-origin message has B4=2 on the D CAN table.
+
+### Finding 10: Diagnostic routing is per-CAN-ID, with no service filtering (2026-09-24)
+
+Established to answer a specific question from the BMS work: when the GWM forwards a
+tester request to an ECU, does it inspect the UDS **service** and refuse some — possibly
+synthesising a negative response of its own? If it did, a module could appear to refuse a
+service it never actually received.
+
+**It does not.** Three independent checks against this image:
+
+**1. The routing records carry no service field.** The 28 `B2=0x05`/`0x06` entries of the
+CAN ID table (Finding 1) are CAN id + source/destination bus and nothing else:
+
+| offset | CAN id | B2 | B3 | B4 | meaning |
+|---|---|---|---|---|---|
+| `0x0F1E8` | `0x722` | 05 | 02 | 01 | BMS request, Diag -> **B CAN** |
+| `0x0F1F0` | `0x72A` | 06 | 01 | 02 | BMS response, B CAN -> Diag |
+| `0x0F258` | `0x7E0` | 05 | 04 | 01 | DLCM request, Diag -> **D CAN** |
+| `0x0F260` | `0x7E8` | 06 | 01 | 04 | DLCM response, D CAN -> Diag |
+
+B3 is the destination bus and B4 the source, in Finding 8's codes (01 Diag, 02 B CAN,
+04 D CAN). Every record says "this id moves from bus X to bus Y". `0x722` is routed by
+exactly the same mechanism as `0x7E0`, differing only in destination bus.
+
+**2. The firmware never constructs another module's response id.** Scanning the whole
+image for each diagnostic id, both as an ARM MOV/MVN immediate and as a 4-byte literal:
+
+| id | constructed? |
+|---|---|
+| `0x718` (its own response id) | literal at `0x0969C` |
+| `0x7DF` (functional) | literal at `0x004A0` |
+| `0x710`, `0x722`, `0x72A`, `0x7E0`, `0x7E8` | **never**, in either form |
+
+`0x710` appears only inside `cmp r0,#0x710`. Forwarded ids are read from the table at
+runtime, so the only diagnostic id the gateway can *originate* a frame on is `0x718`.
+
+**3. Its own negative responses are service-matched.** Three builders sit together in the
+same region, each storing three bytes and branching to a 3-byte send:
+
+| address | bytes | meaning |
+|---|---|---|
+| `0x018FC` | `7F 34 33` | RequestDownload -> securityAccessDenied |
+| `0x01938` | `7F 11 12` | ECUReset -> subFunctionNotSupported |
+| `0x01968` | `7F 85 31` | ControlDTCSetting -> requestOutOfRange |
+
+Each names the service actually being refused. There is no canned negative, and the byte
+sequence `7F 10 12` does not occur anywhere in the image in either byte order.
+
+**Scope limit.** This covers the gateway **application**. Finding 7 records that some CAN
+handling lives in the bootloader above the 90 KB application, which has never been
+extracted. A filter there is not excluded by any of the above; the routing table's shape
+argues against one, but that is an argument, not a measurement.
+
+*Artifact:* `../artifacts/gateway_uds_routing_analysis.py` (+ `_out.txt`), which includes a
+small ARM disassembler written for this check — neither `capstone` nor an ARM-capable
+`objdump` is available on `the Linux box`.
 
 ### Finding 9: DID Handler Literal Pool and SRAM Signal Anchors
 

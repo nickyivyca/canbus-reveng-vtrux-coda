@@ -16,6 +16,10 @@ data class GreenScreenState(
     val climatePowerKw: Float   = 0f,
     val auxPowerW: Float        = 0f,
     val battTempC: Float        = 0f,
+
+    // AC compressor commanded on (0x410 B6 target speed > 0). Not shown yet; cabin heat with the
+    // compressor running (demist) is otherwise indistinguishable from plain cabin heat.
+    val compressorOn: Boolean   = false,
 )
 
 enum class DisplayMode    { CHARGING, DRIVING }

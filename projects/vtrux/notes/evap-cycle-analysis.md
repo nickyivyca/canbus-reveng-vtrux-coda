@@ -952,12 +952,16 @@ No Android logs.
 | Offset | Log | Notes |
 |--------|-----|-------|
 | 0d | `vtruxdrivetrainconnectorunplug.log`, `vtruxgeneratorpumpunplug.log` | Drivetrain and pump unplug tests |
-| +4d | `vtrux_20260322_165622_T0.log`, `vtrux_20260322_165622_T1.log` (primary + Android) | Overlapping primary/Android capture |
-| +4d | `vtrux_20260322_171601_T0.log`, `vtrux_20260322_172146_T0.log`, `vtrux_20260322_173535_T0.log`, `vtrux_20260322_173541_T0.log` | Android auto-captured sessions from 2026-03-22 |
 | +5d | ~50 Android auto-captured sessions from 2026-03-23 (`vtrux_20260323_*`) | Android logs from 2026-03-23 |
 
-The large batch of Android logs on 2026-03-22/23 (+4/+5d) falls right at the edge of the
-5-day window. These may capture the transition from post-evap-clear back to evap-pending.
+**Not truck data (corrected 2026-10-30, user):** the 2026-03-22 sessions this table used to list at
++4d (`vtrux_20260322_165622_T0/T1`, `171601`, `172146`, `173535`, `173541`) were a bench replay of
+`projects/vtrux/logs/generator-on-then-off.log` (2026-02-16) into the `:vtrux` app, and the empty
+app sessions from that evening. They are quarantined in
+`android-app/notes/artifacts/vtrux_bench_replay_captures/`, whose README has the account.
+
+The batch of Android logs on 2026-03-23 (+5d) falls right at the edge of the 5-day window. It may
+capture the transition from post-evap-clear back to evap-pending.
 
 ---
 
@@ -1086,12 +1090,18 @@ rejected**. It fit the July window but fails against April:
 
 | Session | B0 | Evap pending (B4 b7) | evap_counter max |
 |---------|----|--------------------|------------------|
-| 2026-04-03 | 4 | no | 0 |
+| 2026-04-03 (bench replay of 2026-02-16 data, see note below) | 4 | no | 0 |
 | 2026-04-08 | 138 -> 140 | yes | 0 |
 | 2026-04-11 | 8 | yes | 0 |
 | 2026-04-14 | 8 -> 9 | yes | **141 -> 398 (purging)** |
 | 2026-04-20 | 131 | yes | 398 |
 | 2026-04-25 | 12 -> 18 | no | 0 |
+
+The 2026-04-03 row is not a 2026-04-03 truck session: every capture from that day is a bench
+replay of `projects/vtrux/logs/generator-on-then-off.log` (2026-02-16) into the `:vtrux` app
+(corrected 2026-10-30, user; quarantined in
+`android-app/notes/artifacts/vtrux_bench_replay_captures/`). Its values are the truck's on
+2026-02-16. The rejection below rests on 2026-04-14 and does not depend on it.
 
 A purge ran to `evap_counter`=398 with B0 at 8, so B0 is not a percentage or a threshold. B0 also
 moves 140 -> 8 -> 9 -> 131 -> 12 with no completion in between, so it is not monotonic.

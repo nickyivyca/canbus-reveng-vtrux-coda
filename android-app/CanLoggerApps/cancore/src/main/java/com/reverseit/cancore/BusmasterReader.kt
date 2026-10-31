@@ -17,7 +17,8 @@ import java.io.File
  * 1-based while [CanFrame.busIndex] is 0-based.
  *
  * Header/footer lines (`***...***`) and blanks return null rather than throwing:
- * a replay should tolerate a truncated or hand-edited log.
+ * a replay should tolerate a truncated or hand-edited log. So do error-frame lines
+ * (type `ERR`) and any other type but `s`/`x`.
  */
 object BusmasterReader {
 
@@ -51,7 +52,12 @@ object BusmasterReader {
             idText.toIntOrNull(16)
         } ?: return null
 
-        val isExtended = parts[4].equals("x", ignoreCase = true)
+        // Only data frames are replayed. Anything else -- an `ERR` error-frame line above all --
+        // is skipped: its ID column is an error-class mask, and reading it as a standard frame
+        // would replay the adapter's error report as message 0x004 / 0x00C (Bug 11 in reverse).
+        val type = parts[4]
+        if (!type.equals("s", ignoreCase = true) && !type.equals("x", ignoreCase = true)) return null
+        val isExtended = type.equals("x", ignoreCase = true)
         val dlc = parts[5].toIntOrNull() ?: return null
         if (dlc !in 0..8) return null
 

@@ -73,9 +73,9 @@ BO_ 1122 EPRI_MCU_Info1_0462: 6 Vector__XXX
  SG_ TRAC_HighPwr_Curr : 24|14@1+ (0.25,-2048) [-2048|2047.75] "A" Vector__XXX
 
 BO_ 1217 EPRI_PPEI_Engine_General_Status_4_04C1: 8 Vector__XXX
- SG_ ECM_EngineCoolantTemp : 32|8@1+ (1,-40) [-40|215] "degC" Vector__XXX
- SG_ ECM_EngineAirIntakeTemp : 40|8@1+ (1,-40) [-40|215] "degC" Vector__XXX
- SG_ ECM_OutsideAirTemp : 48|8@1+ (0.5,-40) [-40|87.5] "degC" Vector__XXX
+ SG_ ECM_EngineCoolantTemp : 23|8@0+ (1,-40) [-40|215] "degC" Vector__XXX
+ SG_ ECM_EngineAirIntakeTemp : 31|8@0+ (1,-40) [-40|215] "degC" Vector__XXX
+ SG_ ECM_OutsideAirTemp : 39|8@0+ (0.5,-40) [-40|87.5] "degC" Vector__XXX
 
 
 CM_ BO_ 68 "Via Motors TRAC (traction) MCU. Symmetric to GENE 0x0054 on PT bus (+0x10 offset).";
@@ -86,9 +86,9 @@ CM_ BO_ 288 "GM PPEI vehicle odometer. B0 not read. EPRI app displays in miles b
 
 CM_ BO_ 451 "GM PPEI engine torque. Both signals share scale/offset. Zero torque at raw=1696.";
 
-CM_ BO_ 707 "GM PPEI manifold absolute pressure. EPRI plist label 'PPEI_Engine_Torque_Status_3' is the PPEI message name (correct per GM spec); MAP is one of several signals. B0-B5, B7 not read by EPRI app.";
+CM_ BO_ 707 "GM PPEI manifold absolute pressure. EPRI plist label 'PPEI_Engine_Torque_Status_3' is the PPEI message name; MAP is one of several signals. B0-B5, B7 not read by EPRI app.";
 
-CM_ BO_ 977 "GM PPEI instantaneous fuel consumption. EPRI plist label 'PPEI_Engine_General_Status_2' is the PPEI message name (correct per GM spec); fuel rate is one of several signals (message also contains throttle, cruise speed, AC command).";
+CM_ BO_ 977 "GM PPEI instantaneous fuel consumption. EPRI plist label 'PPEI_Engine_General_Status_2' is the PPEI message name; fuel rate is one of several signals (message also contains throttle, cruise speed, AC command).";
 
 CM_ BO_ 1001 "GM PPEI vehicle speed and distance. plist index .2 is a placeholder (value=-1). B4-B7 not read.";
 

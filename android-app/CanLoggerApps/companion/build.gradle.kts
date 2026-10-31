@@ -34,7 +34,7 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
+            storeFile = rootProject.extra["projectKeystore"] as File  // root build.gradle.kts
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -44,6 +44,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // The project keystore, as debug builds use: phone loads are release builds
+            // (Change 15) and must install over the debug builds already there, keeping their data.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

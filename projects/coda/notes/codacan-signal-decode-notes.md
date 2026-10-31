@@ -248,7 +248,7 @@ Signal encoding fully confirmed (byte position, scale, offset). Full detail in `
 
 | ID | Known | Notes |
 |----|-------|-------|
-| 0x215 | 16-bit word, scale 1/128 (VICD). Phase 4: no unique drops -- inconclusive. | ~~Candidate: TCM.ParkLock~~ — **invalidated**: TCM park signals are fully accounted for by 0x308 (ParkPinState + InputShaftSpeed) and 0x55C (ParkLockState), both confirmed BorgWarner TCM messages. The TCM.ParkLock hypothesis likely arose from a VICD decompile offset error misidentifying 0x308 as 0x215. True identity unknown. |
+| 0x215 | 16-bit word, scale 1/128 (VICD). Phase 4: no unique drops -- inconclusive. | ~~Candidate: TCM.ParkLock~~ — **invalidated**: TCM park signals are fully accounted for by 0x308 (ParkRequest + InputShaftSpeed, transmitted by the DLCM) and 0x55C (ParkLockState, the TCM's own broadcast) -- see notes/borgwarner.md, corrected 2026-09-24. The TCM.ParkLock hypothesis likely arose from a VICD decompile offset error misidentifying 0x308 as 0x215. True identity unknown. |
 | 0x370 | 6 bytes (indices 0,1,2,3,4,7) + 0x80 mask on one signal. Scale 0.1. | Death Counter batch -- 6 ECU heartbeat watchdogs. Signal identities unknown. |
 | 0x378 B3-B7 | B0-B2 decoded; B3-B7 not swept. | Run coarse sweep bytes 3-7 in driving log. |
 | 0x275 B7 | Baseline 0xDD=221. Constant across all known conditions. | Sweep or inject to see if any CODACAN field responds. |

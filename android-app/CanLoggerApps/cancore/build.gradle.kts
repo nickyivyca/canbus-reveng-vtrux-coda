@@ -1,15 +1,10 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
 }
 
-val localProps = Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
-val syncToken: String = localProps.getProperty("sync.token") ?: "DEV_TOKEN_UNSET"
+// From the secrets folder, else local.properties, else DEV_TOKEN_UNSET: root build.gradle.kts.
+val syncToken = rootProject.extra["syncToken"] as String
 
 android {
     namespace = "com.reverseit.cancore"
@@ -31,6 +26,10 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    // LogFileServerTest runs the real server on the JVM: android.util.Log becomes a no-op there.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -42,4 +41,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.java.websocket)
     testImplementation("junit:junit:4.13.2")
+    // android.jar's org.json is a stub that throws under JVM tests; the real one for the tests.
+    testImplementation("org.json:json:20231013")
 }

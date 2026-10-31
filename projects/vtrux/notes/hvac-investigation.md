@@ -199,7 +199,7 @@ The -21 degC/min rate for the final window is elevated because the cabin had coo
 
 **No HV PTC signature found:** HV battery current in both parts is dominated by motor driving noise. Any PTC load (~20-30A HV) would be buried.
 
-**0x4C1 B4 ("OAT Powertrain Estimated"):** Investigated as potential independent temperature. DBC encodes scale=0.5, offset=-40 (confirmed in GMW8762_PPEI_GMLAN.dbc). Correct decoded range: Part 3 = 9-12°C, Part 4 = 8-18°C. In Part 4 it starts at raw=116 (18°C), decays via staircase to raw=97 (8.5°C) by t~511s, then holds flat for remainder. This is the ECM's outside air temperature low-pass filter converging from an inflated prior toward actual ambient -- purely an estimation artifact, not an independent sensor. (Earlier notes used scale=1.0 in error, producing spurious 57-76°C values -- those are now corrected.)
+**0x4C1 B4 ("OAT Powertrain Estimated"):** Investigated as potential independent temperature. Decoded with scale=0.5, offset=-40. Correct decoded range: Part 3 = 9-12°C, Part 4 = 8-18°C. In Part 4 it starts at raw=116 (18°C), decays via staircase to raw=97 (8.5°C) by t~511s, then holds flat for remainder. This is the ECM's outside air temperature low-pass filter converging from an inflated prior toward actual ambient -- purely an estimation artifact, not an independent sensor. (Earlier notes used scale=1.0 in error, producing spurious 57-76°C values -- those are now corrected.)
 
 ### Cold vs Warm Engine PTC Routing -- Key Finding (2026-03-05)
 
@@ -220,15 +220,15 @@ Artifacts: `ptc_check_evap4.py/png`, `ptc_cold_vs_warm_comparison.py/png`, `blow
 
 **Transmission Oil Temperature (0x4C9 B1):** raw=0x41=65 constant throughout Part 2. Frozen value, not a real sensor.
 
-### GMLAN DBC Offset Confirmation (resolved 2026-04-11)
+### 0x4C1 Offset Confirmation (resolved 2026-04-11)
 
-All 0x4C1 temperature signal offsets are now confirmed from GMW8762_PPEI_GMLAN.dbc:
+All 0x4C1 temperature signal offsets are now confirmed:
 
-| Signal | DBC encoding | Notes |
+| Signal | Encoding | Notes |
 |--------|-------------|-------|
-| Engine_Coolant_Temperature (B2) | `(1.0, -40)` | Matches what was used throughout |
-| Engine_Intake_Air_Temperature (B3) | `(1.0, -40)` | Not actively used in this investigation |
-| Outside_Air_Temperature_Powertrain_Estimated (B4) | **(0.5, -40)** | Scale was wrong in earlier scripts (used 1.0) -- corrected in phase3_plot.py |
+| Coolant temperature (B2) | `(1.0, -40)` | Matches what was used throughout |
+| Intake air temperature (B3) | `(1.0, -40)` | Not actively used in this investigation |
+| Outside-air estimate (B4) | **(0.5, -40)** | Scale was wrong in earlier scripts (used 1.0) -- corrected in phase3_plot.py |
 
 Engine Oil Temperature (0x4D1 B1 = 0x00 constant, decodes to -40°C with offset) is confirmed not implemented on Vtrux. The -40°C output at raw=0 is consistent with GM encoding a "not implemented" sentinel as raw zero.
 

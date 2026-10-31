@@ -1,5 +1,6 @@
 package com.reverseit.p914
 
+import android.Manifest
 import android.app.Application
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -8,8 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.Build
+import android.os.Environment
 import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -124,6 +128,24 @@ class P914Application : Application() {
         }
     }
 
+    /**
+     * Whether [P914Constants.PUBLIC_LOG_DIR] is writable. API 30+ needs "All files access"; below
+     * that the legacy WRITE_EXTERNAL_STORAGE grant is what counts. `isExternalStorageManager()`
+     * can throw on a device misreporting its API level (seen by `:coda`), and a throw here must
+     * not stop logging, so it reads as "no access".
+     */
+    private fun hasAllFilesAccess(): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "all-files access check threw ${e.javaClass.simpleName}: ${e.message}")
+        false
+    }
+
     fun connect(which: Transport) {
         if (wantConnected) return
         transport = which
@@ -134,7 +156,12 @@ class P914Application : Application() {
             putExtra(CanLoggingService.EXTRA_VEHICLE_NAME, P914Constants.VEHICLE_NAME)
             putExtra(CanLoggingService.EXTRA_BITRATE_KBPS, P914Constants.BITRATE_KBPS)
             putExtra(CanLoggingService.EXTRA_TRIGGER_MODE, CanLoggingService.TRIGGER_POWER)
-            P914Constants.LOG_DIR_OVERRIDE?.let { putExtra(CanLoggingService.EXTRA_LOG_DIR, it) }
+            if (hasAllFilesAccess()) {
+                putExtra(CanLoggingService.EXTRA_LOG_DIR, P914Constants.PUBLIC_LOG_DIR)
+            } else {
+                Log.w(TAG, "no all-files access: logging to the app-private directory, " +
+                    "which a sync app cannot see")
+            }
         }
         startForegroundService(intent)
         bindService(intent, connection, Context.BIND_AUTO_CREATE)

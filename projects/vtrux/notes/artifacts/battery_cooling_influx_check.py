@@ -24,7 +24,7 @@ from collections import defaultdict
 
 INFLUX = "http://localhost:8086"
 DB = "canbus-data"
-USER = "claude"
+USER = "<influx-user>"
 PW = "claude"
 BUCKET = "10s"
 COOL_A = 40.0     # LV_Curr threshold for "cooling on"

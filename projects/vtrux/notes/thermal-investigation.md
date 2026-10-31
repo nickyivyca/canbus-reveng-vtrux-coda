@@ -1061,7 +1061,7 @@ All three fan/cooling signals in `GMW8762_PPEI_GMLAN.dbc` checked against `vtrux
 | ID | Signal | Location | Result |
 |----|--------|----------|--------|
 | 0x3F1 | `Engine_Cooling_Fan_Speed_Adjustment` | B0 | 0x00 throughout entire log -- no VCM fan adjustment command |
-| 0x3F9 | `Engine_Cooling_Fan_Speed` | B5 (startbit 47, Motorola) | Peaks at raw=29 (11.4%) during engine warm-up only; drops to 0 at t=1410s; no response at all to motor thermal stress (t=393-2253s). Engine coolant fan only. |
+| 0x3F9 | `Engine_Cooling_Fan_Speed` | B5 | Peaks at raw=29 (11.4%) during engine warm-up only; drops to 0 at t=1410s; no response at all to motor thermal stress (t=393-2253s). Engine coolant fan only. |
 | 0x451 | `Climate_Control_Front_Blower_Fan_Speed` | B4 | All-zero payload for entire 2637s log (204,640 frames at 78.5 Hz). HVAC cabin blower -- not the drivetrain fan and not active. |
 
 These are all fan/cooling signals in the DBC. No others exist.

@@ -44,11 +44,11 @@ The Vtrux has three CAN buses. **Bus channel numbers in log files are arbitrary*
 
 | Bus | Exclusive IDs (definitively identifies this bus) |
 |-----|--------------------------------------------------|
-| **Powertrain** | 0x051 @ ~100 Hz; extended IDs (0x18FF??B3, 0x18FF??C0); 0x592–0x5A2, 0x639–0x64B |
+| **Powertrain** | **0x051** @ ~100 Hz **plus 21 ids:** 0x592, 0x594, 0x596, 0x597, 0x599, 0x5A0, 0x5A2, 0x639, 0x63A, 0x63C, 0x63D, 0x63F, 0x640, 0x644–0x64B. All exclusive on every training channel (`notes/artifacts/anchor_discovery_audit.py`, `notes/artifacts/pt_anchor_crosscheck.py`, 2026-10-30). The old ranges 0x592–0x5A2 / 0x639–0x64B list ids that never occur (0x593, 0x59B–0x59F, 0x5A1, 0x63B, 0x63E, 0x641–0x643). Extended 0x18FF??B3 is exclusive but in only 94 % of sessions, and 0x18FF??C0 appears only while charging; neither is used |
 | **Vehicle** | 0x1E5, 0x500, 0x514, 0x52A–0x530, 0x778, 0x780, 0x785, 0x788 |
 | **OBD** | 0x040–0x044 (TRAC MCU — exclusive to OBD, never bridged to Vehicle bus) |
 
-**Quick check:** If a bus has 0x051, it's Powertrain. If it has 0x1E5 and 0x500, it's Vehicle. If it has 0x040–0x044, it's OBD. **Secondary check (ID count):** Vehicle has more unique IDs (~90–93) than OBD (~74–79).
+**Quick check:** If a bus has 0x051, it's Powertrain (canbench's resolver needs 2 of the powertrain ids, so 0x051 alone names nothing). If it has 0x1E5 and 0x500, it's Vehicle. If it has 0x040–0x044, it's OBD. **Secondary check (ID count):** Vehicle has more unique IDs (~90–93) than OBD (~74–79).
 
 **Note:** Do not use 0x441–0x464 as OBD anchors — this range includes GMLAN IDs (e.g. 0x451 = `Gateway_LS_General_Information`) that the VCM bridges to the Vehicle bus, causing false OBD identification on some logs.
 
@@ -64,11 +64,25 @@ All canonical DBC files are at this directory level.
 | `vtrux-obd-experimental.dbc` | OBD bus — signals confirmed through our own log analysis that are NOT in `epri-obd-bus.dbc`. Same rules as the PT counterpart (see above). | In progress |
 | `BelInverter-v2.dbc` | Bel charger/inverter — merged from previous DBC + EPRI Ghidra decompile. Fixes: extended ID bit-31, `overallTemperaturePercent` 8-bit, voltage signedness in `hvBatteryAndCharger`. See `notes/belinverter-dbc-merge.md`. | Current |
 | `GMW8762_PPEI_GMLAN.dbc` | GM PPEI GMLAN standard — 51 messages, 586 signals extracted from spec PDF | Complete; use for decoding both GM buses |
+| `vtrux-interposer-diag.dbc` | **The charge interposer board's own self-telemetry**, not a truck ECU. `0x7F4-0x7F7` carry state, trip reason, what the core believes about pack/charger/EVSE, counters and build; `0x18EFC0E1` / `0x18FFD7E1` are byte-exact mirrors (source address 0xE1) of every frame the interposer modified or synthesised, so an Android/laptop log shows what the charger actually received. Forward-engineered, authoritative by design. Schema: `charge-interposer/diag/interposer_diag_schema.md` in the public `canbus-esp-fw-vtrux` repo, branch `charge-interposer/main`; the behaviour specification is internal-only. | Current |
+| `vtrux-wican-diag.dbc` | **The WiCAN gen-inhibit dongle's own self-telemetry**, not a truck ECU. 0x7F1-0x7F3 carry build/rev, mode, disable reason, and inhibit counters, so an Android/laptop log of a run is self-documenting. Forward-engineered, authoritative by design (like the 914). Schema: `gen-inhibit/diag/wican_diag_schema.md` in the public `canbus-esp-fw-vtrux` repo, branch `gen-inhibit/main`. | Current |
 
 
 **When to add a signal to `vtrux-*-experimental.dbc`:** A signal belongs here only if it was confirmed through our own reverse engineering (log correlation, interlock/disconnect tests, physical measurement) AND is not already present in the corresponding `epri-*-bus.dbc` or `epri-obd-bus.dbc`. Do NOT copy EPRI-confirmed signals into the experimental DBC — they already live in the authoritative EPRI files and duplicating them creates a maintenance conflict. If you confirm the scale or encoding of an EPRI signal experimentally, update the `CM_` comment in the relevant EPRI DBC file rather than adding an entry to the experimental one. Note that `epri-obd-bus.dbc` contains some misidentified entries (e.g. 0x451 is GMLAN, not TRAC MCU); signals that were absent from or wrongly attributed in the EPRI DBC belong in the experimental dbcs once confirmed.
 
 **Bugged EPRI decodes:** the same applies when the EPRI app decodes a real signal *incorrectly* (wrong signedness, wrong offset, wrong bit layout) rather than merely misattributing the ID. Reduce the EPRI entry to a `BO_` stub with its `SG_` entries removed, record the defect in a `CM_ BO_` comment, and put the corrected signal in the matching experimental DBC. Examples: 0x0451 and 0x0459 (wrong ID) in `epri-obd-bus.dbc`; 0x0598 `ess_power` / `trac_power` (signed int16 vs offset-binary, confirmed 2026-08-02 as a genuine app defect via Ghidra) in `epri-pt-bus.dbc`.
+
+**After editing any DBC on this list, regenerate the Android parity fixtures.** Four of
+these files — `epri-pt-bus.dbc`, `epri-obd-bus.dbc`, `BelInverter-v2.dbc` and
+`GMW8762_PPEI_GMLAN.dbc` — are *copied* into
+`android-app/CanLoggerApps/cancore/src/test/resources/dbcs/` by
+`tools/dbc_parity_generate.py`, which also generates the expectations
+`DbcParityTest` checks the Kotlin decoder against. Nothing links the copies back to
+these originals and nothing fails when they drift: the test keeps passing against the
+stale definition. It was found stale twice on 2026-09-25, by months. Run
+`<py> tools/dbc_parity_generate.py` then `:cancore:testDebugUnitTest`, and see
+`tools/tools.md` → `dbc_parity_generate.py` for the one-line `cmp` loop that detects
+the drift without a build.
 
 Working/source copies of some DBC files also exist in the `gmlan-info/` subdirectory (see File Layout below).
 
@@ -118,6 +132,24 @@ Working/source copies of some DBC files also exist in the `gmlan-info/` subdirec
 **T3 correction (2026-04-14):** The prior "Bridged faithfully -- Both buses" row listed 0x3C1, 0x3F9, 0x3FB, 0x4D1, 0x772, 0x4C9. T3 (VCM B-connector disconnect) showed all of these except 0x772 survive on both buses without VCM, and with 0ms inter-bus timestamp delta. They are NOT VCM-bridged. 0x772 is the only confirmed VCM bridge from that list (drops from Vehicle bus in T3).
 
 The 0x3E9 entry is a **cascade effect** -- VCM masks wheel speed inputs to ECM, so ECM naturally computes and broadcasts zero vehicle speed; VCM does not need to modify 0x3E9 directly.
+
+**Counting hazard: the same ID on the two GM buses is often not the same message.** This is
+the Vtrux form of the invariant in `AGENTS.md` under Data Sources, and it is worse here than
+on the Coda. The Coda gateway mostly *rebroadcasts*, so merging buses double-counts and the
+tell is an exact factor of two. The VCM **substitutes content**, so merging buses blends real
+and synthetic data — and the synthetic side is plausible by construction, because it exists to
+keep stock modules happy. `0x0C9` on the Vehicle bus reports a ~800 RPM engine idle that no
+engine is producing. `0x0C1`/`0x0C5` on OBD report zero wheel speed while the truck is moving.
+`0x1E9` on OBD is frozen across all eight bytes.
+
+So for these IDs there is no such thing as "the value" without naming the bus, and an average
+or histogram taken across both is not a noisier version of the right answer — it is a blend of
+a measurement and a fabrication. **The authoritative per-ID inventory is the `exclude` list in
+`VEHICLE_PROFILES["vtrux"]` in `tools/influx_upload.py`**, which names the real source bus for
+each affected ID; the table above is the prose version. InfluxDB is uploaded with those
+exclusions applied, so a query there already sees one copy — the right one. Raw-log analysis
+does not, and must split by bus, identified by the anchor IDs above rather than by channel
+number.
 
 **Graphing / analysis note -- GMLAN messages appear on both GM buses:** Many GMLAN IDs produce frames on both the OBD bus and the Vehicle bus in a multi-bus capture. This is partly due to VCM bridging, but also because the GM ECM and other modules have native connections to both buses (33 IDs confirmed dual-native without VCM in T3, with 0ms inter-bus delta). The two copies often contain different content (real ECM value on OBD bus vs. VCM-substituted value on Vehicle bus -- see table above). When extracting a GMLAN signal for analysis or plotting, always filter to the bus where that signal is documented as valid. Never rely on channel numbers -- use the anchor IDs from the Bus Identification table above to identify the correct channel at runtime.
 
@@ -230,7 +262,7 @@ Byte layouts confirmed from Ghidra decompile; scales confirmed from ARM binary D
 | 0x02C3 | PPEI MAP | ECM_MAP (B6 x0.5 kPa) | Plist label "Engine_Torque_Status_3" was incorrect |
 | 0x03D1 | PPEI Engine_General_Status_2 (multi-signal) | ECM_InstFuelConsmpRate_volPt; Throttle_Position; Engine_Coast_Fuel_Cut_Off | Multi-signal message — do NOT summarize the whole ID as "fuel rate". Message name "Engine_General_Status_2" is correct (the EPRI plist label was right). Fuel rate and throttle are carried in different bytes of the same frame. Throttle is the VCM engine-throttle command proxy. |
 | 0x03E9 | PPEI vehicle speed + distance | ECM_VehSpdAvgDrvn_linspd (15-bit Motorola, x1/64 km/h), ECM_DistRollCntAvgDrvn_dist (13-bit Motorola, x0.125 km) | |
-| 0x0451 | ~~TRAC MCU motor torque~~ **MISIDENTIFIED** | ~~TRAC_Mot_Trq~~ | EPRI decompile incorrectly attributed this to TRAC MCU. Log data shows it is GMLAN `Gateway_LS_General_Information`: B0-B3 = airbag severity flags (all 0x00), B4 = fan speed (uint8, x0.392157%). SG_ entries removed from `epri-obd-bus.dbc`. See `traction-inverter-control.md` Phase 1. |
+| 0x0451 | ~~TRAC MCU motor torque~~ **MISIDENTIFIED** | ~~TRAC_Mot_Trq~~ | EPRI decompile incorrectly attributed this to TRAC MCU. Log data shows it is the GMLAN message `Gateway_LS_General_Information`; decode withheld (see the GMLAN publish rule). SG_ entries removed from `epri-obd-bus.dbc`. See `traction-inverter-control.md` Phase 1. |
 | ~~0x0459~~ | ~~TRAC MCU thermal~~ **WRONG ID** | — | EPRI plist listed this ID for TRAC MCU thermal; zero frames at 0x459 in all logs. Message exists but at 0x044A (EPRI offset was -0x020; actual is -0x02F). |
 | 0x0462 | TRAC MCU HV bus | TRAC_HighPwr_Curr (14-bit LE, -2048 A), TRAC_HighPwr_Volt (11-bit LE, 1 V/count) | Symmetric to GENE 0x0482. Actual DLC=6; B5 uncharacterized. |
 | 0x04C1 | PPEI engine temperatures | ECM_EngineCoolantTemp, ECM_EngineAirIntakeTemp (uint8, x1 degC, -40 offset); ECM_OutsideAirTemp (uint8, x0.5 degC, -40 offset) | Outside air temp has different scale (0.5°C/count) from the other two (1°C/count) |
@@ -248,7 +280,7 @@ Source history: initial signal data from a previous DBC, with EPRI Ghidra decomp
 | 0x18FFD4C0 | BINV_status | mux=0: BELINV_state (B5), BELINV_shutdownSource (B6), BELINV_stateBeforeLastShutdown (B7), 1-bit status flags (keySwitch, chargingInProgress, exportEnergy, inverterAlive, inverterReady, buckBoostAlive, gridTied, etc.); mux=1: BELINV_buckBoostState, BELINV_buckBoostStateBeforeLastShutdown; mux=2: BELINV_inverterState, BELINV_inverterStateBeforeLastShutdown; mux=3: fault bits (inverterFault, buckBoostFault, acOk, acOverVoltage, acUnderVoltage, hvBatteryOverVoltage, hvBatteryUnderVoltage, overTemperature, etc.) | Multiplexed on B0 (mux key). Source: previous DBC; byte layout unconfirmed by EPRI. **EPO/alarm/chgc_stat bits (mux=0) fire during every normal charge shutdown** — not fault-only. Causal order: inverterFault or external shutdown command → charger responds → EPO/alarm3/chgc fire ~1.1–1.5s later as orderly HV de-energization. Confirmed across 20 sessions including clean handle-pull (shutdownSrc=11). See `notes/after-battery-swap-charge-fail-analysis.md`. |
 | 0x18FFD5C0 | BELINV_overallTemperature | BELINV_overAllInverterTemperature (B0-B1), BELINV_buckBoostTemperature (B2-B3), BELINV_ambientTemperature (B4-B5), BELINV_overallTemperaturePercent (B6) — signed 16-bit 0.1°C/count; percent uint8 | EPRI-confirmed: B4-B5 (`INVCH_Bdc_Temperature_Int`) and B6 (`INVCH_Bdc_TempPercent`) confirmed by Ghidra decompile; B6 corrected to 8-bit (previous DBC had 16-bit). B0-B3 from previous DBC only. Charging/operating only. |
 | 0x18FFD6C0 | BELINV_inverterOutput | BELINV_leg1Voltage (B0-B1), BELINV_leg2Voltage (B2-B3), BELINV_leg1Current (B4-B5), BELINV_leg2Current (B6-B7) — unsigned 16-bit, 0.05 V or A/count | EPRI-confirmed (`INVCH_Inv_Output`); byte layout exact match with previous DBC. Active during driving and export. |
-| 0x18FFD7C0 | BELINV_hvBatteryAndCharger | BELINV_hvBatteryVoltage (B0-B1, unsigned), BELINV_hvBatteryCurrent (B2-B3, signed), BELINV_chargerInputVoltage (B4-B5, unsigned), BELINV_chargerInputCurrent (B6-B7, unsigned) — 0.05 V or A/count | EPRI-confirmed (`INVCH_Bdc_Ibat`). Signedness corrected: hvBatteryCurrent signed (positive=charging); others unsigned. Charging only. |
+| 0x18FFD7C0 | BELINV_hvBatteryAndCharger | BELINV_hvBatteryVoltage (B0-B1, unsigned), BELINV_hvBatteryCurrent (B2-B3, signed), BELINV_chargerInputVoltage (B4-B5, unsigned), BELINV_chargerInputCurrent (B6-B7, unsigned) — 0.05 V or A/count | EPRI-confirmed (`INVCH_Bdc_Ibat`). Signedness corrected: hvBatteryCurrent signed (positive=charging); others unsigned. Charging only. **Accuracy (2026-10-10):** `hvBatteryCurrent` reads high below ~6 A (+0.4 A at 4-5 A, +1.5 A at a 2.0-2.5 A reading; ~0 above 10 A). `chargerInputCurrent` reads ~8 % low at full power, and V x I is apparent power. The logged hvBatteryCurrent is negative while charging, despite the comment. See `notes/charger-efficiency-and-grid-consumption.md`. |
 | 0x18FFD8C0 | BELINV_j1772Info | BELINV_system12vBatteryVoltage (B0-B1, 0.02 V/count), BELINV_pilotDuty (B2, uint8), BELINV_pilotFrequency (B3-B4, uint16 Hz), BELINV_chargePilotOnlineTime (B5-B7, 24-bit count) | B0-B1 EPRI-confirmed (`INVCH_Bdc_12Vbat`); B2-B7 from previous DBC only. Charging only. |
 | 0x18FFD9C0 | BELINV_chargeInfo | BELINV_maxAvailableChargingCurrent (B0-B1, signed 16-bit, 0.05 A/count), BELINV_vehicleState (B2, uint8) | Not in EPRI plist. Source: previous DBC only. **Charger-sourced (SA=0xC0), not a vehicle command** — `notes/specific-trucks/after-battery-swap-charge-fail-analysis.md` calls it the "vehicle charge command", which is wrong. `maxAvailableChargingCurrent` is the charger's own pilot-derived DC ceiling and is what actually limits CC current: measured 8 A at a 26 % pilot and 16 A at 52 %. |
 | 0x18FFDAC0 | BELINV_inverterTemperature | BELINV_dc1Temperature (B0-B1), BELINV_dc2Temperature (B2-B3), BELINV_module1Temperature (B4-B5), BELINV_module2Temperature (B6-B7) — signed 16-bit, 0.1°C/count | Not in EPRI plist. Source: previous DBC only. |
@@ -265,11 +297,11 @@ For full encoding details, confidence rationale, and source evidence, see **`not
 | CAN ID | Message | Key signals | Notes |
 |--------|---------|-------------|-------|
 | 0x051 | VCM_GenControl_0051 | gen_torque_cmd (B1-B2, LE uint16, centered at 32768, negative=generating), gen_rpm_ref (B3-B4, LE uint16, centered at 32768, rpm) | 100 Hz, DLC=6. B0 purpose unknown; B5 = rolling counter 0x00-0x0F. gen_torque_cmd: r=0.9984 vs feedback (0x471 B0-B1). gen_rpm_ref: null=−1 (raw=32767) when engine off; zone+fine encoding (B4=zone selector, B3=fine RPM within zone); bit-for-bit identical to 0x052 B2-B3. Corrected 2026-03-03 (previously misidentified B3-B4 as traction torque command). |
-| 0x411 | BMS_SoC_HiRes_0411 | bms_soc_hires (14-bit Motorola, 0.01%/count; raw = B0×64 + (B1>>2)) | 16 Hz, DLC=8. BMS-sourced (drops when HV battery LV connector unplugged). Not in EPRI plist. r>0.998 vs 0x596 bms_soc across 5 log types. Other bytes encode contactor request (changes at startup, not shutdown). |
+| 0x411 | BMS_SoC_HiRes_0411 | bms_soc_hires (14-bit Motorola, 0.01%/count; raw = B0×64 + (B1>>2)) | ~20 Hz (measured 16.9-20.0 Hz on four clean captures, 2026-09-24; previously recorded as 16 Hz), DLC=8. BMS-sourced (drops when HV battery LV connector unplugged). Not in EPRI plist. r>0.998 vs 0x596 bms_soc across 5 log types. Other bytes encode contactor request (changes at startup, not shutdown). |
 | 0x617 | VCM_SysState_0617 | (BO_ stub — no SG_) | VCM-sourced. B0-B5=0, B6=0x50 constant. B7 = 0xC8+state: C8 normal, C9 unresolved secondary state, **CA = fault-active** — sets within ~0.3 s of BMS EPO in every fault mode tested, clears when the condition ends. Cheap VCM-side fault flag (no cause code). See `notes/battery-fault-codes.md`. |
 | 0x460 | BMS_FaultRecords_0460 | (BO_ stub — no SG_; page-multiplexed) | ~20 Hz, DLC=8. BMS-sourced **fault-record annunciator** (2026-08-26): B0=page index; page 0 = record count; pages 1-N = two 3-byte fault records each, newest first. Records push when a fault latches, survive BMS reboot, clear with FAULT_LATCHED. Main-orig steady-state charge fault = `FC 22 02`; precharge abort = `F0 E0 00`; truck3-contactor faults = `F6` family. **Caution:** OBD bus has a different 0x460 (TRAC MCU, DLC=5) — filter to PT bus/DLC=8. Full catalog: `notes/battery-fault-codes.md`. |
 | 0x470 | Unknown_0470 | hv_bus_volt_470 (11-bit LE, startbit B1, 1 V/count) | Not in EPRI DBC. Post-contactor HV bus voltage confirmed (drops 387 V to ~3 V when contactors open). r=0.9974 vs DCDC 0x18FFD6B3. Same encoding as GENE_HighPwr_Volt (0x482). Source ECU unknown — most likely GENE MCU (drops at same time, adjacent ID range). See `notes/context-voltage-current.md`. |
-| 0x592 | VCM_Pedals_0592 | throttle_pos (B2-B3, LE uint16, unsigned, 0=no throttle, max ~10000 at full depression) | 100 Hz, DLC=8. VCM-sourced. Brake pedal (B4-B5, scale 0.01%) and switch flags (B0) are in `epri-pt-bus.dbc`. B1 role unconfirmed. Scale to physical % unconfirmed. |
+| 0x592 | VCM_Pedals_0592 | throttle_pos (B2-B3, LE uint16, unsigned, 0=no throttle, max ~10000 at full depression) | **10 Hz** (9.98-9.99 Hz on four clean captures, 2026-09-24; previously recorded here as 100 Hz), DLC=8. VCM-sourced. Brake pedal (B4-B5, scale 0.01%) and switch flags (B0) are in `epri-pt-bus.dbc`. B1 role unconfirmed. Scale to physical % unconfirmed. |
 | 0x596 | BMS_SoC_0596 | bms_soc (B6, uint8, 1%/count) | ~1 Hz. VCM rebroadcast of BMS SoC data (drops when VCM B-connector unplugged, per `notes/can-disconnect.md`). Not in EPRI plist. Integer SoC percent. Use 0x411 for sub-percent resolution. |
 | 0x598 | HCU_Power_0598 | ess_power (B0-B1), gen_power (B2-B3), trac_power (B4-B5) — all LE uint16, centered at 32768, 0.01 kW/count, positive = providing energy to HV bus | ~1 Hz, DLC=8. VCM/HCU-sourced. gen_power scale CONFIRMED 2026-03-29. ess_power/trac_power moved here from `epri-pt-bus.dbc` on 2026-08-02: that file's signed-int16 encoding is an EPRI app defect confirmed by Ghidra, so `BO_ 1432` there is now a stub. Channel balance `trac_power = ess_power + gen_power` holds. B6-B7 = static bias, not power data. |
 | 0x5A2 | VCM_TractMotor_05A2 | trac_rpm (B2-B3, LE uint16, centered at 32768, 1 rpm/count assumed), trac_torque_fbk (B4-B5, LE uint16, centered at 32768, Nm/count unconfirmed) | ~100 Hz, DLC=8. VCU-sourced re-broadcast. trac_rpm: r=0.9976 vs proxy; 64.3 RPM/km/h ratio confirmed; scale assumed 1 rpm/count by symmetry with GENE/TRAC RotSpd. trac_torque_fbk: r=0.9998 vs TRAC_TrqFbk (0x442, OBD bus); positive=motoring, regen=negative; scale to Nm UNCONFIRMED. B0-B1 and B6-B7 uncharacterized. |
@@ -484,7 +516,7 @@ See `notes/cruise-control-analysis.md` and `notes/traction-inverter-control.md`.
 
 ### Evap Purge Mode Charging — 80% SoC Ceiling
 
-When plugged in during evap purge mode, the VCM enforces a hard 80% SoC ceiling. CC runs normally to 80%, then the charger executes a brief retry and transitions to a distinctive two-step CV hold (~-6A then ~-2.2A) with SoC clamped at exactly 80% indefinitely. 0x649 evap flags and 0x600 B3 are both inactive during stationary charging — evap state signals do not carry useful information in this mode.
+When plugged in during evap purge mode, the VCM enforces a hard 80% SoC ceiling. CC runs normally to 80%, then the charger executes a brief retry and transitions to a distinctive two-step CV hold (~-6A then ~-2.2A) with SoC clamped at exactly 80% indefinitely. **Correction 2026-09-19:** `vcm_evap_active` (0x649 B4 bit 7) IS broadcast and set during stationary charging when a purge is pending -- 1 from the first frame of every 80 % ceiling session (3/3) and 0 in every other charge session (16/16 Low Power commands); see the interposer bench evidence (internal-only). The earlier statement that the 0x649 flags are inactive during charging was wrong for this flag.
 
 See `notes/after-battery-swap-charge-fail-analysis.md` and `notes/evap-cycle-analysis.md`.
 
@@ -531,7 +563,7 @@ See `notes/balancing-investigation.md`.
 
 Two artifacts appear at the start of every log session (both laptop USB dongle and Android logger) that must not be mistaken for real data:
 
-**1. Stale SoC at startup (all loggers):** The A123 BMS broadcasts exactly one 0x430 frame with max-value sentinel cell voltages as the very first message after power-on (caught by the DBC `max=3.8V` range on `bcm_cell_vmax`/`bcm_cell_vmin`). The 0x411 SoC broadcast paired with that sentinel frame reflects the BMS's last stored Coulomb count from non-volatile memory — the SoC at previous power-down — not the current state. The stale value falls within the normal SoC range and will not be caught by any range check. The BMS transitions to its freshly computed SoC within seconds to ~60s after the sentinel. Treat the first 0x411 SoC reading in a session as suspect until cell voltages have stabilized. The stale and real values can differ by 10-20% or more depending on how much charge/discharge occurred since the last session. Confirmed across all logger types: S1 laptop stale=40.28%, S2 laptop stale=59.08%, S3 Android stale=76.5%.
+**1. Stale SoC at startup (all loggers):** The A123 BMS broadcasts exactly one 0x430 frame with max-value sentinel cell voltages as the very first message after power-on (caught by the DBC `max=3.8V` range on `bcm_cell_vmax`/`bcm_cell_vmin`). The 0x411 SoC broadcast paired with that sentinel frame reflects the BMS's last stored Coulomb count from non-volatile memory — the SoC at previous power-down — not the current state. The stale value falls within the normal SoC range and will not be caught by any range check. The BMS transitions to its freshly computed SoC within seconds to ~60s after the sentinel. **Measured 2026-09-24** (an internal-only wake-transient scan, 114 wakes where the logger was demonstrably up before the BMS): the wrong reading lasted 0.32-1.15 s, ~1.0 s in 105 of them, and read low in 112 of 113 (median 13.8 %, up to 20.9 %); it was not the value from before the BMS slept in any of 40 mid-capture wakes. The longer figure above was not reproduced where the start of the wake was actually captured. Treat the first 0x411 SoC reading in a session as suspect until cell voltages have stabilized. The stale and real values can differ by 10-20% or more depending on how much charge/discharge occurred since the last session. Confirmed across all logger types: S1 laptop stale=40.28%, S2 laptop stale=59.08%, S3 Android stale=76.5%.
 
 **2. Bus number churn in Android T0 (Android logger only):** If the Android CAN adapter reconnects during session startup, each reconnect is assigned a new bus number by the logger. T0 of an Android session may contain frames on 10-20+ different bus numbers, with the PT bus accumulating gradually to become dominant. Use the anchor ID (0x051) to identify the bus with sustained high frame counts; discard buses with only a handful of frames. T1 onward is typically stable on a single bus number. Confirmed in 171127_T0 which had 22 distinct bus numbers; T1 and T2 were clean on bus 21.
 
@@ -539,6 +571,7 @@ Two artifacts appear at the start of every log session (both laptop USB dongle a
 
 Involuntary stalls observed during normal driving during evap purge (no fault codes). The VCM's generator wind-down logic holds the engine at minimum throttle longer than the ECM's DFCO threshold tolerates — ECM cuts fuel, VCM responds ~100ms too late, RPM free-falls to 0. Engine auto-restarts after ~7s. Hypothesis: control loop timing gap, not a hardware failure.
 
+Separately, the truck sometimes cranks and fails to catch on a restart shortly after a VCM-commanded stop, never in evap mode so far. The VCM retries ~9.5 s later and raises no fault; see `notes/failed-generator-starts.md`.
 
 ### HV Operation and Fault Response
 
@@ -774,6 +807,7 @@ projects/vtrux/
     interlock-bitfields-analysis.md  # 0x410 bit-field analysis, shutdown precursors, message source attribution
     evap-cycle-analysis.md        # Evap canister purge cycle — 0x649 B4 bit7 flag + B2/B3 counter, OBD ruling-out, completion timing
     cruise-control-analysis.md   # Cruise control investigation — 0x1E1 B5, command mechanism, hybrid-mode torque cmd
+    failed-generator-starts.md   # Starts that crank and do not catch (no inhibitor): 8 in 3 captures, VCM/ECM response
     battery-thermals.md          # Battery pack cooling — 0x508/0x506-bit5 cooling-active signature, 12V step, thermal trigger model
     artifacts/                    # Generated data files — see artifacts/README.md
       README.md                   # Provenance inventory
@@ -786,6 +820,12 @@ projects/vtrux/
     plans/                        # Investigation and implementation plans
       plan-status-codes.md        # Status code byte investigation plan
       documentation-cleanup.md    # Documentation reorganization plan
+      gen-inhibit-wican-implementation.md  # Generator inhibitor: the narrative
+      gen-inhibit-outstanding-work.md      # Generator inhibitor: the work queue,
+                                  #   handed off 2026-10-07. Start here for what
+                                  #   is open, including one spec/firmware
+                                  #   divergence (`bus_on`) that is live.
+      interposer-outstanding-work.md       # Charge interposer: its work queue
   logs/                           # All CAN capture log files (see logs/README.md)
     README.md                     # Log inventory and session descriptions
     after fix charge/             # Post-repair charging captures

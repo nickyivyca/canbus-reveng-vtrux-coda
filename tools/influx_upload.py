@@ -12,7 +12,7 @@ Write policy (--write-policy, default on-change): a signal value is written
 only when it differs from the last value written for that signal, plus a
 heartbeat point at most every --heartbeat seconds so gaps stay bounded and
 Grafana's last-value-before-window stays correct. Measured 3.5x less disk
-than writing every frame; see tools/plans/influx-sync.md.
+than writing every frame; see the internal `influx-sync` plan.
 
 Requires:  pip install cantools requests
 """
@@ -62,6 +62,51 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+# ---------------------------------------------------------------------------
+# The unidentified-channel namespace.
+#
+# A channel matching no anchor set is still uploaded, under the fallback bus
+# tag `ch<N>` -- N being the raw channel number, which is meaningless across
+# captures (AGENTS.md: never identify a bus by channel number). The tag is
+# therefore an admission that the bus is UNKNOWN, not a bus name.
+#
+# It gets a named producer and a named recogniser here because having the
+# format implicit in an f-string let three consumers disagree about it, all
+# silently, and each disagreement cost real data:
+#
+#   * `message_hashes()` is built over the NAMED buses only, so a `ch<N>` key
+#     has no definition hash. influx_sync's L0 compares manifest hashes against
+#     it and had to learn to normalise the missing value, or every such file
+#     drifted on every run and never converged (see the note at its `drift`).
+#   * influx_sync's L1 orphan test never learned the same lesson. It asks only
+#     `(bus, can_id) in current_hashes()`, which no `ch<N>` pair can satisfy, so
+#     it condemned EVERY unidentified-channel series as an orphan -- 147 of them
+#     on 2026-10-04, including 8 written minutes earlier by the fixed uploader
+#     and 161,917 field-values of vtrux data unrelated to that work.
+#   * the profile `exclude` lists are keyed `(bus_name, can_id)`, so a
+#     bus-scoped exclusion does NOT apply to `ch<N>`. A channel demoted to
+#     `ch<N>` therefore uploads gateway-rebroadcast copies that the same frames
+#     would have had excluded under a named bus. Measured, not inferred: the
+#     `coda_20260807_192700` tail wrote nothing while labelled `d_can` because
+#     all five of its ids are d_can-excluded, and five series once it became
+#     `ch1`.
+#
+# The third item is a BEHAVIOUR question, not a defect to patch here -- it needs
+# a decision about what an unidentified channel should decode against at all.
+# It is recorded so the next reader does not have to rediscover it.
+UNIDENTIFIED_BUS_RE = re.compile(r"^ch(\d+)$")
+
+
+def unidentified_bus_name(channel) -> str:
+    """The fallback bus tag for a channel no anchor set identified."""
+    return f"ch{channel}"
+
+
+def is_unidentified_bus(bus: str) -> bool:
+    """True if `bus` is a fallback tag from unidentified_bus_name()."""
+    return bool(UNIDENTIFIED_BUS_RE.match(bus or ""))
 
 VEHICLE_PROFILES = {
     "vtrux": {
@@ -150,14 +195,120 @@ VEHICLE_PROFILES = {
             PROJECT_ROOT / "projects/coda/CODA-D-CAN.dbc",
             PROJECT_ROOT / "projects/coda/CODA-C-CAN-cells.dbc",
         ],
-        # C CAN: cell voltage IDs 0x000-0x019 are definitive
-        # D CAN: 0x308/0x312/0x325/0x330/0x580 never rebroadcast to B CAN
-        # B CAN: everything else (SoC, BMS, DCDC)
+        # AUDITED 2026-09-29 -- every id here is measured exclusive to one bus
+        # (projects/coda/notes/artifacts/anchor_exclusivity_audit.py, 45 multi-channel
+        # captures). An anchor that appears on both buses identifies nothing.
+        #
+        # b_can WAS {0x1D5, 0x48A, 0x275, 0x381, 0x383} and THREE of those -- 0x1D5,
+        # 0x275, 0x383 -- are GWM gateway rebroadcasts carried on D CAN as well, at an
+        # exact 50.00 % frame split (the same pass-through this profile's `exclude` list
+        # already strips on d_can, which is the contradiction that exposed it). A D CAN
+        # channel therefore scored 3/5 = 0.60 for b_can on rebroadcast traffic alone, and
+        # was labelled correctly only while it ALSO beat 0.60 on the d_can set, i.e. while
+        # 4 of its 5 exclusive ids were present. Below that the rebroadcast score wins and
+        # either D CAN traffic is tagged b_can, or both channels claim b_can and step 2's
+        # churn filter drops the loser -- a whole bus missing, silently.
+        #
+        # No stored data was affected: across 51 multi-channel captures, 0 channels were
+        # labelled b_can without 0x48A or 0x381 also present
+        # (notes/artifacts/bus_label_evidence_audit.py). The set was right by margin, not
+        # by evidence, which is what this change fixes.
+        #
+        # EXPANDED 2026-10-04 from 2 b_can and 5 d_can ids to 18 and 9.
+        #
+        # Every audit before this one tested exactly the ids
+        # projects/coda/README.md already published, so by construction it could
+        # only REMOVE anchors; the 2026-09-29 sweep withdrew four and added none,
+        # and the README records the gap in its "NOT YET AUDITED" section. With
+        # two b_can anchors, a capture too short for either to appear cannot be
+        # identified even while carrying ids that occur nowhere else, and its
+        # frames upload under `ch<N>`. That is the whole mechanism behind the 147
+        # unidentified-channel series found on 2026-10-04, and behind
+        # min_anchor_hits["b_can"] having to sit at its weakest possible value.
+        #
+        # notes/artifacts/anchor_discovery_audit.py is the missing direction. It
+        # breaks the circularity -- bus labels come from anchors, and anchors are
+        # what is being measured -- by scoring candidates only against channels
+        # identified at FULL anchor strength, every published anchor of that bus
+        # present. Those labels rest on the audited-exclusive sets at maximum
+        # evidence, so no candidate can influence the label it is scored against.
+        #
+        # Admitted here: exclusive on the frame split AND coverage >= 0.98, i.e.
+        # present in at least 98 % of the sessions where that bus was identified.
+        # Both are needed and they are independent -- the charger ids 0x274-0x27D
+        # and 0x615-0x61C are perfectly exclusive at coverage 0.040 because they
+        # only occur while charging, and an anchor nobody emits identifies
+        # nothing. Measured over 392 sessions, 369 with a full-strength channel
+        # (c_can 100, d_can 288, b_can 353):
+        #
+        #   b_can  cov 1.000 (353/353): 0x07D 0x1D7 0x270 0x271 0x2C2 0x378 0x381
+        #                               0x390 0x392 0x439 0x48A 0x492
+        #          cov 0.997: 0x2C1 0x382 0x391 0x410   cov 0.994: 0x620
+        #          cov 0.980: 0x3A0        all at 0.0000 minority share
+        #   d_can  cov 1.000: 0x278 0x308 0x312 0x315 0x325 0x330 0x55C 0x580
+        #          cov 0.997: 0x08C
+        #
+        # This also settles both leads the README left open: all eight of
+        # `CodaConstants.B_CAN_EXCLUSIVE_IDS` audit clean, and 0x492 -- recorded
+        # there as never tested either way -- is clean at coverage 1.000.
+        #
+        # c_can is deliberately NOT expanded. 97 ids clear the same bar, but the
+        # 26-id cell range is already perfectly bimodal ({1: 1, 26: 280}) and
+        # identification never fails on it; adding 71 more would only rescale
+        # min_anchor_hits for no gain.
         "bus_anchors": [
             ("c_can", set(range(0x000, 0x01A))),
-            ("d_can", {0x308, 0x312, 0x325, 0x330, 0x580}),
-            ("b_can", {0x1D5, 0x48A, 0x275, 0x381, 0x383}),
+            ("d_can", {0x08C, 0x278, 0x308, 0x312, 0x315,
+                       0x325, 0x330, 0x55C, 0x580}),
+            ("b_can", {0x07D, 0x1D7, 0x270, 0x271, 0x2C1, 0x2C2, 0x378, 0x381,
+                       0x382, 0x390, 0x391, 0x392, 0x3A0, 0x410, 0x439, 0x48A,
+                       0x492, 0x620}),
         ],
+        # Minimum DISTINCT anchor hits before a label is accepted; below it the
+        # channel becomes `ch<N>`. See the long note in identify_buses for the
+        # failure this exists to stop: one stray frame deciding a bus, with no
+        # way for the ambiguity warning to fire because only one set matched.
+        #
+        # RE-DERIVED 2026-10-04 after the anchor expansion, because the earlier
+        # values were measured against the 2-id b_can and 5-id d_can sets and do
+        # not transfer. Re-measured over 2,257 channels in 1,088 coda logs
+        # (notes/artifacts/bus_label_min_anchor_audit.py):
+        #
+        #   b_can (of 18): {1:1, 5:1, 7:5, 9:1, 13:2, 14:3, 15:3, 16:8, 17:42, 18:1010}
+        #   d_can (of  9): {1:2, 3:1, 4:15, 5:1, 6:4, 7:2, 8:5, 9:865}
+        #   c_can (of 26): {26: 280}
+        #
+        # THE RULE USED LAST TIME DOES NOT WORK HERE AND SAYING WHY MATTERS.
+        # "Set it at the observed minimum for a genuine channel" returns 1 for
+        # both b_can and d_can -- no guard at all -- and it only ever worked
+        # because every channel in the population was assumed genuine, which is
+        # the very thing in question. A number read off this histogram would be
+        # a threshold I chose wearing the clothes of a measurement.
+        #
+        # So the sub-threshold channels were inspected by CONTENT
+        # (notes/artifacts/low_hit_channel_inspect.py, 54 channels):
+        #
+        #   KEEP. coda_20260426_151050_T7 ch2 carries 237,777 frames at d_can
+        #   4/9, b_can 0/18, c_can 0/26 -- 0x325 0x330 0x55C 0x580 plus
+        #   0x7E0/0x7E8, a real D CAN capture in a diagnostic state where the
+        #   fast periodics 0x308/0x312 are not running. Four more like it at
+        #   ~237k frames. Any d_can threshold above 4 demotes 15 real channels.
+        #
+        #   REJECT. coda_20260507_104222_T0 ch1 is 10 frames on ONE b_can anchor
+        #   with nothing else matching; coda_20260429_193542_T0 ch2 is 2 frames
+        #   on one d_can anchor. These are the case the guard is for.
+        #
+        # The distributions have a clean gap either side of the chosen value --
+        # b_can has nothing at 2, 3 or 4, d_can nothing at 2 -- so 2 is not a
+        # cut through a population, it sits in empty space. It demotes exactly
+        # three channels corpus-wide: the two named above and one more.
+        #
+        # c_can stays at 10. Its distribution is now a single spike at 26 (the
+        # {1: 1} outlier was coda_20260608_095955_T6, which the expanded b_can
+        # set now identifies correctly), but requiring all 26 would demote any
+        # short chunk carrying a partial cell sweep, and 10 is already far below
+        # anything observed.
+        "min_anchor_hits": {"c_can": 10, "d_can": 2, "b_can": 2},
         # GWM gateway rebroadcast exclusions (see notes/driver-inputs.md Gateway Rebroadcast):
         # D CAN native IDs that are passed through to B CAN -- upload from D CAN only.
         # B CAN native IDs that are passed through to D CAN -- upload from B CAN only.
@@ -172,10 +323,19 @@ VEHICLE_PROFILES = {
             {"can_id": 0x215,  "bus": "b_can"},  # TCM signal (D CAN native)
             {"can_id": 0x240,  "bus": "b_can"},  # System state (D CAN native)
             {"can_id": 0x241,  "bus": "b_can"},  # Motor thermal data (D CAN native)
-            {"can_id": 0x248,  "bus": "b_can"},  # Mode flags / exterior lights (D CAN native)
+            # 0x248 and 0x370 were excluded on b_can until 2026-09-26 on the belief
+            # that they were D CAN native. They are not, and this is the same error
+            # as the 0x276 one below. In codadriveslowturnonwithdefroster2.log and
+            # DCDCRUNNingwithoutkeyon-then-key-on.log both are on B CAN from +0.01 s
+            # with D CAN asleep, and reach D CAN only when it wakes (+9.46 s / +41.88 s);
+            # frame counts are 2836 on B against 742 on D. Excluding b_can kept the
+            # gateway copy and dropped the original, blanking both for every B-only
+            # capture. 0x370 additionally is NOT a faithful copy -- B1 differs in
+            # 100% of 34,919 matched pairs (a bus tag), so the D copy cannot stand in.
+            # 0x370 is the GWM "Vehicle Faults" message (factory DTC list U0146) and
+            # carries the vehicle power-state field. Exclusions moved to d_can.
             {"can_id": 0x278,  "bus": "b_can"},  # Drive keepalive / HV ready (D CAN native)
             {"can_id": 0x315,  "bus": "b_can"},  # DLCM status: brake switch, Batt_Volt (D CAN native)
-            {"can_id": 0x370,  "bus": "b_can"},  # Death counter batch (D CAN native)
             {"can_id": 0x418,  "bus": "b_can"},  # PRND gear selector (D CAN native)
             {"can_id": 0x600,  "bus": "b_can"},  # TPMS pressure (D CAN native)
             # --- D CAN: gateway copies of B CAN native messages (source = B CAN) ---
@@ -193,6 +353,74 @@ VEHICLE_PROFILES = {
             # miles. See notes/efficiency-calculation.md Sec.5.
             {"can_id": 0x276,  "bus": "d_can"},  # HVAC status (AICM is a B CAN module)
             {"can_id": 0x6FA,  "bus": "d_can"},  # GWM VIN broadcast (GWM is the gateway; primary on B CAN, rebroadcast to D CAN)
+            {"can_id": 0x248,  "bus": "d_can"},  # Mode flags / exterior lights (B CAN native -- see note above)
+            {"can_id": 0x370,  "bus": "d_can"},  # GWM Vehicle Faults / power state (B CAN native -- see note above)
+            # --- The same bus-blind index in the MIRROR direction: C CAN cell
+            # ids decoded on B/D CAN. Added 2026-10-04 alongside the c_can block
+            # below, after dropping the 45 series they had already produced.
+            #
+            # These are stray frames, not a rare message, and the two
+            # measurements that say so are independent. Per session they arrive
+            # as 1, 4, 10 and 34 frames with median gap 0.000 s -- one burst, not
+            # a period -- and in total they held 253 field-values against
+            # 1,420,682 and 1,388,657 for the same ids on their native c_can,
+            # four ten-thousandths of a percent. anchor_discovery_audit.py
+            # reached the same verdict from the other side: 0x000, 0x004 and
+            # 0x00C are exclusive to c_can at coverage 1.000 with 5, 7 and 8
+            # stray frames across the whole 392-session corpus.
+            #
+            # A rare-but-real message is still PERIODIC when it appears. These
+            # are not, which is what separates them from the genuinely rare
+            # charger ids (0x274-0x27D, 0x615-0x61C) that the same audit found
+            # exclusive to b_can at coverage 0.040 -- real messages that only
+            # occur while charging.
+            #
+            # The README warns that a split ratio is meaningless at tiny counts,
+            # and these are exactly that case: 0x00C measured a 50.00 % "split"
+            # of two frames against two.
+            {"can_id": 0x004,  "bus": "b_can"},
+            {"can_id": 0x00C,  "bus": "b_can"},
+            {"can_id": 0x00C,  "bus": "d_can"},
+            # --- c_can: ids the C CAN DBC does not define, decoded with the
+            # WRONG DBC because build_id_index() keys on frame id alone and has
+            # no bus dimension, so every DBC is tried against every bus.
+            #
+            # Found 2026-10-04 while verifying an unrelated upload: a query
+            # scoped to can_id='0x300' but not to bus returned 2329 "armed"
+            # ESC-intervention points in a session with one real episode.
+            #
+            # Two evidence classes, both from
+            # notes/artifacts/ccan_crossbus_decode_audit.py (+ _phase2.py):
+            #
+            # 1. MEASURED DISTINCT. c_can has its own message at this id.
+            #    Payload-set overlap against the native bus is 0.000 in BOTH
+            #    directions, scored only in sessions carrying the id on both
+            #    buses at once so the score cannot be vacuously zero:
+            #      0x200  92 sessions (d_can), 90 (b_can)  fwd 0.000 rev 0.000
+            #      0x300  92 sessions (d_can)              fwd 0.000 rev 0.000
+            #    A c_can 0x200 payload looks like 15 15 15 16 15 16 16 16,
+            #    eight similar small values, against the structured D CAN
+            #    0x200 heartbeat it was being decoded as. What the c_can
+            #    message actually carries is NOT established here -- only
+            #    that it is not the D CAN one.
+            {"can_id": 0x200,  "bus": "c_can"},
+            {"can_id": 0x300,  "bus": "c_can"},
+            # 2. NEVER OBSERVED ON c_can AT ALL across 392 sessions. Their
+            #    c_can rows in InfluxDB come from ONE mislabelled channel --
+            #    coda_20260608_095955_T6, see identify_buses -- not from c_can
+            #    traffic. The `min_anchor_hits` guard above stops that label
+            #    being produced again; these entries additionally drop the
+            #    pairs out of current_hashes(), which is what lets
+            #    `--check-existing` see the stored rows as orphans and delete
+            #    them. Not a claim that c_can carries these messages: a claim
+            #    that it does not.
+            {"can_id": 0x271,  "bus": "c_can"},
+            {"can_id": 0x276,  "bus": "c_can"},
+            {"can_id": 0x370,  "bus": "c_can"},
+            {"can_id": 0x391,  "bus": "c_can"},
+            {"can_id": 0x410,  "bus": "c_can"},
+            {"can_id": 0x439,  "bus": "c_can"},
+            {"can_id": 0x6FA,  "bus": "c_can"},
         ],
     },
 }
@@ -250,7 +478,7 @@ def read_log_start_time_ns(path: Path, tz=timezone.utc) -> int | None:
     ~0.24 us of resolution left in a float64 mantissa, so `(epoch + offset) *
     1e9` injected +/-128 ns of rounding noise into every stored timestamp.
     Building the epoch in integer ns and adding an integer offset removes it.
-    (That noise turned out NOT to cost disk -- see tools/plans/influx-sync.md,
+    (That noise turned out NOT to cost disk -- see the internal `influx-sync` plan,
     Lever B -- but exact timestamps are required for the time-bounded DELETE
     that per-file repair depends on.)
 
@@ -376,33 +604,32 @@ def identify_buses(
     channel_ids: dict,
     channel_counts: dict,
     bus_anchors: list,
-    min_frames: int = 100,
-    min_fraction: float = 0.05,
+    min_anchor_hits: dict | None = None,
 ) -> dict:
     """
     Map channel integers to named bus strings using anchor ID sets, with
     Android-logger churn filtering (see projects/vtrux/README.md "Bus number
     churn in Android T0").
 
-    A channel is kept only if its frame count is BOTH >= min_frames absolute
-    AND >= min_fraction of the highest-count channel. Channels failing
-    either test are tagged None and their data is skipped at upload time.
+    A channel that matches no anchor set is mapped to None and is NOT
+    uploaded. See step 3 for why, and for what that replaced.
 
-    The fraction filter is the primary signal. Surveying 999 Android T0
-    logs, the canonical churn case (vtrux_20260503_171127_T0) has a real
-    PT bus at 155k frames alongside 9 noise channels of 2-7k frames each
-    -- pure absolute thresholds fail to separate them, but a 5%-of-max
-    cutoff cleanly does. Real captures dominate noise by 10x+ in frame
-    count whether on Android or laptop USB capture.
+    `min_frames` and `min_fraction` were removed 2026-10-04 along with the
+    `ch<N>` fallback they gated -- they existed only to decide which
+    unidentifiable channels were big enough to upload anyway, and nothing now
+    uploads an unidentifiable channel at any size. No caller ever passed
+    either one. The churn filter in step 2 is unaffected: it compares channels
+    claiming the SAME bus name and never used these.
 
     Channels passing the count test but lacking any anchor match get the
-    fallback name 'ch<N>' (uploaded with channel number as the bus tag).
+    fallback name 'ch<N>' (uploaded with channel number as the bus tag). A
+    channel whose only anchor match falls below `min_anchor_hits` for that bus
+    counts as no match, for the reason set out at step 1.
 
     Returns {channel_int: bus_name_str_or_None}.
     """
     if not channel_counts:
         return {}
-    max_count = max(channel_counts.values())
 
     # Step 1: score every channel against every anchor set and take the best
     # match by FRACTION of that anchor set present, not by first-listed hit.
@@ -415,13 +642,60 @@ def identify_buses(
     # b_can beats 1/26 = 0.04 for c_can. Fraction rather than raw count
     # because the anchor sets differ hugely in size (1 id for powertrain,
     # 26 for c_can). Ties fall back to the declared order.
+    #
+    # Every anchor set is meant to hold ids exclusive to its own bus, so a channel
+    # should match EXACTLY ONE set. Matching two is a contradiction -- a stray frame,
+    # or an anchor that is not exclusive after all -- and resolving it by fraction
+    # silently produces a bus label with no evidence behind it. Measured 2026-09-29:
+    # all 126 channels across 55 multi-channel Coda captures match exactly one set.
+    # So the ambiguous case is reported rather than passed off as a result. It still
+    # resolves, because refusing would fail an upload over one frame, but it says so.
+    # A label must also clear a MINIMUM NUMBER OF DISTINCT ANCHOR HITS for the
+    # set it claims. Without it, one stray frame decides a bus and nothing can
+    # report the failure: the ambiguity warning below only fires when TWO sets
+    # match, so a channel matching exactly one set on exactly one id is
+    # indistinguishable from a channel matching it on all of them.
+    #
+    # That is the null-discriminator failure in AGENTS.md -- a selection among
+    # one candidate is not evidence -- and it had happened:
+    # coda_20260608_095955_T6, a 33 KB tail chunk with ONE channel carrying 621
+    # frames of B CAN traffic, holds no b_can anchor (too short for 0x48A or
+    # 0x381 to appear) and one id inside c_can's 0x000-0x019 cell range. c_can
+    # was the only set with a hit, so 621 B CAN frames went to InfluxDB tagged
+    # c_can, carrying seven ids that only ever appear on B/D CAN.
+    #
+    # Thresholds are the OBSERVED MINIMUM for genuine channels, measured over
+    # every channel of every coda log -- 2262 channels in 1095 files, no
+    # pre-filtering (notes/artifacts/bus_label_min_anchor_audit.py):
+    #     b_can (of  2): {1: 36, 2: 1032}        -> must stay 1
+    #     d_can (of  5): {1: 1, 2: 1, 3: 19, 4: 7, 5: 866}
+    #     c_can (of 26): {1: 1, 26: 280}         -> perfectly bimodal
+    # Only 3 channels in the whole corpus sit below these, all `_T6` tail
+    # chunks, and they become `ch<N>` -- still uploaded, just not under a bus
+    # name they have not earned.
+    #
+    # This REPLACES the population behind the note in the coda profile saying a
+    # minimum must not be added. That measurement
+    # (notes/artifacts/anchor_hit_distribution.py) skipped single-channel
+    # captures outright (`if len(ids) < 2: continue`) and classified a channel
+    # as a c_can candidate only at `nc >= 10`, so neither the failing case nor a
+    # low-hit c_can channel could appear in it. Its b_can conclusion survives
+    # and is why b_can is still 1.
+    min_hits = dict(min_anchor_hits or {})
+
     best: dict = {}
     for channel, ids in channel_ids.items():
         scored = []
         for order, (bus_name, anchors) in enumerate(bus_anchors):
             hits = len(ids & anchors)
-            if hits:
+            if hits and hits >= min_hits.get(bus_name, 1):
                 scored.append((hits / len(anchors), hits, -order, bus_name))
+        if len(scored) > 1:
+            detail = ", ".join(f"{name}:{h}/{int(h / f) if f else 0}"
+                               for f, h, _o, name in sorted(scored, reverse=True))
+            print(f"  !! channel {channel} matches {len(scored)} anchor sets ({detail}) "
+                  f"-- anchors are supposed to be exclusive, so this label is not "
+                  f"evidenced; taking the strongest", flush=True)
         best[channel] = max(scored)[3] if scored else None
 
     # Step 2: churn filter, applied ONLY between channels competing for the
@@ -448,15 +722,55 @@ def identify_buses(
         for c in channels:
             mapping[c] = bus_name if c == winner else None
 
-    # Step 3: channels matching no anchor keep the old absolute+relative
-    # floor. Nothing is known about them, so the conservative filter stands.
-    threshold = max(min_frames, int(max_count * min_fraction))
+    # Step 3: A CHANNEL THAT MATCHES NO ANCHOR SET IS NOT UPLOADED.
+    #
+    # Until 2026-10-04 such a channel was uploaded under the fallback tag
+    # `ch<N>` if it cleared an absolute and relative frame-count floor. That
+    # was wrong in a way the floor could not fix, because the problem was
+    # never the channel's size:
+    #
+    #   * `ch<N>` is not a bus name, it is an admission that the bus is
+    #     UNKNOWN. N is dongle insertion order, which varies per capture, so
+    #     the tag does not even identify the same thing across two files
+    #     (AGENTS.md: never identify a bus by channel number).
+    #   * The profile `exclude` lists are keyed `(bus_name, can_id)`, so a
+    #     bus-scoped exclusion CANNOT MATCH `ch<N>`. An unidentified channel
+    #     therefore uploaded gateway-rebroadcast copies that the identical
+    #     frames would have had excluded under a named bus. Measured: the
+    #     coda_20260807_192700 tail wrote nothing while labelled `d_can`
+    #     because all five of its ids are d_can-excluded, and five series once
+    #     it became `ch1`.
+    #   * `build_id_index()` keys on frame id alone, so those frames were
+    #     decoded against whichever DBC happened to define the id, with no bus
+    #     to constrain the choice -- the same bus-blindness that put c_can
+    #     0x200/0x300 under D-CAN signal names.
+    #
+    # So the data was not merely unlabelled, it was actively misleading, and
+    # every consumer had to special-case it: influx_sync's L0 had to normalise
+    # the missing definition hash or every such file drifted forever, and its
+    # L1 condemned all 147 `ch<N>` series as orphans because no `ch<N>` pair
+    # can be in current_hashes().
+    #
+    # The right response to "which bus is this?" having no answer is to fix
+    # the anchors, not to invent a label. Coda b_can went from 2 anchors to 18
+    # on the same day (notes/artifacts/anchor_discovery_audit.py) and its
+    # unattributable population went to almost nothing.
+    #
+    # Cost of this change, measured before making it
+    # (tools/artifacts/unidentified_channel_census.py): 9 channels across both
+    # vehicles, 2 on Coda (305 frames) and 7 on Vtrux (332,082 frames). The
+    # Vtrux captures were quarantined to logs/unidentified-bus/ rather than
+    # silently dropped, because every one is a disconnect experiment whose
+    # bus is unidentifiable precisely BECAUSE the test disconnected the module
+    # emitting the sole `powertrain` anchor.
+    #
+    # NOTE this is invisible to all three sync staleness keys -- file sha1,
+    # DBC message hashes, policy hash -- because it changes interpretation,
+    # not bytes or encoding. It needs no re-upload (it can only ever REMOVE
+    # series, so dropping the existing `ch<N>` series reaches the same end
+    # state), but the drop is the migration, not optional tidying.
     for channel in channel_ids:
-        if channel in mapping:
-            continue
-        mapping[channel] = (f"ch{channel}"
-                            if channel_counts.get(channel, 0) >= threshold
-                            else None)
+        mapping.setdefault(channel, None)
     return mapping
 
 
@@ -521,21 +835,34 @@ def sha1_file(path: Path, chunk: int = 1 << 20) -> str:
 
 
 def policy_hash(profile_exclude, cli_exclude, on_change, heartbeat_s,
-                upload_raw, only_ids) -> str:
+                upload_raw, only_ids, min_anchor_hits=None) -> str:
     """Hash of every upload-policy input that changes what gets written.
 
     Separate from the per-message definition hash: a change here (a new
     exclusion, a different write policy) invalidates whole files rather than
     single messages.
     """
-    blob = json.dumps({
+    payload = {
         "profile_exclude": profile_exclude,
         "cli_exclude": sorted(cli_exclude or []),
         "on_change": bool(on_change),
         "heartbeat_s": float(heartbeat_s),
         "raw": bool(upload_raw),
         "only_ids": sorted(only_ids) if only_ids else None,
-    }, sort_keys=True, default=str)
+    }
+    # Bus labelling decides the `bus` tag on every point, so a change to the
+    # minimum-anchor-hits guard changes what is stored just as surely as an
+    # exclusion does -- without this, files uploaded under the old labelling
+    # stay invisible to `--plan`.
+    #
+    # The key is OMITTED when unset rather than written as null, so a profile
+    # that does not use the guard keeps the hash it already has. Adding
+    # `"min_anchor_hits": null` to the blob moved vtrux's hash from
+    # 0a5448cad23b to 651b7c52ab9b and would have queued a re-upload of the
+    # entire Vtrux corpus for a Coda-only change.
+    if min_anchor_hits:
+        payload["min_anchor_hits"] = dict(sorted(min_anchor_hits.items()))
+    blob = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()[:12]
 
 
@@ -609,7 +936,177 @@ def fetch_manifest_row(statement_fn, vehicle, session, filename):
     return None
 
 
-def merge_manifest_fields(prev_row, *, msg_hash_map, stats, policy_h, bus_map):
+
+# Chunk a delete no wider than this. A session is normally minutes long so one
+# chunk is the usual case; a multi-hour laptop capture is split rather than
+# handed to the server as one span.
+_DELETE_CHUNK_NS = 24 * 3600 * NS_PER_S
+# A bounded DELETE still has to rewrite the shards it touches, so it gets longer
+# than an ordinary statement -- but a bound, unlike DROP SERIES.
+_DELETE_TIMEOUT_S = 300
+
+
+def _q_esc(v):
+    """Escape a tag value for an InfluxQL string literal.
+
+    A single quote inside a session name would otherwise close the literal and
+    let the remainder run as InfluxQL.
+    """
+    return str(v).replace("\\", "\\\\").replace("'", "\\'")
+
+
+def stored_window_ns(statement_fn, vehicle, session):
+    """(t0_ns, t1_ns, manifest_points) for this session, or None if unrecorded.
+
+    Taken from `upload_manifest`, which records the bounds the uploader observed
+    per file. The manifest is append-only, so the newest row per file is the one
+    describing what is stored now. It is a tiny, tag-filtered measurement, so
+    this is cheap -- unlike asking the `signals` measurement for its own extent.
+    """
+    try:
+        body = statement_fn(
+            f"SELECT uploaded_at, file, t_start_ns, t_end_ns, points "
+            f"FROM {MANIFEST_MEASUREMENT} "
+            f"WHERE \"vehicle\"='{_q_esc(vehicle)}' "
+            f"AND \"session\"='{_q_esc(session)}'"
+        )
+    except Exception as exc:
+        raise RuntimeError(f"cannot read manifest window for {session}: {exc}")
+
+    newest = {}
+    for result in body.get("results", []):
+        for series in result.get("series", []) or []:
+            cols = series.get("columns", [])
+            for vals in series.get("values", []) or []:
+                row = dict(zip(cols, vals))
+                f = row.get("file")
+                ua = row.get("uploaded_at") or 0
+                if f not in newest or ua > newest[f][0]:
+                    newest[f] = (ua, row)
+
+    starts = [r["t_start_ns"] for _ua, r in newest.values()
+              if r.get("t_start_ns") is not None]
+    ends = [r["t_end_ns"] for _ua, r in newest.values()
+            if r.get("t_end_ns") is not None]
+    if not starts or not ends:
+        return None
+    pts = sum(r.get("points") or 0 for _ua, r in newest.values())
+    return min(starts), max(ends), pts
+
+
+def has_points(statement_fn, measurement, vehicle, session, t0, t1):
+    """True if ANY point is stored for this session inside [t0, t1].
+
+    Deliberately NOT `COUNT(*)`. COUNT(*) expands across every field of the
+    measurement, and an unbounded version of exactly that query is what drove
+    the host into swap thrash on 2026-09-28 -- memory pressure appeared 1 min
+    48 s into a loop of 54 of them, before any DELETE had been issued. A
+    bounded COUNT(*) is far cheaper, but zero-or-not is all this needs, and
+    `LIMIT 1` stops at the first row instead of aggregating every field.
+
+    The exact stored count, when one is wanted for the log, comes from the
+    manifest rather than from the data.
+    """
+    body = statement_fn(
+        f"SELECT * FROM {measurement} "
+        f"WHERE \"vehicle\"='{_q_esc(vehicle)}' "
+        f"AND \"session\"='{_q_esc(session)}' "
+        f"AND time >= {int(t0)} AND time <= {int(t1)} LIMIT 1"
+    )
+    for result in body.get("results", []):
+        for series in result.get("series", []) or []:
+            if series.get("values"):
+                return True
+    return False
+
+
+def clear_session_window(statement_fn, vehicle, session, *, with_raw=False):
+    """Remove this session's stored points with a TIME-BOUNDED DELETE.
+
+    **This replaced an unbounded `DROP SERIES` on 2026-09-28.** Not because that
+    statement caused the outage that day -- the host journal shows memory
+    pressure began 1 min 48 s into a loop of 54 unbounded `SELECT COUNT(*)`
+    queries, before any DELETE was issued, and 40 minutes of swap thrash
+    followed with no OOM kill, so the box had to be power-cycled. `DROP SERIES`
+    was the next unbounded statement to land on an already-starved server, and
+    it is unbounded in the same way: InfluxDB 1.x walks every shard and rewrites
+    the index, and it kept working long after the client's 120 s timeout gave
+    up. The instance has no query-timeout, no max-concurrent-queries and no
+    memory limit, so nothing server-side stops a heavy statement. Raising the
+    client timeout would only have hidden a multi-minute operation.
+
+    The lesson is about unbounded statements generally, reads included, not
+    about deletes specifically -- see `has_points` for the read half.
+
+    A time-bounded DELETE touches only the shards in the window, and the window
+    comes from the manifest, which knows exactly where this session's points
+    are. The series keys survive, which is harmless: the caller rewrites the same
+    series immediately. The same bounded-delete-then-verify shape is what
+    `influx_sync.reupload_ids` has always used for per-message repairs.
+
+    Verified rather than assumed, because a delete that silently matches nothing
+    turns the caller's re-upload into an append:
+
+      * no manifest window  -> RAISE. It is tempting to read this as "nothing
+                               was ever stored, so nothing to delete", and that
+                               is wrong: anything uploaded before the manifest
+                               existed has no row, so skipping would append the
+                               new timestamps ALONGSIDE the old points instead
+                               of replacing them. Without a window there is no
+                               safe bounded delete, so the caller must decide.
+      * zero points in it   -> skip; there is genuinely nothing to remove. This
+                               is also the path a session takes when a previous
+                               run already dropped it.
+      * points left after   -> RAISE, so the caller does not upload on top of
+                               stale data and duplicate it
+    """
+    win = stored_window_ns(statement_fn, vehicle, session)
+    if win is None:
+        raise RuntimeError(
+            f"no manifest window for {vehicle}/{session}: cannot bound a delete, "
+            f"and skipping it would append new points beside any old ones. "
+            f"Upload without --delete only if you know the session is absent."
+        )
+    t0, t1 = win[0] - NS_PER_S, win[1] + NS_PER_S   # 1 s margin each side
+    man_pts = win[2]
+
+    for meas in ("signals",) + (("raw",) if with_raw else ()):
+        if not has_points(statement_fn, meas, vehicle, session, t0, t1):
+            print(f"  {session} [{meas}]: no points in window, nothing to delete",
+                  flush=True)
+            continue
+        span_h = (t1 - t0) / NS_PER_S / 3600
+        n_chunks = max(1, -(-(t1 - t0) // _DELETE_CHUNK_NS))
+        print(f"  {session} [{meas}]: ~{man_pts:,} point(s) per the manifest, "
+              f"{span_h:.2f} h in {n_chunks} chunk(s)", flush=True)
+        t_del = time.time()
+        lo = t0
+        while lo <= t1:
+            hi = min(lo + _DELETE_CHUNK_NS, t1)
+            statement_fn(
+                f"DELETE FROM {meas} "
+                f"WHERE \"vehicle\"='{_q_esc(vehicle)}' "
+                f"AND \"session\"='{_q_esc(session)}' "
+                f"AND time >= {int(lo)} AND time <= {int(hi)}",
+                timeout=_DELETE_TIMEOUT_S,
+            )
+            lo = hi + 1
+        del_s = time.time() - t_del
+        if has_points(statement_fn, meas, vehicle, session, t0, t1):
+            raise RuntimeError(
+                f"delete left points for {vehicle}/{session} [{meas}] -- "
+                f"refusing to upload on top of them"
+            )
+        # The DELETE duration is the number worth watching as sessions grow:
+        # the delete is chunked by TIME (24 h), not by file, so a 29-file session
+        # spanning a few hours is still one chunk and may cost little more than a
+        # 2-file one. If this climbs with session size, the chunking is the thing
+        # to revisit.
+        print(f"  {session} [{meas}]: cleared in {del_s:.1f}s", flush=True)
+
+
+def merge_manifest_fields(prev_row, *, msg_hash_map, stats, policy_h, bus_map,
+                          requested_ids=None):
     """Fold a partial (--only-id) upload into the file's existing manifest row.
 
     A manifest row describes a WHOLE FILE. `--only-id` uploads one message, so
@@ -642,6 +1139,19 @@ def merge_manifest_fields(prev_row, *, msg_hash_map, stats, policy_h, bus_map):
         return None
     for bus, cid in stats["keys"]:
         merged[f"{bus}|{cid}"] = msg_hash_map.get((bus, cid), "")
+
+    # Record the ids we were ASKED to upload even when the file turned out to
+    # contain none of them. influx_sync treats "defined by the DBC but recorded
+    # by no upload" as a newly added message and queues a backfill; without
+    # this, backfilling an id that simply is not in a given capture would leave
+    # the manifest unchanged, so the same backfill would be queued again on
+    # every future run and never converge. Only buses that actually define the
+    # message are recorded, so a real later encoding change is still detected.
+    for cid in sorted(requested_ids or []):
+        for bus in set(bus_map.values()):
+            h = msg_hash_map.get((bus, cid))
+            if h is not None:
+                merged.setdefault(f"{bus}|{cid}", h)
     prev_bus.update({str(k): v for k, v in bus_map.items()})
     t0, t1 = prev_row.get("t_start_ns"), prev_row.get("t_end_ns")
     if t0 is None or t1 is None:
@@ -857,7 +1367,7 @@ def stream_and_write(
     emission. So heartbeat_s is the maximum gap between consecutive points for
     any signal, which keeps Grafana's last-value-before-window correct and
     bounds gap length. Measured 3.5x less disk than on_change=False on a
-    52 MB Vtrux log (tools/plans/influx-sync.md, Lever C).
+    52 MB Vtrux log (the internal `influx-sync` plan, Lever C).
 
     The forward-fill of an on-change series reconstructs the every-frame
     series exactly at every original timestamp; that equivalence is what
@@ -1143,7 +1653,8 @@ Examples:
     p.add_argument("--raw", action="store_true",
                    help="Upload raw byte values for frames not decoded by any DBC")
     p.add_argument("--delete", action="store_true",
-                   help="DROP existing series for vehicle+session before uploading")
+                   help="clear stored points for vehicle+session before uploading "
+                        "(time-bounded DELETE, verified)")
     p.add_argument("--dry-run", action="store_true",
                    help="Parse and count points but do not write to InfluxDB")
     p.add_argument("--batch-size", type=int, default=5000,
@@ -1201,6 +1712,7 @@ Examples:
         sys.exit(1)
 
     bus_anchors = profile["bus_anchors"]
+    min_anchor_hits = profile.get("min_anchor_hits")
     exclude_global, exclude_bus_signal, exclude_id, exclude_bus_id = build_exclude_sets(
         profile.get("exclude", []),
         args.exclude or [],
@@ -1240,19 +1752,21 @@ Examples:
     )
     policy_h = policy_hash(profile.get("exclude", []), args.exclude,
                            args.write_policy == "on-change", args.heartbeat,
-                           args.raw, only_ids)
+                           args.raw, only_ids,
+                           profile.get("min_anchor_hits"))
     # The hash the manifest should carry once a --only-id upload is merged back
     # into the file's existing row: the row then again describes a full upload
     # under the base policy. See merge_manifest_fields.
     base_policy_h = policy_hash(profile.get("exclude", []), args.exclude,
                                 args.write_policy == "on-change", args.heartbeat,
-                                args.raw, None)
+                                args.raw, None,
+                                profile.get("min_anchor_hits"))
     print(f"  {len(msg_hash_map)} (bus,can_id) definition hashes; "
           f"policy {policy_h}")
 
     # Everything goes through a plain requests.Session -- both writes and the
-    # control-plane statements (DROP SERIES). The influxdb-python client used
-    # to be imported solely for the latter's two query() calls; DROP SERIES is
+    # control-plane statements (DELETE, SHOW). The influxdb-python client used
+    # to be imported solely for the latter's two query() calls; each is
     # a one-line HTTP POST, so the dependency bought nothing and could not be
     # installed on Debian anyway (PEP 668). Writes were already custom: the
     # per-point serializer in stream_and_write profiled ~3-5x faster than the
@@ -1268,14 +1782,14 @@ Examples:
                      f"?db={args.database}&precision=n")
         query_url = f"http://{args.host}:{args.port}/query"
 
-    def influx_statement(q: str):
-        """POST a control-plane statement (DROP SERIES, ...).
+    def influx_statement(q: str, timeout: int = 120):
+        """POST a control-plane statement (DELETE, SHOW, ...).
 
         Must be POST: InfluxDB 1.x accepts these over GET but answers with a
         'deprecated use ... in a read only context' warning.
         """
         resp = http_session.post(query_url, data={"db": args.database, "q": q},
-                                 timeout=120)
+                                 timeout=timeout)
         if resp.status_code >= 300:
             raise RuntimeError(f"InfluxDB query failed {resp.status_code}: "
                                f"{resp.text[:300]}")
@@ -1352,19 +1866,11 @@ Examples:
 
     if args.delete and not args.dry_run and pending:
         unique_sessions = sorted(set(s for _, s in pending))
-        print(f"\nDropping existing series for "
+        print(f"\nClearing stored points for "
               f"{len(unique_sessions)} session(s) before upload ...")
         for sess in unique_sessions:
-            print(f"  vehicle={args.vehicle} session={sess}")
-            # Single-quotes inside a tag value would terminate the string
-            # literal and let the rest of the session name run as InfluxQL.
-            esc_sess = sess.replace("\\", "\\\\").replace("'", "\\'")
-            esc_veh = args.vehicle.replace("\\", "\\\\").replace("'", "\\'")
-            for meas in ("signals",) + (("raw",) if args.raw else ()):
-                influx_statement(
-                    f"DROP SERIES FROM {meas} "
-                    f"WHERE \"vehicle\"='{esc_veh}' AND \"session\"='{esc_sess}'"
-                )
+            clear_session_window(influx_statement, args.vehicle, sess,
+                                 with_raw=args.raw)
 
     for log_path in skipped_done:
         print(f"\nSkipping {log_path.name}: already in success log")
@@ -1390,7 +1896,8 @@ Examples:
             ).strftime("%Y-%m-%d %H:%M:%S UTC")
             print(f"  anchor  : {start_dt}")
 
-            bus_map = identify_buses(channel_ids, channel_counts, bus_anchors)
+            bus_map = identify_buses(channel_ids, channel_counts, bus_anchors,
+                                     min_anchor_hits=min_anchor_hits)
             for ch, name in sorted(bus_map.items()):
                 count = channel_counts.get(ch, 0)
                 n_ids = len(channel_ids.get(ch, set()))
@@ -1455,7 +1962,9 @@ Examples:
                                               session, log_path.name)
                     merged = merge_manifest_fields(
                         prev, msg_hash_map=msg_hash_map, stats=stats,
-                        policy_h=base_policy_h, bus_map=bus_map)
+                        policy_h=base_policy_h, bus_map=bus_map,
+                        requested_ids={f"0x{i & 0x1FFFFFFF:03X}"
+                                       for i in only_ids})
                     if merged is None:
                         print(f"  WARNING: no previous manifest row for "
                               f"{log_path.name}; writing a partial row, which "

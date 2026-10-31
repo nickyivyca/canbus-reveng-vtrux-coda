@@ -141,10 +141,10 @@ SESSIONS = {
     "vtruxchargeafterafterucscexport2": g("projects/vtrux/logs/vtruxchargeafterafterucscexport2.log"),
     "vtruxchargeafteroverheattest-32a": g("projects/vtrux/logs/vtruxchargeafteroverheattest-32asetpoint.log"),
     "vtruxchargeafterscottsvalley": g("projects/vtrux/logs/vtruxchargeafterscottsvalley.log"),
-    "vtruxextensioncabletest": g("projects/vtrux/logs/vtruxextensioncabletest.log"),
+    "vtruxextensioncabletest": g("projects/vtrux/logs/unidentified-bus/vtruxextensioncabletest.log"),
     "vtruxinterlocktest": g("projects/vtrux/logs/vtruxinterlocktest.log"),
     "vtruxisolationtestrecovery": g("projects/vtrux/logs/vtruxisolationtestrecovery.log"),
-    "vtruxunpluggingchargehandle": g("projects/vtrux/logs/vtruxunpluggingchargehandleendofcharge.log"),
+    "vtruxunpluggingchargehandle": g("projects/vtrux/logs/unidentified-bus/vtruxunpluggingchargehandleendofcharge.log"),
     "vtruxunplugpumpthenhvbatterylv": g("projects/vtrux/logs/vtruxunplugpumpthenhvbatterylvconnector.log"),
 }
 

@@ -1,6 +1,76 @@
 # Coda Traction Control Analysis
 
+> **SUPERSEDED 2026-09-24 — `0x312` is a DLCM message, not an ESC message.**
+> It is TX record 10 in the DLCM's own CAN transmit table and `FUN_80080C14` writes all
+> eight bytes. B0[4:0],B1 and B2[4:0],B3 are one duplicated torque-feedback field, B0 bit 5
+> is parity and bit 6 a toggle, B4[4:0],B5 is **M_MAX** and B6[4:0],B7 is **M_MIN**, all on
+> the `0x212` encoding of 0.25 Nm/count with zero at 2000. Every number the reading below
+> rests on is explained by that: 2000 = 0 Nm, 3199 = +299.75 Nm, 800 = −300 Nm, "B1 = B3
+> redundant" is the duplicated field, "B2 echoes B0[3:0]" is B2 without the flag bits.
+> See `notes/dlcm/coda-dlcm-decompile-notes.md` → "What each configured message actually
+> carries". The wheel-speed and TC findings in this file that rest on `0x208` are
+> unaffected.
+
 **Log:** `projects/coda/logs/codadriveslowturnonwithdefroster2.log` (B+C+D CAN)
+
+> **The regen side of this is in a different file, found 2026-10-03.** This file
+> characterises TC events by wheel divergence and by torque cuts *while the
+> throttle is held*. The complementary case — the ESC clamping torque to **zero
+> while the car is regenerating**, which the user feels as regen dropping out on
+> a rough patch — is written up in `dlcm/esp-torque-intervention.md`, with the
+> commanding signal (`0x300` B2–3, undecoded until then) and the ABS brake-event
+> bit (`0x208` B0 bit 6, named `U2111` by the DLCM's own DTC table).
+>
+> **RESOLVED 2026-10-03 — THIS FILE'S LABELS ARE THE STALE SIDE. `0x208` IS THE
+> NON-DRIVEN REAR PAIR, NOT THE HALFSHAFTS.** Raised as a conflict earlier the
+> same day and then settled by measurement, so reason from the DBC, not from
+> the `DHL`/`DHR` names below.
+>
+> Evidence: during a 369-count wheel-slip event in this file's own drive
+> (`...defroster2.log`, t = 586 s, request +252 to +276 Nm) the **front** pair
+> `0x200` diverges by 83 → 327 counts as `WheelSpeed_LF` spins to 604 against
+> ~280 elsewhere, while the **`0x208` pair stays flat at 1–7 counts throughout**.
+> That is exactly what the DBC's `WheelSpeed_RR` comment already claimed —
+> "non-driven axle (does not spike during FWD TC events)" — and that comment
+> also records it as a correction of the earlier FL/FR hypothesis. `AGENTS.md`
+> puts the DBC above notes files for encoding, and here the DBC is also the
+> later and better-evidenced side.
+>
+> **Consequence for this file:** the 17 events below were found on the pair that
+> does *not* spin, using a >= 30-count threshold. See the spread distribution
+> note further down — that pair tops out at 92 counts where all four channels
+> reach 369, so this method could not see the largest events in its own drive.
+> The cornering-vs-slip conclusions still stand, because they use relative
+> divergence and regression slopes rather than absolute labels.
+>
+> The superseded reading, kept for the record: This file's §"Wheel speed signal location" and
+> `CODA-D-CAN.dbc` disagree about `0x208` bytes 4–7, in two ways at once:
+>
+> | | `0x208` B4–5 | `0x208` B6–7 | encoding |
+> |---|---|---|---|
+> | this file | `DHL`, **left halfshaft** | `DHR`, **right halfshaft** | BE uint16, zero = `0xC000` = 49152 |
+> | the DBC | `WheelSpeed_RR`, **right REAR** | `WheelSpeed_LR`, **left REAR** | 14-bit at start 37 / 53 |
+>
+> The Coda is front-wheel drive, so "halfshaft" means a **driven, front** wheel,
+> and the DBC says these bytes are the **undriven rear** pair. The two readings
+> are also left/right-swapped relative to each other, and the field widths
+> differ (16-bit with a 49152 offset versus 14-bit). `AGENTS.md` makes the DBC
+> the source of truth for encoding and says to **stop and prompt the user** on a
+> DBC-versus-notes disagreement rather than guess, so this is flagged, not
+> resolved.
+>
+> What it does **not** affect: this file's cornering-versus-slip conclusions rest
+> on *relative* divergence between the two channels, which survives both
+> labellings, and `esp-torque-intervention.md`'s event rests on one channel of four
+> diverging by 109 counts, which likewise does not depend on which corner it is.
+> What it **does** affect is any claim about *which* wheel slipped and whether it
+> was driven.
+>
+> **One measured correction that is independent of the conflict:** a **spread of
+> 40 counts is not rare.** Over a 15-minute drive above 4 mph, p50 = 8, p90 = 26,
+> p99 = 62, p99.9 = 79; 45 samples reach 80 and 43 of those are under
+> acceleration. Phase 1's ">= 30 counts for >= 0.2 s" rule should be read against
+> that distribution.
 **Started:** 2026-03-19
 
 ---
@@ -42,12 +112,41 @@ Full timestamp table in `artifacts/tc_events.txt`. Plots in `artifacts/tc_cluste
 
 ### Cornering vs real slip discrimination
 
-Added steering angle (0x080 B2-B3, center=2000, scale=0.1 deg) to plots. Events where
+Added steering angle (0x080 B2-B3, center=20000, scale=0.1 deg) to plots. Events where
 DHL/DHR diverge during cornering (inner vs outer wheel speed difference) are distinguishable:
 - A1, A2, C8-10, D11-13 have strong steering angle correlation -- likely cornering-induced
+
+**Correction 2026-09-20:** the centre was recorded above as `2000`; it is **`20000`**. The
+median raw value across every drive in the 2026-03..09 corpus is 20000, and the observed
+range 14300-25900 gives +/-570 deg at 0.1 deg/count, consistent with lock-to-lock. The DBC
+carried the matching 10x error (offset `-200.0`, now `-2000.0`). The cornering/slip
+conclusions above are unaffected -- they rest on relative steering movement, not on the
+absolute zero.
+
+**Further correction 2026-09-27:** raw 20000 is **not** straight-ahead. 0x080 is a relative
+angle zeroed at EPS power-up: 20000 is wherever the wheel was when the EPS booted, so it is
+straight-ahead only if the wheel was straight then. Per-drive straight-ahead spans more than a
+full turn across the corpus, and only ~12 % of drives fall within 2 deg of 20000. The corpus
+median of 20000 is a statistic of how the car is usually parked, not a property of the signal.
+The stops sit at straight-ahead +/-571 deg, not at 20000 +/-571. The conclusions above still
+stand for the reason already given: they use steering movement and regression slopes, which do
+not depend on the zero. See `driver-inputs.md`, *Relative angle, zeroed at EPS power-up*.
 - A3, B4-7 have confirmed motor torque cuts while throttle is held -- real TC events
 
 ### Second TC mechanism: symmetric slip (no DHL/DHR divergence)
+
+> **UNESTABLISHED — measured against its own drive 2026-10-03.** The torque-cut
+> rule below ("torque drops > 20 Nm in 0.5 s while throttle stays within 5 % and
+> is > 3 %") fires **578 times in the 97 seconds** of this drive's own cluster
+> windows (t = 55–152 s), with `M_MAX` at 299.8 Nm (not limiting) and the ESC
+> torque field at its idle value in every one. A rule that fires 578 times in
+> 97 s of ordinary driving is not detecting a rare event, so the "second
+> mechanism" should be treated as unestablished until re-derived against a
+> population and a baseline. Independently, `0x208` B0 bit 6 — the ABS brake
+> event, named `U2111` by the DLCM's own DTC table — is **zero in all 69,689
+> samples of this drive**, and `0x300` B2–3 never leaves idle in 34,615 frames,
+> so no ESC intervention is present here at all. See
+> `dlcm/esp-torque-intervention.md` Part II, section 7.5.
 
 The t=500-630s window contains repeated motor torque reductions that are NOT detected by
 the wheel divergence method -- both driven wheels slip equally, so DHL-DHR stays near zero.
@@ -112,8 +211,7 @@ Examined raw frames in window t=596.5-600.5s (`artifacts/tc_deep_dive.py`).
 
 **The mechanism is entirely quantitative via 0x212 B5.**
 
-`0x212` is the DLCM torque request (50 Hz, two interleaved sub-frames keyed by B2=0x0C/0x00
-at 25 Hz each). **B5 is the torque limit/request value** (uint8). During the TC event:
+`0x212` is the DLCM torque request at 50 Hz. **CORRECTED 2026-09-24:** it is not two interleaved sub-frames — B2 bit 3 is an alternating toggle and B2 bit 2 a parity bit, which is what the 0x0C/0x00 pattern was, and the torque field is in every frame. The value is 13 bits, B4 masked `0x1F` with B5, at 0.25 Nm/count with zero at 2000; the B5-only reading below happens to track it because B4 barely moves over the range tabulated. During the TC event:
 
 | Time (s) | B5 (hex) | B5 (dec) | MCM torque (Nm) |
 |----------|----------|----------|-----------------|
@@ -136,13 +234,16 @@ Ramp from B5=200 to B5=0 takes ~1.1s. MCM torque follows with ~20-50ms lag.
 - B5: torque limit/request value
 
 **Secondary finding: 0x312 B6-B7 activates at TC end.**
+SUPERSEDED: B6-B7 is **M_MIN**, the regen torque limit. It sits at 800 = −300 Nm and rises (becomes less negative) as motor speed climbs, which is a constant-power charge limit, not a wheel-speed channel with a threshold.
+
 Value stuck at 800 throughout drive, then starts increasing from 800 to ~1200 exactly when
 the TC event ends (t=597.99s, coinciding with motor speed increasing past ~1580 rpm). May
 be a wheel speed channel with a minimum speed threshold, or an ESC counter. Not yet decoded.
 
 ~~**What initiates the cut is unknown.**~~ **ANSWERED -- see Phase 2b (0x300) below.**
 0x300 is the ESC torque limits message; its B4:B5 pair begins ramping ~2.5s before 0x212
-responds, confirming ESC-initiated TC via D CAN, not DLCM self-detection.
+responds, confirming ESC-initiated TC via D CAN, not DLCM self-detection. (0x300 B6-B7
+also carries the ESC **yaw rate** — found 2026-09-21, see `../yaw-rate-signal.md`.)
 
 ---
 
@@ -165,6 +266,29 @@ Fixed-content sub-frames. B1-B5 are completely static — same byte values every
 regardless of vehicle state or TC. These likely carry calibration or configuration data.
 
 B7 has 256 unique values and high toggle rates — MPAR_ESP parity checksum candidate.
+
+> **CORRECTED 2026-09-21 — see `../yaw-rate-signal.md` §3.** Two claims in this
+> subsection are wrong, both from merging two buses:
+>
+> - **`0x300` is TWO UNRELATED MESSAGES sharing an ID.** The ESC message is on
+>   **D CAN**, flat, `B0 ≡ 0x00`, at **50 Hz**. A different message — native BMS
+>   diagnostic-port traffic, already recorded in `../../README.md` as one of the
+>   C CAN "ghost" IDs `0x300`–`0x304` — is on **C CAN**, multiplexed 8 ways with
+>   `B0 ∈ {0,5,10,…,35}`. The "~59 Hz" rate is 34,615 + 7,079 frames over ~700 s
+>   from both buses added together, and the "Type 2 fixed-content sub-frames"
+>   are the C CAN message, not ESC calibration data. Identify the bus by content:
+>   the channel numbering swaps between captures (bus 1 is D CAN here and C CAN
+>   in `frombonnydoon`).
+> - **B7 is NOT MPAR_ESP parity.** It is the low byte of the 16-bit **yaw rate**
+>   in B6-B7. "256 unique values and high toggle rates" is also what the low byte
+>   of a smoothly sweeping 16-bit value looks like, so that test cannot separate
+>   them; the step distribution can. Consecutive |Δ(B6-B7)| has mean 11.1 and
+>   median 8, where a checksum byte would give ~85 uniformly, and including B7
+>   *raises* the smoothed correlation against an independent yaw reference
+>   (0.99013 → 0.99415). `YawRate` is now an `SG_` in `CODA-D-CAN.dbc`.
+>
+> **The conclusion of this phase stands.** B4:B5 ramping ~2.5 s before `0x212`
+> responds is measured on the D CAN copy and is unaffected by either correction.
 
 ### What changes during TC
 
@@ -270,6 +394,8 @@ Prior DBC had these labeled WheelSpeed_FL/FR (front). Corrected to rear:
   reference speed throughout the drive.
 
 ### 0x312 -- Structure Decoded (2026-03-20)
+
+**SUPERSEDED — see the banner at the top of this file.** The measurements in this section are sound; the ESC/wheel-speed interpretation of them is not.
 
 Full analysis via `artifacts/analyze_0x312.py` and `artifacts/analyze_0x312_composite.py`
 and `artifacts/analyze_0x312_scale.py` (defroster2 + frombonnydoon cross-validation).

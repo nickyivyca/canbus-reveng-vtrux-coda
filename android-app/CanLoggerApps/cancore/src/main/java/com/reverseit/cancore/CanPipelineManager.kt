@@ -20,8 +20,11 @@ import kotlinx.coroutines.launch
  * Bus indices are assigned in insertion order (first device added = bus 0).
  * Indices are stable: removing a device does not re-number remaining devices.
  * This matches the Python can_logger.py convention.
+ *
+ * Also the app's [CanTransmitter] over the same dongles. Callers should not reach this interface
+ * directly for periodic output -- go through [PeriodicTransmitter], which holds the interlocks.
  */
-class CanPipelineManager : CanFrameSource {
+class CanPipelineManager : CanFrameSource, CanTransmitter {
 
     companion object {
         private const val TAG = "CanCore"
@@ -32,6 +35,35 @@ class CanPipelineManager : CanFrameSource {
 
     private val _frames = MutableSharedFlow<CanFrame>(extraBufferCapacity = 1024)
     override val frames: SharedFlow<CanFrame> = _frames.asSharedFlow()
+
+    /**
+     * Data and error frames, for the log writer; see [CanFrameSource.logFrames]. Buffered for a
+     * writer stall: [CanFrameSource.LOG_BUFFER_FRAMES].
+     */
+    private val _logFrames = MutableSharedFlow<CanFrame>(extraBufferCapacity = CanFrameSource.LOG_BUFFER_FRAMES)
+    override val logFrames: SharedFlow<CanFrame> = _logFrames.asSharedFlow()
+
+    /** `tryEmit` results per flow, always counted (Bug 4); see [FlowHealth]. */
+    private val framesHealth = FlowHealth.register(frames, "pipe.frames")
+    private val logFramesHealth = FlowHealth.register(logFrames, "pipe.log")
+
+    /**
+     * Held while a frame is stamped **and** emitted, so the order frames leave [frames] and
+     * [logFrames] is the order of their timestamps. Each dongle has its own reader thread; without this, bus 1 could stamp
+     * a frame, lose the CPU to bus 0 stamping and emitting a later one, and emit second. The log
+     * writer relies on this ordering: its time origin is the first frame it writes, and no later
+     * frame may be earlier than that. `tryEmit` never suspends, so holding a monitor is fine.
+     */
+    private val stampLock = Any()
+
+    /**
+     * Route one stamped frame: [logFrames] gets every frame, [frames] only data frames. Called
+     * under [stampLock]; `internal` so the split can be tested without a USB device.
+     */
+    internal fun emit(frame: CanFrame) {
+        logFramesHealth.record(_logFrames.tryEmit(frame))
+        if (!frame.isError) framesHealth.record(_frames.tryEmit(frame))
+    }
 
     // Maps UsbDevice.deviceId -> (busIndex, GsUsbDevice, read job)
     private val activeDevices = mutableMapOf<Int, Triple<Int, GsUsbDevice, Job>>()
@@ -56,8 +88,11 @@ class CanPipelineManager : CanFrameSource {
                 gsDevice.open()
                 Log.i(TAG, "Bus $busIndex: device ${usbDevice.deviceId} (${usbDevice.productName}) open")
                 gsDevice.readFrames { gsFrame ->
-                    val frame = gsFrame.toCanFrame(busIndex, System.currentTimeMillis())
-                    _frames.tryEmit(frame)
+                    // GS_CAN_FLAG_OVERFLOW: the adapter dropped frames before this one (Bug 12).
+                    if (gsFrame.flags and 0x01 != 0) FlowHealth.count("gs_usb.overflowFlag")
+                    synchronized(stampLock) {
+                        emit(gsFrame.toCanFrame(busIndex, System.currentTimeMillis(), System.nanoTime()))
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Bus $busIndex: device error: ${e.message}", e)
@@ -84,6 +119,21 @@ class CanPipelineManager : CanFrameSource {
         job.cancel()
         activeDevices.remove(usbDevice.deviceId)
         return true
+    }
+
+    /**
+     * Device owning [busIndex], or null. Bus indices are retired rather than re-used, so a stale
+     * index resolves to nothing rather than to whichever dongle happens to be in that slot now.
+     */
+    private fun deviceForBus(busIndex: Int): GsUsbDevice? =
+        activeDevices.values.firstOrNull { it.first == busIndex }?.second
+
+    override fun canTransmit(busIndex: Int): Boolean =
+        deviceForBus(busIndex)?.canTransmit == true
+
+    override fun transmit(busIndex: Int, id: Int, data: ByteArray, isExtended: Boolean): Boolean {
+        val device = deviceForBus(busIndex) ?: return false
+        return device.send(id, data, isExtended)
     }
 
     override fun activeDeviceCount(): Int = activeDevices.size

@@ -1,0 +1,133 @@
+address,name,kind,end,role,source,confidence,type
+0x7FCBA5,AppResetEntry,function,,"Application reset entry: vector slots 117-119 (reset, COP, clock monitor) point here; the flash tool's final 31 01 FF 02 address (local 0xCBA5). Writes IVBR=0xEE, MMCCTL1, DIRECT, CLKSEL/PLLCTL, then JMP 0xC000.",hvac notes 4 (step 1a),confirmed,
+0x7FC000,AppStartup,function,,"Reached by JMP 0xC000 from AppResetEntry; opens LDS #0x2200 then CALL 0x8000 page FE. Start of seg1.",hvac notes 4 (step 1a),confirmed,
+0x7FEE10,AppVectorTable,data,0x7FEEFF,"Relocated S12X interrupt vector table (seg2, 120 words, local 0xEE10-0xEEFF); IVBR is set to 0xEE by AppResetEntry.",hvac notes 4 (step 1a),confirmed,u16[120]
+0x7FCAEF,SwitchWordTable,function,,"Compiler switch helper, JSR'd with an inline table after the call: [N:u16][default:addr16][addr16 x N], selector in D. Does not return to the caller.",hvac_flow_seed.out.txt,confirmed,
+0x7FCAFA,SwitchByteOffset,function,,"Compiler switch helper, inline table [N:u8][default:u8][off:u8 x N]; target = (address after the JSR) + 2 + off. Does not return to the caller.",hvac_flow_seed.out.txt,confirmed,
+0x7FCB0E,SwitchSparse,function,,"Compiler switch helper, inline table [max:u8][default:addr16] then sorted ([key:u8][addr16]) entries up to key == max; ends JMP [1,X]. Does not return to the caller.",hvac_flow_seed.out.txt,confirmed,
+0x7F8000,StartupCopyDown,function,,"C start-up: zeroes the ranges listed at 0xC011, then walks the copy-down list at [0xC013] ([size u16][GPAGE u8][dest u16][bytes], size 0 ends; 7 entries from 0xCD01).",hvac notes 5 (step 2),confirmed,
+0x7F813E,AppMain,function,,"Called by AppStartup after StartupCopyDown: peripheral init (Can0Init among it), then the endless main loop (RTI tick flag, %4/%10/%20 task flags, CanTask every pass).",hvac notes 5 (step 2),confirmed,
+0x7FCB2D,Can0TxIsr,function,,"CAN0 transmit ISR, vector slot 68: reads CANTFLG & CANTIER, masks the serviced TX interrupts off, calls 0xFE:9F4A.",hvac notes 5 (step 2),confirmed,
+0x7FCB46,Can0RxIsr,function,,"CAN0 receive ISR, vector slot 69: calls CanRxFetch, then clears RXF (CANRFLG = 1).",hvac notes 5 (step 2),confirmed,
+0x7FCB6C,Can0ErrIsr,function,,"CAN0 error/status ISR, vector slot 70: reads CANRFLG, records status in 0x2A29, writes 0xFE to CANRFLG.",hvac notes 5 (step 2),confirmed,
+0x7FCBC4,RtiIsr,function,,"RTI ISR, vector slot 112 (RTICTL 0x49: 5.12 ms if f_osc 16 MHz): sets RtiTickFlag, increments TickCounter32, steps software timers at 0x363A, subtracts 5 from each periodic CAN TX countdown.",hvac notes 5 (step 2),confirmed,
+0x7E7A63,Can0Init,function,,"CAN0 init: CANCTL1 0x80, CANIDAC eight 8-bit filters (table in hvac notes 5.1), BTR0/1 0x41/0x76 (f_osc/32). The only writer of the filter registers.",hvac notes 5 (step 2),confirmed,
+0x7E7836,Can0TxLoad,function,,"Loads an MSCAN TX buffer: CANTBSEL, IDR0-3, data 0x174-, DLC 0x17C, priority 0x17D. Called only by CanTxService.",hvac notes 5 (step 2),confirmed,
+0x7E7966,Can0RxRead,function,,"Reads the MSCAN RX buffer: ID (standard or extended) to [0x3012], flags, DLC, data bytes from 0x164 to [0x301A].",hvac notes 5 (step 2),confirmed,
+0x7F9F4B,CanRxFetch,function,,Calls Can0RxRead with the pointer block 0x3012-0x301A; on success clears CanRxProcessed and sets the bus-silence deadline 0x3004 = now + 300 ticks.,hvac notes 5 (step 2),confirmed,
+0x7E6E4F,CanRxDispatch,function,,"Received-ID dispatcher: skips if CanRxProcessed set, else 32-bit compares the ID with 0x051 0x1D5 0x215 0x241 0x274 0x275 0x277 0x370 0x378 0x382 0x383 0x390 0x439 0x48A 0x491 0x643 0x750 0x7DF and calls the handler.",hvac notes 5 (step 2),confirmed,
+0x7EB2EC,CanTxQueue,function,,"Queues a 16-byte TX descriptor (D = pointer): +0 type 0 = one-shot FIFO at 0x2E80, 1 = periodic table at 0x2D8E keyed by ID (known ID: data refreshed only). Exactly 8 callers: 4 packers and 4 in the diagnostic transport.",hvac notes 5 (step 2),confirmed,
+0x7EB12D,CanTxService,function,,"Sends one frame per call: one-shot queue first, else the next periodic entry whose countdown is 0, which is reloaded from its +1 period.",hvac notes 5 (step 2),confirmed,
+0x7EB0C9,CanTask,function,,"Called every main-loop pass: CanTxService, RX fetch if RXF pending, CanRxDispatch, then the 0x3004 and 0x3008 deadlines into 0x3D2A and 0x3D2B.",hvac notes 5 (step 2),confirmed,
+0x7E6C23,TxPack_0x410,function,,Packs and queues 0x410 AC_Compressor_Command (bytes in hvac notes 5.2).,hvac notes 5 (step 2),confirmed,
+0x7E6CE3,TxPack_0x276,function,,Packs and queues 0x276 HVACStatus (bytes in hvac notes 5.2).,hvac notes 5 (step 2),confirmed,
+0x7E6D6C,TxPack_0x391,function,,Packs and queues 0x391 HVACAirState (bytes in hvac notes 5.2).,hvac notes 5 (step 2),confirmed,
+0x7E6DBE,TxPack_0x392,function,,"Packs and queues 0x392, not in the DBC (bytes in hvac notes 5.2).",hvac notes 5 (step 2),confirmed,
+0x7E705B,RxHandler_0x051,function,,CanRxDispatch handler for 0x051 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E71A5,RxHandler_0x1D5,function,,CanRxDispatch handler for 0x1D5 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E7284,RxHandler_0x215,function,,CanRxDispatch handler for 0x215 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E71D2,RxHandler_0x241,function,,CanRxDispatch handler for 0x241 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E70B4,RxHandler_0x274,function,,CanRxDispatch handler for 0x274 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E729C,RxHandler_0x275,function,,CanRxDispatch handler for 0x275 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E72CE,RxHandler_0x277,function,,CanRxDispatch handler for 0x277 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E71F0,RxHandler_0x370,function,,CanRxDispatch handler for 0x370 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E707B,RxHandler_0x378,function,,CanRxDispatch handler for 0x378 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E7260,RxHandler_0x382,function,,CanRxDispatch handler for 0x382 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E70A6,RxHandler_0x383,function,,CanRxDispatch handler for 0x383 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E7242,RxHandler_0x390,function,,CanRxDispatch handler for 0x390 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E71BD,RxHandler_0x439,function,,CanRxDispatch handler for 0x439 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E71B1,RxHandler_0x48A,function,,CanRxDispatch handler for 0x48A (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E712E,RxHandler_0x491,function,,CanRxDispatch handler for 0x491 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x7E70C6,RxHandler_0x643,function,,CanRxDispatch handler for 0x643 (bytes used in hvac notes 5.3).,hvac notes 5 (step 2),confirmed,
+0x0FE5F4,RtiTickFlag,data,,"Set to 1 by RtiIsr, cleared by AppMain when it runs the tick tasks.",hvac notes 5 (step 2),confirmed,u8
+0x0FE5FB,MainTickCount,data,,"u8 tick counter in AppMain; %4, %10, %20 select the task groups (the %20 group repacks the four CAN messages).",hvac notes 5 (step 2),confirmed,u8
+0x0FE5FC,CanRxData,data,0x0FE603,"Received frame data B0-B7 (one buffer), read by every RxHandler.",hvac notes 5 (step 2),confirmed,u8[8]
+0x0FEFFA,CanRxId,data,,"Received frame ID, u32, compared by CanRxDispatch.",hvac notes 5 (step 2),confirmed,u32
+0x0FF01E,CanRxProcessed,data,,"Cleared by CanRxFetch on a new frame, set to 1 by every RxHandler.",hvac notes 5 (step 2),confirmed,u8
+0x0FEFBA,CanTxDesc,data,0x0FEFC9,"TX descriptor filled by the packers: +0 type, +1 u16 period reload, +3 u16 countdown, +5 u16 ID, +7..+14 data, +15 DLC.",hvac notes 5 (step 2),confirmed,u8[16]
+0x0FED8E,CanTxPeriodicTable,data,0x0FEE7D,"Periodic TX entries, 15 x 16 bytes in CanTxDesc layout; countdown at +3 decremented by 5 per RTI tick.",hvac notes 5 (step 2),confirmed,u8[240]
+0x0FEE80,CanTxOneShotQueue,data,0x0FEF6F,"One-shot TX FIFO, 15 x 16 bytes, served before the periodic table.",hvac notes 5 (step 2),confirmed,u8[240]
+0x0FF69A,TickCounter32,data,0x0FF69D,"32-bit RTI tick counter, high word at 0x369A, low word at 0x369C; incremented by RtiIsr.",hvac notes 5 (step 2),confirmed,u32
+0x0FFCEB,Rx215_SpeedMisread,data,,0x215 handler result B0 << ((B1+8)&0xFF): vehicle speed read with the precedence bug (H4); input of the lookups in 0x7EEF17 and 0x7F200F.,hvac notes 5 (step 2),confirmed,u16
+0x0FFCD4,Rx390_AllowedCellTempMax,data,,Copy of 0x390 B4 (DBC AllowedCellTempMax); read by 0x7EC9C1 (H6).,hvac notes 5 (step 2),confirmed,u8
+0x0FFCD5,Rx390_AllowedCellTempMin,data,,Copy of 0x390 B5 (DBC AllowedCellTempMin); read by 0x7EC9C1 (H6).,hvac notes 5 (step 2),confirmed,u8
+0x0FFCD3,Rx390_AllowedCellTempDiff,data,,Copy of 0x390 B6 (DBC AllowedCellTempDiff); read by 0x7EC9C1 (H6).,hvac notes 5 (step 2),confirmed,u8
+0x0FFCD6,Rx390_AllowedHumidity,data,,Copy of 0x390 B7 (DBC AllowedHumidity).,hvac notes 5 (step 2),confirmed,u8
+0x7F868B,IsoTpRx,function,,"ISO-TP receive for 0x750/0x7DF: PCI switch, assembles the request at 0x3035, calls UdsDispatch when complete.",hvac notes 6 (step 3),confirmed,
+0x7F88BB,UdsDispatch,function,,"UDS service dispatcher: SID 0x2FED, NRC 0x2FF9, per-service session/length/physical gates (notes 6.2).",hvac notes 6 (step 3),confirmed,
+0x7F8C68,Uds10_SessionControl,function,,"0x10: 01 default, 02 programming (needs 0x2A06=2), 03 extended.",hvac notes 6 (step 3),confirmed,
+0x7F8D21,Uds11_EcuReset,function,,0x11 01: needs 0x2A06 = 1 or 2; writes 1 to COPCTL 0x003C.,hvac notes 6 (step 3),confirmed,
+0x7F8D93,Uds27_SecurityAccess,function,,0x27 01/02 and 03/04; seeds at 0x2A24/0x2A20; success sets 0x2A06.,hvac notes 6 (step 3),confirmed,
+0x7F90E2,Uds28_CommControl,function,,"0x28: sub 00 sets 0x2211 (TX on), sub 01 clears it.",hvac notes 6 (step 3),confirmed,
+0x7F91C1,Uds3E_TesterPresent,function,,0x3E 00.,hvac notes 6 (step 3),confirmed,
+0x7F9219,Uds85_ControlDtcSetting,function,,0x85: sets 0x2212; unreachable because the dispatcher and handler length checks conflict.,hvac notes 6 (step 3),confirmed,
+0x7F92A3,Uds22_ReadDid,function,,0x22: routes by DID range (notes 6.4).,hvac notes 6 (step 3),confirmed,
+0x7F93A7,Uds2E_WriteDid,function,,0x2E: E1xx/E3xx RAM windows; E0xx/E2xx refused; no session or security gate.,hvac notes 6 (step 3),confirmed,
+0x7F947F,Uds2F_IoControl,function,,"0x2F: DID-table overrides and the 0x6300/0x6301 port overrides; extended session, no security gate.",hvac notes 6 (step 3),confirmed,
+0x7F97CE,Uds14_ClearDtc,function,,0x14 FFFFFF.,hvac notes 6 (step 3),confirmed,
+0x7F982F,Uds19_ReadDtcInfo,function,,"0x19 (and 0x17): subs 01, 02, 04, 0A via the helper 0x7FCAEA.",hvac notes 6 (step 3),confirmed,
+0x7F99CE,Uds31_RoutineStart,function,,0x31 01.,hvac notes 6 (step 3),confirmed,
+0x7F9A40,Uds31_RoutineStop,function,,0x31 02.,hvac notes 6 (step 3),confirmed,
+0x7F9AB2,Uds31_RoutineResult,function,,0x31 03.,hvac notes 6 (step 3),confirmed,
+0x7F9B70,UdsSendNegative,function,,Sends 7F SID NRC on 0x758.,hvac notes 6 (step 3),confirmed,
+0x7F9F07,UdsSessionTimeout,function,,"Session timer 2 expiry: back to default, TX and DTC setting on, overrides cleared.",hvac notes 6 (step 3),confirmed,
+0x7F9FC7,SwTimerStart,function,,"Start software timer n (table 0x363A, 6 bytes each, -5 per RTI tick).",hvac notes 6 (step 3),confirmed,
+0x7FA016,SwTimerStop,function,,Stop software timer n.,hvac notes 6 (step 3),confirmed,
+0x7FA033,SwTimerExpired,function,,Returns 1 when software timer n has expired.,hvac notes 6 (step 3),confirmed,
+0x7E5853,SeedToKey,function,,"SecurityAccess key: seed ^ const, 48 LFSR rounds (taps 29,20,11,4); hvacsim/seedkey.py.",hvac notes 6 (step 3),confirmed,
+0x7F846F,UdsRand,function,,Park-Miller style random generator used for seeds.,hvac notes 6 (step 3),confirmed,
+0x7F84EA,MemCopy,function,,"memcpy(dest, src, n): dest pushed first, n in D.",hvac notes 6 (step 3),confirmed,
+0x7E4E84,DidReadTable,function,,Reads a DID-table row (0x7FC23A) into the response.,hvac notes 6 (step 3),confirmed,
+0x7E50E7,DidWriteOverride,function,,Writes an I/O-control value into a DID row override shadows.,hvac notes 6 (step 3),confirmed,
+0x7E5730,DidTableSize,function,,"Returns the size of a DID-table row, 0 if absent.",hvac notes 6 (step 3),confirmed,
+0x7E577C,DidTableIndex,function,,Returns the row index of a DID in the DID table.,hvac notes 6 (step 3),confirmed,
+0x7E4E20,DidE1Write,function,,2E E1nn: 4 request bytes -> RAM 0x2214 + 4*nn.,hvac notes 6 (step 3),confirmed,
+0x7E4DEF,DidE1Read,function,,22 E1nn: RAM 0x2214 + 4*nn -> response.,hvac notes 6 (step 3),confirmed,
+0x7E4CF9,DidE3Write,function,,2E E3nn: request -> RAM 0x3C28 + 4*nn.,hvac notes 6 (step 3),confirmed,
+0x7E4CC8,DidE3Read,function,,22 E3nn: RAM 0x3C28 + 4*nn -> response.,hvac notes 6 (step 3),confirmed,
+0x7E52BC,DidStoreRead,function,,22 E0xx/E2xx through the E-DID table 0x2A2C.,hvac notes 6 (step 3),confirmed,
+0x7E5506,DidStoreWrite,function,,2E E0xx/E2xx through the E-DID table; refused by flag bit 1 in every row.,hvac notes 6 (step 3),confirmed,
+0x7E5CF1,PortOutputs,function,,Writes PORTA/PORTC/PORTD from 0x3D69/0x3D79/0x3D6A with the 0x6301 overrides.,hvac notes 6 (step 3),confirmed,
+0x7E58EC,PortInputs,function,,PORTB -> 0x3C83 with the 0x6300 override.,hvac notes 6 (step 3),confirmed,
+0x7EB484,RoutineStartById,function,,Routine table 0x7FC024 lookup; 7010 start side effects.,hvac notes 6 (step 3),confirmed,
+0x7EB618,RoutineRunner,function,,Main-loop runner of routine 7010 (pass when 0x3D2C/32/38/3E all 1).,hvac notes 6 (step 3),confirmed,
+0x7FC23A,DidTable,data,0x7FC761,55 rows of 24 bytes: [DID][size] then [width][source][override shadow] x4.,hvac notes 6 (step 3),confirmed,u8
+0x7FC024,RoutineTable,data,0x7FC03B,8 rows [RID u16][index u8].,hvac notes 6 (step 3),confirmed,u8
+0x0FEA2C,EDidTable,data,0x0FEA55,6 rows [DID][store offset][length][flags]; flags 0x03 refuse writes.,hvac notes 6 (step 3),confirmed,u8
+0x0FE210,UdsSession,data,,"0 default, 1 programming, 2 extended.",hvac notes 6 (step 3),confirmed,u8
+0x0FEA06,UdsSecurityLevel,data,,"0 locked, 1 level 01/02, 2 level 03/04; never cleared until reset.",hvac notes 6 (step 3),confirmed,u8
+0x0FEFF9,UdsNrc,data,,NRC of the current request (0 = positive).,hvac notes 6 (step 3),confirmed,u8
+0x0FF035,UdsRequest,data,,"Request buffer, SID first.",hvac notes 6 (step 3),confirmed,u8
+0x0FF036,UdsRequestLen,data,,Low byte of the request length.,hvac notes 6 (step 3),confirmed,u8
+0x0FEFEA,UdsRxId,data,,CAN ID of the current request (0x750 or 0x7DF).,hvac notes 6 (step 3),confirmed,u16
+0x0FE211,UdsTxEnabled,data,,CommunicationControl: 1 = transmit on.,hvac notes 6 (step 3),confirmed,u8
+0x0FE212,UdsDtcSettingOn,data,,ControlDTCSetting: 1 = on.,hvac notes 6 (step 3),confirmed,u8
+0x0FFBF5,DidOverrideFlags,data,0x0FFC27,I/O-control flag (mask byte) per DID-table row; copied into 0x7F200F each step.,hvac notes 6 (step 3),confirmed,u8
+0x0FE214,RamWindowE1,data,0x0FE536,RAM read/written by 22/2E E100-E1FE; initialised by the copy-down.,hvac notes 6 (step 3),confirmed,u8
+0x0FFC28,RamWindowE3,data,0x0FFC65,RAM read/written by 22/2E E300-E331; read by 0x7F1C7E as flag/value pairs.,hvac notes 6 (step 3),confirmed,u8
+0x7F803C,TaskScheduler,function,,"Multirate scheduler: 0x7F1C7E every call, 0x7F200F every 2nd, 0x7F37B4 every 10th, 0x7EC000/0x7EC8AF/0x7EC9C1 every 50th.",hvac notes 7 (step 4),confirmed,
+0x7EC9C1,ThermalModelStep,function,,"Generated thermal model step: copies CAN/sensor inputs to 0x37xx, calls the sub-blocks, writes outputs incl. 0x3E50 = 0x37C4.",hvac notes 7 (step 4),confirmed,
+0x7ED333,ThermalModelInit,function,,"Model init: temperature inputs 0x50 (0 degC), CAN temperatures 0x80, sub-block inits.",hvac notes 7 (step 4),confirmed,
+0x7FA1D5,PackThermalBlock,function,,"Model sub-block: pack heat demand ramp -> 0x3818, demand ramp 0x2405 -> 0x3807, the 0x39D3 chart (0x3758 bit 2).",hvac notes 7 (step 4),confirmed,
+0x7F17ED,ModeChartA,function,,"Mode chart: 0x37C4 from 0x374E bits 3/2/1 and 0x3756/0x3753 bit 0.",hvac notes 7 (step 4),confirmed,
+0x7F18F4,ModeChartB,function,,"Mode chart (second instance, called from ThermalModelStep with arg 0): writes 0x37C4.",hvac notes 7 (step 4),confirmed,
+0x7FADF6,Lookup2D,function,,"2-D table lookup: (out, table, u1, bp1, n1, u2, bp2, n2 in D).",hvac notes 7 (step 4),confirmed,
+0x7E5910,AdcInputs,function,,"Starts ATD0/ATD1 sequences, copies results to 0x2F7E/0x2F9E and on to 0x3C7B-0x3CA0.",hvac notes 7 (step 4),confirmed,
+0x7E7416,Atd0Results,function,,"Copies ATD0 ch0-15 from 0x2D58 to a caller buffer if 0x2D55 is set.",hvac notes 7 (step 4),confirmed,
+0x7E74EA,Atd1Results,function,,"Copies ATD1 ch0-7 from 0x2D7C to a caller buffer if 0x2D78 is set.",hvac notes 7 (step 4),confirmed,
+0x7FCCAD,Atd0Isr,function,,"ATD0 conversion ISR: result to 0x2D58+2ch; after 16 sets 0x2D55.",hvac notes 7 (step 4),confirmed,
+0x7FCCD8,Atd1Isr,function,,"ATD1 conversion ISR: result to 0x2D7C+2ch; after 8 sets 0x2D78.",hvac notes 7 (step 4),confirmed,
+0x7E699F,EeeParamLoad,function,,"Start-up: E233 block (200 bytes, E265 checksum) from 0x13:F52C to RAM 0x3E76, flash defaults 0xC762 on mismatch.",hvac notes 7 (step 4),confirmed,
+0x0FE4C8,CalAllowMaxOffset,data,,"Used with AllowedCellTempMax: (0x37DA x 2 - value) >> 1 in 0x7FA1D5 (decompile, not emulated); E1AD byte 0.",hvac notes 7 (step 4),confirmed,s8
+0x0FE4C9,CalAllowMinOffset,data,,"Offset on AllowedCellTempMin: heat target = AllowMin + value/4 degC (emulated); E1AD byte 1.",hvac notes 7 (step 4),confirmed,s8
+0x0FE4CA,CalChartHystA,data,,"Read by the 0x39D3 chart in 0x7FA1D5 (notes 7.7); E1AD byte 2.",hvac notes 7 (step 4),confirmed,s8
+0x0FE4CB,CalChartHystB,data,,"Read by the 0x39D3 chart in 0x7FA1D5 (notes 7.7); E1AD byte 3.",hvac notes 7 (step 4),confirmed,s8
+0x0FF7C4,ModelMode,data,,"Model mode nibble -> 0x3E50 -> 0x276 B2 bits 5:2.",hvac notes 7 (step 4),confirmed,u8
+0x0FF818,PackHeatDemand,data,,"50 + 0.4 x heat demand (0-200); > 50 sets 0x3756 bit 0.",hvac notes 7 (step 4),confirmed,u8
+0x0FF7D8,ModelTmin,data,,"Min cell temperature, (T+40) x 2.",hvac notes 7 (step 4),confirmed,u8
+0x0FF7D5,ModelTmax,data,,"Max cell temperature, (T+40) x 2.",hvac notes 7 (step 4),confirmed,u8
+0x0FF7DA,ModelAllowMax,data,,"0x390 AllowedCellTempMax, (T+40) x 2.",hvac notes 7 (step 4),confirmed,u8
+0x0FF7DB,ModelAllowMin,data,,"0x390 AllowedCellTempMin, (T+40) x 2.",hvac notes 7 (step 4),confirmed,u8
+0x0FF7DC,ModelAllowDiff,data,,"0x390 AllowedCellTempDiff, same offset as the temperatures.",hvac notes 7 (step 4),confirmed,u8
+0x0FED55,Atd0Done,data,,Set by Atd0Isr when a 16-channel sequence completes.,hvac notes 7 (step 4),confirmed,u8
+0x0FED78,Atd1Done,data,,Set by Atd1Isr when an 8-channel sequence completes.,hvac notes 7 (step 4),confirmed,u8
