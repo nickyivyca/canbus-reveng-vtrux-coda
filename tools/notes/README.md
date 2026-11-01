@@ -12,6 +12,7 @@ behave belongs here.
 | [influx_bench/](influx_bench/) | Single-log benchmark artifacts (`upload.pcapng`, `dry.prof`, `real.prof`, `analyze_pcap.py`, `findings.md`). |
 | [influx_bench_series/](influx_bench_series/) | Series benchmark artifacts. `findings.md` is the pre-optimization baseline; `findings_after_optimizations.md` is the post-fast-scan/custom-serializer/DROP-fix re-run. |
 | [innomaker_gs_usb_bench.md](innomaker_gs_usb_bench.md) | Back-to-back Innomaker (gs_usb) vs Kvaser bench: real-time + saturation TX/RX frame-loss results, the Kvaser-limiter analysis, and the coda-diagnostics UDS round-trip check. Harness/artifacts in `tools/artifacts/innomaker_bench.py`. |
+| [peak_trc_error_records.md](peak_trc_error_records.md) | What PEAK's tools really write in TRC error records (`ER`, `ST`, `EC`, 1.x `Error`/`Warng`) against PEAK's spec: PCAN-Basic 5.0's 4-byte `EC`, PEAK-Converter's lossy `EC` conversion, the 14 h `$STARTTIME`, with the bench traces and web sources. From the internal `can-replay-readers` plan step 6c. |
 
 ## Conventions
 

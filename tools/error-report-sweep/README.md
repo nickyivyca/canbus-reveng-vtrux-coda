@@ -15,7 +15,7 @@ error-class mask, DLC 8) without catching real frames that share the id, such as
 | `artifacts/scan.log` | `scan` progress log |
 | `artifacts/report.txt` | `report` output: per (vehicle, bus, id) rule outcomes, false-positive streams, 1 s tick test, samples |
 | `artifacts/masks.txt` | `masks` output: Innomaker id streams that never fail the layout test, set against desktop-adapter traffic; tick test on the three mask ids; C CAN cases |
-| `marker_check.py` | step 3 check of canbench's implementation of the rule (`canbench/parsers/inferred_errors.py`, can-tools clone); phases `bench`, `corpus`, and `kvaser` for step 4c (docstring) |
+| `marker_check.py` | step 3 check of canbench's implementation of the rule (`can-tools/canbench/parsers/inferred_errors.py`, can-tools clone); phases `bench`, `corpus`, and `kvaser` for step 4c (docstring) |
 | `kvaser_id0_survey.py` | counts short (DLC < 8) standard-id `0x000` frames per capture, by header adapter, with payloads and where in the capture they fall; raised at step 4 by two Coda captures where they made a B CAN channel ambiguous (docstring) |
 | `artifacts/kvaser_id0_survey.txt` | `kvaser_id0_survey.py` output (2026-10-30, 3,643 captures) |
 | `kvaser_id0_sweep.py` | step 4c: validates a marking rule for those frames (Kvaser header, standard id `0x000`, DLC 4, count or flags payload form); phases `scan`, `report` (docstring) |
@@ -47,7 +47,7 @@ line -- only when all of these hold; anything else stays data:
 
 ## Implemented in canbench (2026-10-30)
 
-`canbench/parsers/inferred_errors.py` in the can-tools clone carries the rule unchanged;
+`can-tools/canbench/parsers/inferred_errors.py` carries the rule unchanged;
 `parse_file(path, mark_inferred_errors=True)` sets `CANFrame.inferred_error` and drops nothing.
 Checked by `marker_check.py`: exact on the Android session's two pre-fix bench runs (build 31,
 `android-app/notes/artifacts/fault_matrix_20261030_prefix31*`: 15 + 14 and 18 + 12 reports
@@ -83,7 +83,7 @@ channel, NN most often drops by 1) and **flags** `00|20 xx 00 00`. **Hypothesis,
 confirmed:** adapter error-counter and error-state events written as data frames. This is
 separate from the Innomaker Bug 11.
 
-**Rule** (`canbench/parsers/inferred_errors.py`): the header names a Kvaser for the frame's
+**Rule** (`can-tools/canbench/parsers/inferred_errors.py`): the header names a Kvaser for the frame's
 channel; standard id `0x000`; DLC 4; count or flags form.
 
 **Evidence** (`kvaser_id0_sweep.py`, 3,643 captures; 209 with a Kvaser header: Coda 22,

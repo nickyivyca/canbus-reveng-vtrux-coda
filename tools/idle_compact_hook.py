@@ -42,9 +42,13 @@ WAKE_TEXT = (
     " hook blocked that once. Self-compact now, per AGENTS.md \"Compacting"
     " your own context\": write what is worth keeping to its files, then run"
     " tools/session_compact.py with a compact message and a resume message as"
-    " that section says. If you can't (no tmux on Linux, Claude Desktop, or"
-    " auto mode blocks it), reply with one line saying why and stop; the next"
-    " idle compaction will go through as a plain one."
+    " that section says. Resume is the default. Pass --compact-only instead"
+    " only if you are sure nothing more is needed from you until a message, a"
+    " task notification or the user arrives: a session left without a needed"
+    " resume stays wedged, so when in doubt, resume. If you can't (no tmux on"
+    " Linux, Claude Desktop, or auto mode blocks it), reply with one line"
+    " saying why and stop; the next idle compaction will go through as a"
+    " plain one."
 )
 
 

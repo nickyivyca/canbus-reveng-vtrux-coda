@@ -6,7 +6,7 @@ Python package providing log parsing, signal analysis, DBC construction, and UDS
 
 ```
 canre/
-    parsers/    -- Log file parsing (BUSMASTER, candump, PEAK TRC, SavvyCAN, Vector ASC)
+    parsers/    -- Log file parsing: a re-export of can-tools' canbench.parsers (BUSMASTER, candump, PEAK TRC, SavvyCAN, Vector ASC)
     analysis/   -- Signal analysis (survey, bitstats, correlation, diff, timeseries, transitions)
     dbc/        -- DBC file construction, skeleton generation, and validation
     utils/      -- Streaming I/O, multi-file merging, session grouping
@@ -17,7 +17,7 @@ canre/
 
 | Submodule | Doc | What it provides |
 |-----------|-----|-----------------|
-| `canre.parsers` | `parsers/parsers.md` | `CANFrame` dataclass, `BaseParser` ABC, auto-detecting `parse_file()` entry point, one parser class per format |
+| `canre.parsers` | `parsers/parsers.md` (points to can-tools' `canbench/parsers/parsers.md`) | Re-export of can-tools' `canbench.parsers` since 2026-10-31: `CANFrame` / `CANEvent` dataclasses, `BaseParser` ABC, auto-detecting `parse_file()` entry point, one parser class per format; the code lives in the can-tools clone |
 | `canre.analysis` | `analysis/analysis.md` | `run_survey`, `analyze_id`, `detect_counters`, `detect_checksums`, `find_correlations`, `diff_captures`, `extract_timeseries`, `detect_transitions` |
 | `canre.dbc` | `dbc/dbc.md` | `DBCBuilder` (programmatic DBC editing), `generate_skeleton` (starter DBC from traffic), `validate_dbc` (coverage + decode check) |
 | `canre.utils` | `utils/utils.md` | `stream_lines` / `count_lines` (streaming I/O), `merge_files` / `detect_capture_groups` (multi-file merge), `resolve_files` (per-file channel -> bus resolution), `group_files_by_session` (session discovery) |
