@@ -1,4 +1,4 @@
-# LF everywhere (<user>, 2026-11-03), except Windows batch files.
+# LF everywhere (owner, 2026-11-03), except Windows batch files.
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf

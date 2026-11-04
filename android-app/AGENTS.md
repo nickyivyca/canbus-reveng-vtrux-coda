@@ -11,6 +11,7 @@ the Vtrux and the Porsche 914 EV, and their development notes.
 | `tools/` | The `:tpms` parity generators (`tpms_*_parity.py`), which hold the port to its Python prototype in reverse-it. See `tools/README.md` |
 | `android-coda-app-notes.md`, `android-coda-tpms-implementation.md`, `android-otg-power-cycling.md` | Per-topic notes kept at the top level |
 | `local-paths.template.md` | The template for this clone's `local-paths.md` |
+| `.claude/skills/` | Claude Code skills: `self-compact` (see "Compacting your own context") |
 
 **This repo is private only because of its GM-derived content** (the GMLAN
 DBCs and what is derived from them; owner, 2026-10-30). Otherwise keep out
@@ -132,11 +133,49 @@ work-machine name or path, a per-machine tool path, a VIN, personal
 details -- stops the push and goes to the user. The Coda hotspot gateway
 `192.168.43.8` and the emulator's `10.0.2.2` are fine.
 
+## Compacting your own context: `/self-compact`
+
+A session can compact its own context and resume without anyone at the
+keyboard, with the `/self-compact` skill. It types `/compact` into this
+session's terminal and then, once the compaction is done, one resume message
+naming the next step. By default it resumes. A session sure that nothing
+more is needed from it until a message, a task notification or the user
+arrives may pass `--compact-only` instead, and then nothing is typed (user,
+2026-10-31: a wedged session costs more than a needless resume, so when in
+doubt, resume). It is the only sanctioned way for a session to type into its
+own input. The skill mirrors the `canbus-esp-fw-vtrux` repo's copy; its
+design and ownership are in `../../Infrastructure/tools/self-compact/`.
+
+- **When:** only when the user asks for it, or when the idle-compaction
+  hook asks for it (user, 2026-10-24).
+- **The idle-compaction hook.** Claude Code compacts a session of 200K
+  tokens or more that has been idle about 54 minutes, before its prompt
+  cache expires, with no instructions. In this repo a PreCompact hook,
+  `.claude/skills/self-compact/idle_compact_hook.py`, blocks the first such
+  attempt and wakes the session with a message asking it to self-compact.
+  Do it, per the skill. If you can't, say so in one line; the hook lets the
+  next attempt through, as a plain compaction. Its two entries go in each
+  machine's `.claude/settings.local.json`, in the guarded form its header
+  gives.
+- **Before it:** write everything worth keeping to its files. The summary
+  loses detail; files do not.
+- **After it:** the next turn starts from a summary. Re-read the docs per
+  "Working rules" before acting.
+- **If auto mode blocks it,** do not retry it, reword it or run it another
+  way. Carry on without compacting and tell the user in one line.
+- **Where it works:** in tmux on Linux, and in terminal Claude Code on
+  Windows. Not in Claude Desktop.
+
+The procedure, and the rules for the two messages, are in the skill.
+
 ## Working rules
 
 - **Read this file and `local-paths.md` in full** at the start, and again
   after a compaction before acting: a summary records what the session did,
-  not what the docs say.
+  not what the docs say. **Skills too:** a compaction re-attaches each
+  skill invoked earlier as the text it had then, not the current
+  `SKILL.md`, so re-read `.claude/skills/<name>/SKILL.md` in full for every
+  skill invoked in the session before acting under it.
 - **Every folder has an `.md` describing its contents.** Update it when you
   add, move or remove files.
 - **Line endings are LF** (`.gitattributes`), except `.bat` and `.cmd`.

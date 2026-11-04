@@ -13,3 +13,6 @@ captures/
 local-paths.md
 .claude/memory/
 .claude/settings.local.json
+
+# self-compact logs and idle-hook state
+scratch/
