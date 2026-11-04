@@ -64,6 +64,12 @@
       "_note": "0x649 VCM_EvapControl -- vcm_evap_active + vcm_evap_counter (counter 0 = pending, >0 = purging)"
     },
     {
+      "bus": "powertrain", "message_id": 2033,
+      "signals": ["diag_schema_ver", "diag_mode", "diag_flags"],
+      "rate_hz": 2, "aggregation": "latest",
+      "_note": "0x7F1 WICAN_Diag_Status -- generator inhibitor status, ~1.2 s, absent when no inhibitor is fitted. EVAP INHIBIT rule: notes/protocols/gen-inhibit-status-interface.md"
+    },
+    {
       "bus": "powertrain", "message_id": 419419584,
       "signals": ["BELINV_overAllInverterTemperature"],
       "rate_hz": 1, "aggregation": "latest",
@@ -95,10 +101,10 @@
       "_note": "0x4C1 engine coolant temp (GMLAN; EPRI byte position was wrong)"
     },
     {
-      "bus": "obd", "message_id": 977,
-      "signals": ["Throttle_Position"],
+      "bus": "obd", "message_id": 201,
+      "signals": ["Accelerator_Actual_Position"],
       "rate_hz": 5, "aggregation": "latest",
-      "_note": "0x3D1 VCM-commanded throttle, best APP proxy on GMLAN"
+      "_note": "0x0C9 B4 accelerator position: the VCM's engine throttle command (APP GEN MOD), as the ECM reads it. Green arc on the generator tach, 0-70% full scale"
     },
     {
       "bus": "obd", "message_id": 1098,

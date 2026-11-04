@@ -24,9 +24,12 @@ object DbcParser {
     private val SG_REGEX = Regex(
         """\s*SG_\s+(\S+)\s*(M|m\d+)?\s*:\s*(\d+)\|(\d+)@(\d+)([+-])\s*\(\s*([-+\deE.]+)\s*,\s*([-+\deE.]+)\s*\)\s*\[\s*([-+\deE.]+)\|([-+\deE.]+)\s*\]\s*"([^"]*)"\s*(.*)"""
     )
-    private val CM_BO_REGEX = Regex("""CM_\s+BO_\s+(\d+)\s+"((?:[^"\\]|\\.)*)"\s*;""", RegexOption.DOT_MATCHES_ALL)
-    private val CM_SG_REGEX = Regex("""CM_\s+SG_\s+(\d+)\s+(\S+)\s+"((?:[^"\\]|\\.)*)"\s*;""", RegexOption.DOT_MATCHES_ALL)
-    private val CM_FILE_REGEX = Regex("""CM_\s+"((?:[^"\\]|\\.)*)"\s*;""", RegexOption.DOT_MATCHES_ALL)
+    // The quoted comment body is the unrolled, possessive form of (?:[^"\\]|\\.)*. The plain
+    // alternation recurses once per character in java.util.regex and overflowed the stack on a
+    // 1,579-character CM_ SG_ line in powertrain.dbc.
+    private val CM_BO_REGEX = Regex("""CM_\s+BO_\s+(\d+)\s+"([^"\\]*+(?:\\.[^"\\]*+)*+)"\s*;""", RegexOption.DOT_MATCHES_ALL)
+    private val CM_SG_REGEX = Regex("""CM_\s+SG_\s+(\d+)\s+(\S+)\s+"([^"\\]*+(?:\\.[^"\\]*+)*+)"\s*;""", RegexOption.DOT_MATCHES_ALL)
+    private val CM_FILE_REGEX = Regex("""CM_\s+"([^"\\]*+(?:\\.[^"\\]*+)*+)"\s*;""", RegexOption.DOT_MATCHES_ALL)
     private val BA_CYCLE_REGEX = Regex("""BA_\s+"GenMsgCycleTime"\s+BO_\s+(\d+)\s+(\d+)\s*;""")
 
     /** DBC extended-ID marker bit. See DBC spec; cantools strips this when

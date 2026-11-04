@@ -39,7 +39,11 @@ import argparse
 import gzip
 import re
 import shutil
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from canre.utils.android_repo import android_apps_repo  # noqa: E402
 
 # The VCU's integrity frame. Excluded from both the CRC and the frame count --
 # it reports the block before it and its own bytes are never part of any block.
@@ -91,7 +95,8 @@ DEFAULT_FIXTURES = [
 # SeaDrive root, so the relative path holds across machines even though the
 # root itself does not.
 DEFAULT_FIXTURE_DIR = Path("../914/notes/artifacts")
-DEFAULT_OUT_DIR = Path("android-app/CanLoggerApps/cancore/src/test/resources")
+# Relative to the android-canbus-apps clone (canre.utils.android_repo).
+DEFAULT_OUT_SUBDIR = Path("CanLoggerApps/cancore/src/test/resources")
 
 _HEX = re.compile(r"^[0-9A-Fa-f]+$")
 
@@ -246,13 +251,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--fixture-dir", type=Path, default=DEFAULT_FIXTURE_DIR)
-    ap.add_argument("--output-dir", type=Path, default=DEFAULT_OUT_DIR)
+    ap.add_argument("--output-dir", type=Path, default=None,
+                    help="default: the android-canbus-apps clone's cancore test resources")
     ap.add_argument("--fixtures", nargs="*", default=DEFAULT_FIXTURES)
     ap.add_argument("--samples", type=int, default=20,
                     help="frames sampled from each end, for diagnosable failures")
     args = ap.parse_args()
 
-    out_dir = args.output_dir
+    out_dir = args.output_dir or android_apps_repo() / DEFAULT_OUT_SUBDIR
     fixture_out = out_dir / "slcan"
     fixture_out.mkdir(parents=True, exist_ok=True)
 

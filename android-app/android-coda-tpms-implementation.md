@@ -52,8 +52,8 @@ from the app side; the algorithm session owns
 | `tpms/.../GpsRateAccumulator.kt`, `GpsSpeedService.kt` | GPS common-mode channel (speed only) |
 | `tpms/.../TpmsDetector.kt` | The detector (port of the prototype's `run()`) |
 | `tpms/.../HardwareReport.kt` | Head-unit hardware inventory into `CodaLogs/diag/` |
-| `notes/artifacts/tpms_ratio_parity.py` | Generates the Python reference values for the extractor parity test |
-| `notes/artifacts/tpms_detector_parity.py` | Generates the detector parity fixture from the prototype |
+| `tools/tpms_ratio_parity.py` | Generates the Python reference values for the extractor parity test |
+| `tools/tpms_detector_parity.py` | Generates the detector parity fixture from the prototype |
 | `cancore/.../BusmasterWriter.kt`, `CanPipelineManager.kt`, `CanFrame.kt` | Log timing fix: first-frame origin, monotonic stamps, ordered emit |
 | `cancore/src/test/.../BusmasterWriterTest.kt` | 7 tests for the log timing fix |
 | `coda/.../CodaConstants.kt` | `DEFAULT_TIRE_PSI`, TPMS signal IDs, `B_CAN_EXCLUSIVE_IDS`, `TX_ALLOWED_IDS` |
@@ -684,7 +684,7 @@ implementation against the spec's stated invariants rather than against the othe
   figure to 1e-9 psi. Default settings reproduce the spec's corpus replay: baseline 02-19, LF
   advise 04-27 at -3.3, warn 05-01 at -4.5, stale 07-02. Fixture:
   `CanLoggerApps/tpms/src/test/resources/detector_parity/`, written by
-  `notes/artifacts/tpms_detector_parity.py`.
+  `tools/tpms_detector_parity.py`.
 - `TpmsDetectorTest`, 11 tests: segment pooling, file-order window with a clock running
   backwards, write-once baseline, fast path on the puncture drive and mid-drive, void sessions,
   STALE suppression, the page's estimate.
@@ -1058,7 +1058,7 @@ App-side choices the prototype does not have:
 
 Measured: parity with the prototype's `FragmentStore` on a copy of the live folder (legacy file
 plus its `(1)` copy) — 13 rows identical field by field, 5 GPS blocks each side, and the same first
-`_full` after one added row (`notes/artifacts/tpms_fragment_parity.py`). `TpmsEpochStoreTest` (35)
+`_full` after one added row (`tools/tpms_fragment_parity.py`). `TpmsEpochStoreTest` (35)
 covers the rest; mutation-checked (inheritance, partial ranking, consolidation, the full-scan
 fallback each break at least one test).
 
@@ -1162,7 +1162,7 @@ see open items.**
 
 The algorithm session's handoff (`../projects/coda/notes/tpms-algorithm-spec.md` section 8a),
 implemented at the owner's go-ahead (*"yes make the changes"*). In `coda-debug (30).apk`, dropped
-2026-09-28 to `E:\Google Drive\To Seafile\` at the owner's request, sha256
+2026-09-28 to the dropoff folder at the owner's request, sha256
 `65f3286aa9000ee524f6c5221b876932f19b41b5a96eeea68655c7bb3317bdb0`. It carries everything build 29
 did (see [On the car — build 29](#on-the-car--build-29)) plus this; build 29 was never installed,
 so proc 3 keeps its number. Lamp transmit still off on the car (`TPMS_LAMP_TX_ON_CAR = false`).
@@ -1223,7 +1223,7 @@ without the per-segment reset — each fails at least one test.
 
 ## On the car — build 29
 
-`coda-debug (29).apk`, dropped 2026-09-26 to `E:\Google Drive\To Seafile\`, sha256
+`coda-debug (29).apk`, dropped 2026-09-26 to the dropoff folder, sha256
 `d3307ab53299f7975f39b315547f58c00ac4acc7795c5504487cf9b537c18910`. Built after all tests passed
 (`:tpms` 118, `:cancore` 59; skips are env-gated only, and both extractor reference tests pass on
 the real logs). Contents:
@@ -1265,7 +1265,7 @@ drive with all three contrasts, and the baseline does not freeze while a contras
 the prototype's `pooled(recs, min_n)`; detector parity regenerated and exact. `:tpms` 87.
 
 
-`coda-debug (24).apk`, dropped 2026-09-26 to `E:\Google Drive\To Seafile\`, sha256
+`coda-debug (24).apk`, dropped 2026-09-26 to the dropoff folder, sha256
 `1ce51e6e0353c571126a6818ff2f9cff6eabfa6a212e3a31a530e2d4e525cac7`. Owner: "roll everything into
 v24 (including the incoming proposed updates - which I approve)", and on the thresholds, "do
 everything in V24". Tests: `:tpms` 86, all passing, with both extractor checks run against real logs
@@ -1333,7 +1333,7 @@ restart. The T0 row matches the algorithm session's v24 reference (n 3293, F/R n
 
 ## On the car — build 23
 
-`coda-debug (23).apk`, dropped 2026-09-26 to `E:\Google Drive\To Seafile\`, sha256
+`coda-debug (23).apk`, dropped 2026-09-26 to the dropoff folder, sha256
 `32b971b7f75a955b9f6261766584c3ae02ff577a4f1325401be6ad5f7e483c3c`. Built after all tests passed:
 `:tpms` 74 (both parity tests enabled), `:cancore` 35. The Vtrux APK built alongside contains no
 `com/reverseit/tpms` classes and neither the location nor the sensor permission.
@@ -1374,7 +1374,7 @@ the log timing fix. All of it is a prototype until tested in the car.
 
 ## On the car — build 22
 
-`coda-debug (22).apk`, dropped 2026-09-23 to `E:\Google Drive\To Seafile\`, sha256
+`coda-debug (22).apk`, dropped 2026-09-23 to the dropoff folder, sha256
 `feed370845096bbfa1fecdb0671334bc2fd3e9a027449289b7a1d25704949464`, built from source last modified
 2026-09-23 (the `isEcho` fail-safe) and 2026-09-21 (everything else).
 
@@ -1429,7 +1429,7 @@ Read this file, then `../projects/coda/notes/tpms-algorithm-spec.md` sections 4-
   expect `tpms_20260926T154945_000000_full.jsonl`, then small per-minute and per-segment fragments,
   and rows with `proc: 3`. Also still unread: the build 28+ hardware report in
   `../../CANLogs/CodaLogs/diag/`.
-- **Tools for checking:** `notes/artifacts/tpms_fragment_parity.py` (app store vs prototype on the
+- **Tools for checking:** `tools/tpms_fragment_parity.py` (app store vs prototype on the
   live folder); the emulator harness recipe is in [Emulator harness](#emulator-harness) and
   `../tools/tools.md`.
 - **Decisions waiting on the owner:** AMEND control (interface ready, no button); tightening

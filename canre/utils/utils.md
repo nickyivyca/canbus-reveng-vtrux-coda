@@ -261,3 +261,25 @@ Parses `***START DATE AND TIME DD:MM:YYYY HH:MM:SS:mmm***`, day-first.
 
 First and last data-line timestamps in seconds. Reads the head for the first and seeks to
 the tail for the last, so cost is independent of file size.
+
+---
+
+## android_repo.py — The Android Apps: Clone and Sync Token
+*Source last modified: 2026-11-03 20:51:03*
+
+The Android apps live in the private git repo `android-canbus-apps`, not in this folder
+(since 2026-10-30, `android-app/notes/plans/private-git-migration.md`). Scripts here that
+read or write the app tree, or talk to the apps' servers, go through this module.
+
+### `android_apps_repo() -> Path`
+
+The clone's root: `$ANDROID_APPS_REPO` if set, else `~/Git/android-canbus-apps` (the clone
+path on every machine). Exits with a message if no `CanLoggerApps/` is there. Call it when
+the path is needed, not at import, so a script whose other modes don't touch the app tree
+still runs without a clone.
+
+### `sync_token() -> str`
+
+The apps' shared bearer token, `sync.token` in `android-app/secrets/android.properties`
+(located from this file, so it works from any working directory). Exits with a message if
+it is missing. **Never print it**, and never copy it into a script: scripts call this.

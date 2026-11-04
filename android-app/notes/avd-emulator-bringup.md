@@ -33,11 +33,11 @@ difference from the ARM head unit is irrelevant to app behaviour.
 
 ### AVD location — not the default path
 
-`ANDROID_SDK_HOME=C:\Android` is set in the user environment on Desktop, which relocates
+`ANDROID_SDK_HOME` is set in the user environment on Desktop, which relocates
 the Android home directory. The AVD therefore lives at:
 
 ```
-C:\Android\.android\avd\7_WSVGA_Tablet_API_31.avd\
+%ANDROID_SDK_HOME%\.android\avd\7_WSVGA_Tablet_API_31.avd\
 ```
 
 **not** `~/.android/avd/`, which is empty. Any tooling that assumes the default path will not
@@ -48,8 +48,8 @@ find the AVD. See `android-app/android-tools-reference.md` for the per-machine v
 ## Launching
 
 ```powershell
-$env:ANDROID_SDK_HOME = 'C:\Android'
-Start-Process -FilePath '<ANDROID_SDK_DIR>\emulator\emulator.exe' `
+$env:ANDROID_SDK_HOME = '<per machine, local-paths.md>'
+Start-Process -FilePath "$env:ANDROID_HOME\emulator\emulator.exe" `
   -ArgumentList '-avd','7_WSVGA_Tablet_API_31'
 ```
 
@@ -145,16 +145,14 @@ bottom edge of the frame.
 Build (see `android-app/android-tools-reference.md` for the JAVA_HOME requirement):
 
 ```bash
-cd "<repo-root>/NotGit/reverse-it" && ANDROID_HOME="<ANDROID_SDK_DIR>" \
-JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr" \
-PATH="C:/Program Files/Android/Android Studio1/jbr/bin:$PATH" \
+PATH="$JAVA_HOME/bin:$PATH" \
 android-app/CanLoggerApps/gradlew.bat -p android-app/CanLoggerApps :coda:assembleDebug --console=plain
 ```
 
 Install and launch:
 
 ```bash
-ADB="<ANDROID_SDK_DIR>/platform-tools/adb.exe"
+ADB="$ANDROID_HOME/platform-tools/adb.exe"
 "$ADB" install -r android-app/CanLoggerApps/coda/build/outputs/apk/debug/coda-debug.apk
 "$ADB" shell am start -n com.reverseit.coda/.MainActivity
 ```
@@ -260,31 +258,31 @@ Set up 2026-10-18. User-local install, no sudo:
 
 | Component | Location | Version |
 |-----------|----------|---------|
-| Android Studio | `<home>/android-studio` | 2026.2.1.8 (rabbit1) |
-| Android SDK | `<home>/Android/Sdk` | cmdline-tools 23.0, platform-tools 37.0.1 |
-| Emulator | `~/Android/Sdk/emulator/emulator` | 37.2.12 |
-| Gradle JDK | `<home>/jdk-21` | Temurin 21.0.12 |
+| Android Studio | `local-paths.md` | 2026.2.1.8 (rabbit1) |
+| Android SDK (`$ANDROID_HOME`) | `local-paths.md` | cmdline-tools 23.0, platform-tools 37.0.1 |
+| Emulator | `$ANDROID_HOME/emulator/emulator` | 37.2.12 |
+| Gradle JDK (`$JAVA_HOME`) | `local-paths.md` | Temurin 21.0.12 |
 | AVD | `~/.android/avd/7_WSVGA_Tablet_API_31.avd` | API 31, google_apis, x86_64 |
 
 `cmdline-tools;latest` is installed here, unlike Desktop, so `sdkmanager` and `avdmanager`
 are available. Package list installed:
 
 ```bash
-export JAVA_HOME=$HOME/android-studio/jbr
-~/Android/Sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/Android/Sdk \
+export JAVA_HOME=<Android Studio>/jbr
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
   "platform-tools" "emulator" "platforms;android-31" "platforms;android-34" \
   "build-tools;34.0.0" "system-images;android-31;google_apis;x86_64"
 ```
 
 KVM is available and usable (`emulator -accel-check` prints `KVM (version 12) is installed and
-usable`). The user does not need to be in the `kvm` group: `/dev/kvm` carries a `user:<user>:rw-`
+usable`). The user does not need to be in the `kvm` group: `/dev/kvm` carries a per-user `rw-`
 ACL.
 
 ### AVD creation
 
 ```bash
-export JAVA_HOME=$HOME/android-studio/jbr
-echo no | ~/Android/Sdk/cmdline-tools/latest/bin/avdmanager create avd \
+export JAVA_HOME=<Android Studio>/jbr
+echo no | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd \
   -n 7_WSVGA_Tablet_API_31 \
   -k "system-images;android-31;google_apis;x86_64" \
   -d "7in WSVGA (Tablet)"
@@ -303,14 +301,14 @@ Then edit `~/.android/avd/7_WSVGA_Tablet_API_31.avd/config.ini` to match the Des
 GUI (once a desktop session is available):
 
 ```bash
-~/Android/Sdk/emulator/emulator -avd 7_WSVGA_Tablet_API_31
+$ANDROID_HOME/emulator/emulator -avd 7_WSVGA_Tablet_API_31
 ```
 
 or `studio` for the IDE. To test boot headlessly:
 
 ```bash
-ANDROID_SDK_ROOT=$HOME/Android/Sdk ANDROID_HOME=$HOME/Android/Sdk \
-  $HOME/Android/Sdk/emulator/emulator -avd 7_WSVGA_Tablet_API_31 \
+ANDROID_SDK_ROOT=$ANDROID_HOME \
+  $ANDROID_HOME/emulator/emulator -avd 7_WSVGA_Tablet_API_31 \
   -no-window -no-audio -no-snapshot-load -gpu swiftshader_indirect -no-boot-anim
 ```
 
@@ -324,11 +322,10 @@ Gradle 8.4 / AGP 8.3.2 need Java 17-21, **not** the Studio JBR (Java 25). The tr
 `gradlew` script alongside `gradlew.bat`.
 
 ```bash
-ANDROID_HOME="$HOME/Android/Sdk" JAVA_HOME="$HOME/jdk-21" \
-PATH="$HOME/jdk-21/bin:$PATH" \
+PATH="$JAVA_HOME/bin:$PATH" \
 android-app/CanLoggerApps/gradlew -p android-app/CanLoggerApps :coda:assembleDebug --console=plain
 
-ADB=$HOME/Android/Sdk/platform-tools/adb
+ADB=$ANDROID_HOME/platform-tools/adb
 $ADB install -r android-app/CanLoggerApps/coda/build/outputs/apk/debug/coda-debug.apk
 $ADB shell appops set --uid com.reverseit.coda MANAGE_EXTERNAL_STORAGE allow
 $ADB shell pm grant com.reverseit.coda android.permission.ACCESS_FINE_LOCATION
@@ -358,8 +355,8 @@ IXXAT, the udev rule) is in `tools-reference.md`, *the Linux box SocketCAN rig*.
 2. **Launch** (detached, as above) with the passthrough options appended:
 
    ```bash
-   ANDROID_SDK_ROOT=$HOME/Android/Sdk ANDROID_HOME=$HOME/Android/Sdk \
-     $HOME/Android/Sdk/emulator/emulator -avd 7_WSVGA_Tablet_API_31 \
+   ANDROID_SDK_ROOT=$ANDROID_HOME \
+     $ANDROID_HOME/emulator/emulator -avd 7_WSVGA_Tablet_API_31 \
      -no-window -no-audio -no-snapshot -writable-system -gpu swiftshader_indirect -no-boot-anim \
      -qemu -device qemu-xhci,id=xhci -device usb-host,bus=xhci.0,vendorid=0x1d50,productid=0x606f
    ```

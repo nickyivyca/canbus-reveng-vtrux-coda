@@ -30,11 +30,13 @@ from pathlib import Path
 
 import websockets
 
+from canre.utils.android_repo import android_apps_repo, sync_token  # noqa: E402
+
 PY = ["py", "-3.11"]
 SERVER = Path("tools/can_display_server.py")
 BUS_IDENTITY = Path("tools/can_display_bus_identity_vtrux.json")
-TOKEN = "ex-g6_55Kt46lWujZCwlw9n60FZt51yI"
-MANIFEST = Path("android-app/CanLoggerApps/vtrux/src/main/assets/live-display/manifest.json")
+TOKEN = sync_token()
+MANIFEST = android_apps_repo() / "CanLoggerApps/vtrux/src/main/assets/live-display/manifest.json"
 
 
 async def probe(port: int, seconds: float) -> None:

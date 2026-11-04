@@ -10,7 +10,7 @@ import java.io.File
 /**
  * [WheelRatioExtractor] against the Python `extract_one` on real captures.
  *
- * Needs reference values from `android-app/notes/artifacts/tpms_ratio_parity.py`; skipped unless
+ * Needs reference values from `tools/tpms_ratio_parity.py`; skipped unless
  * `TPMS_PARITY_JSON` points at its output. The logs are ~37 MB per 5-minute segment and live in the
  * SeaDrive `CANLogs` library, so they are not test resources.
  *

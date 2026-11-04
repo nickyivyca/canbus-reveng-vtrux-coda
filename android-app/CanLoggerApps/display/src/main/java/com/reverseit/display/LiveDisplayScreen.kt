@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -60,6 +61,17 @@ fun LiveDisplayScreen(
 ) {
     val status by viewModel.status.collectAsState()
     val signals by viewModel.signalValues.collectAsState()
+    val seenAtMs by viewModel.signalSeenAtMs.collectAsState()
+
+    // Ticks once a second so a readout that goes stale clears even when no
+    // other frame arrives to recompose the screen.
+    val nowMs by produceState(viewModel.clockMs()) {
+        while (true) {
+            value = viewModel.clockMs()
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+    val genInhibiting = GenInhibitStatus.inhibiting(signals, seenAtMs, nowMs)
 
     // One latch drives both readouts: the `Battery status` word in the battery
     // column and the fault strip below the mode panel. Hoisted here so they
@@ -87,7 +99,7 @@ fun LiveDisplayScreen(
                 BatteryPanel(signals, latchedFault)
             }
             Column(modifier = Modifier.weight(1f).padding(start = 4.dp, end = 8.dp)) {
-                GeneratorPanel(signals)
+                GeneratorPanel(signals, genInhibiting)
             }
         }
 
@@ -238,7 +250,7 @@ private fun PowerElectronicsTempSlider(signals: Map<String, Double>) {
 }
 
 @Composable
-private fun GeneratorPanel(signals: Map<String, Double>) {
+private fun GeneratorPanel(signals: Map<String, Double>, genInhibiting: Boolean) {
     SectionTitle("Generator")
 
     val genRpm = signals["GENE_RotSpd"]
@@ -247,16 +259,23 @@ private fun GeneratorPanel(signals: Map<String, Double>) {
         maxRpm = 4000.0,
         torque = signals["GENE_Mot_Trq"],
         torqueRange = 400.0,
-        throttlePct = if (genRpm != null && genRpm < 400.0) 0.0 else signals["Throttle_Position"],
+        // The VCM's engine throttle command (0x0C9 APP), which tops out near 66%
+        // (projects/vtrux/README.md), so 70% fills the arc. It reads 0 with the
+        // engine stopped; TPS, used before, rested at ~29% and needed masking.
+        throttlePct = signals["Accelerator_Actual_Position"],
+        throttleFullScalePct = 70.0,
     )
 
     // EVAP: vcm_evap_active (0x649 B4 bit 7) means "cycle pending or purging";
     // vcm_evap_counter separates the two -- 0 while pending, non-zero once the
     // purge is actually running. Both live on 0x649 so they arrive together and
     // cannot be transiently inconsistent. A missing counter degrades to PENDING.
+    // INHIBIT overrides every evap state while the generator inhibitor is
+    // holding the generator off (GenInhibitStatus).
     val evapActive = signals["vcm_evap_active"]?.toInt()
     val evapCounter = signals["vcm_evap_counter"]?.toInt()
     val (evapText, evapBg) = when {
+        genInhibiting -> "INHIBIT" to Color(0xFF7B1FA2)
         evapActive == null -> "—" to Color(0xFF424242)
         evapActive == 0 -> "COMPLETE" to Color(0xFF2E7D32)
         (evapCounter ?: 0) > 0 -> "PURGE" to Color(0xFF00ACC1)

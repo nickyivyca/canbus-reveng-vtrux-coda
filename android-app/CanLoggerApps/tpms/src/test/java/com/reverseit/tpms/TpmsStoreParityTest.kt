@@ -7,7 +7,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Drives [TpmsEpochStore] over a real store folder for `android-app/notes/artifacts/tpms_fragment_parity.py`,
+ * Drives [TpmsEpochStore] over a real store folder for `tools/tpms_fragment_parity.py`,
  * which runs the prototype's `FragmentStore` over the same input and compares. Skipped unless
  * `TPMS_PARITY_DIR` names a work folder holding `in/` (a copy of `CodaLogs/tpms/`) and `row.json`
  * (one drive row to add). Writes `kotlin_read.json` (the active epoch as read) and `kotlin_store/`

@@ -20,8 +20,9 @@ from pathlib import Path
 import cantools
 
 from canre.parsers import parse_file
+from canre.utils.android_repo import android_apps_repo
 
-APP = Path("android-app/CanLoggerApps/vtrux/src/main/assets/live-display")
+APP = android_apps_repo() / "CanLoggerApps/vtrux/src/main/assets/live-display"
 manifest = json.loads((APP / "manifest.json").read_text())
 declared = {}
 for bus in ("powertrain", "obd"):

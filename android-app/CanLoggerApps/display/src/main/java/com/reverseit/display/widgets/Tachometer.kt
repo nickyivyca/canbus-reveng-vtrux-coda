@@ -42,6 +42,7 @@ fun Tachometer(
     torque: Double? = null,
     torqueRange: Double = 200.0,
     throttlePct: Double? = null,
+    throttleFullScalePct: Double = 100.0,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -120,14 +121,14 @@ fun Tachometer(
                 style = Stroke(width = 2.dp.toPx()),
             )
 
-            // Throttle arc -- engine throttle position (0-100%), green,
-            // sweeps clockwise from 9 o'clock. Sits just inside the torque
-            // arc so both can be read at a glance.
+            // Throttle arc -- engine throttle command (0..throttleFullScalePct %),
+            // green, sweeps clockwise from 9 o'clock. Sits just inside the
+            // torque arc so both can be read at a glance.
             if (throttlePct != null) {
-                val throttleClamped = throttlePct.coerceIn(0.0, 100.0)
+                val throttleClamped = throttlePct.coerceIn(0.0, throttleFullScalePct)
                 val throttleRadius = radius * 0.40f
                 val throttleStroke = 6.dp.toPx()
-                val sweepDeg = (180.0 * (throttleClamped / 100.0)).toFloat()
+                val sweepDeg = (180.0 * (throttleClamped / throttleFullScalePct)).toFloat()
                 if (sweepDeg > 0f) {
                     drawArc(
                         color = Color(0xFF2E7D32),

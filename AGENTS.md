@@ -10,7 +10,7 @@ Vehicle-agnostic CAN bus reverse engineering framework. The `canre/` Python pack
 - Primary DBC files go in: `./projects/<vehicle>/` (alongside the vehicle's overview `.md`)
 - **Project Data artifacts** (CSVs, JSONs, extracted timeseries, survey outputs, event cluster dumps, utility scripts) go in: `./projects/<vehicle>/notes/artifacts/`
 - **Cross-vehicle shared topics** go in: `./notes/<topic>/` — use this for components shared across multiple vehicles (e.g. `./notes/Heater/` for the HV PTC heater used by both Coda and Vtrux). Do NOT duplicate shared findings into per-vehicle notes.
-- **Android apps**: Android app development lives in `./android-app/` - this contains both common code shared between the two apps, and the vehicle-specific apps themselves.
+- **Android apps**: since 2026-10-30 the Android apps and their development notes live in the private git repo `nickyivyca/android-canbus-apps`, cloned at `~/Git/android-canbus-apps` on every machine (`%USERPROFILE%\Git\...` on Windows), and are worked on there under the repo's own `AGENTS.md`. `./android-app/` keeps only the Seafile-only material: `secrets/` (the sync token and signing keystore; never print or copy them), `notes/artifacts/`, `history-pre-git/`, `android-tools-reference.md` and the migration plan `notes/plans/private-git-migration.md`. The old Seafile copies of the source and notes were deleted on 2026-11-03; Seafile history and `android-app/history-pre-git/` keep them. **Reading paths:** a note citing `android-app/<x>` means `<x>` in the clone, except those Seafile-only entries. Scripts here reach the clone through `canre.utils.android_repo` (`android_apps_repo()`, `sync_token()`), never a path relative to this folder.
 
 | What | Where | Read when... |
 |------|-------|-------------|
@@ -32,6 +32,7 @@ Vehicle-agnostic CAN bus reverse engineering framework. The `canre/` Python pack
 | Per-machine Python executable (hostname → py command) | `python-executables-reference.md` | Before running any Python — check hostname here first |
 | Per-machine external tool paths (Ghidra, JDK, project dirs) | `tools-reference.md` | Setting up Ghidra runners or any external tool script |
 | Ghidra environment: modified SuperH4 SLEIGH, archived workspaces, headless scripts, restore script | `ghidra/README.md` | Any Ghidra/decompile work, or bringing Ghidra up on a new machine |
+| Android apps (Coda, Vtrux, 914, companion): code, notes, plans, build and signing rules. A private git repo, not in this folder | `~/Git/android-canbus-apps/AGENTS.md`, then `notes/README.md` there; per-machine tool paths in `android-app/android-tools-reference.md` | Working on any Android app, or a script here that reads or writes the app tree |
 | ESP32 firmware: the gen-inhibit and charge-interposer projects | the public `canbus-esp-fw-vtrux` repo and its own `AGENTS.md`; the role-session, ownership and bench notes are internal-only | Working on either project or its bench |
 | Simulators, virtual CAN buses and background processes: the 2026-09-01 LAN flood, `hop_limit=0`, killing processes on Linux and Windows | `simulators.md` | Before running any multi-process CAN simulator or transmitting background process, Coda's `flash_sim` included |
 

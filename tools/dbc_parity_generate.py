@@ -21,9 +21,13 @@ import argparse
 import json
 import random
 import shutil
+import sys
 from pathlib import Path
 
 import cantools
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from canre.utils.android_repo import android_apps_repo  # noqa: E402
 
 DEFAULT_DBCS = [
     "projects/vtrux/epri-pt-bus.dbc",
@@ -31,9 +35,8 @@ DEFAULT_DBCS = [
     "projects/vtrux/BelInverter-v2.dbc",
     "projects/vtrux/GMW8762_PPEI_GMLAN.dbc",
 ]
-DEFAULT_OUT_DIR = Path(
-    "android-app/CanLoggerApps/cancore/src/test/resources"
-)
+# Relative to the android-canbus-apps clone (canre.utils.android_repo).
+DEFAULT_OUT_SUBDIR = Path("CanLoggerApps/cancore/src/test/resources")
 
 
 def _format_value(v) -> str:
@@ -156,15 +159,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Generate DBC parity test cases")
     ap.add_argument("--dbc", action="append", default=None,
                     help="DBC path (repeatable). Defaults to all Vtrux DBCs.")
-    ap.add_argument("--output-dir", type=Path, default=DEFAULT_OUT_DIR,
-                    help="cancore test resources directory")
+    ap.add_argument("--output-dir", type=Path, default=None,
+                    help="cancore test resources directory (default: the "
+                         "android-canbus-apps clone's)")
     ap.add_argument("--cases", type=int, default=30,
                     help="Random payloads per message (per mux value for muxed)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
     dbcs = [Path(p) for p in (args.dbc or DEFAULT_DBCS)]
-    out_dir: Path = args.output_dir
+    out_dir: Path = args.output_dir or android_apps_repo() / DEFAULT_OUT_SUBDIR
     out_dbcs = out_dir / "dbcs"
     out_dbcs.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
@@ -181,7 +185,7 @@ def main() -> None:
         all_lines += _process_dbc(path, out_dbcs, args.cases, rng)
 
     out_tsv = out_dir / "dbc_parity_cases.tsv"
-    out_tsv.write_text("\n".join(all_lines) + "\n", encoding="utf-8")
+    out_tsv.write_text("\n".join(all_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {len(all_lines) - 3} cases to {out_tsv}")
 
 

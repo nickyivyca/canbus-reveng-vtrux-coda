@@ -7,9 +7,7 @@ receives.
 **Approach:** Implement the gs_usb protocol in userspace using Android's `android.hardware.usb`
 host API (no root, no kernel driver required).
 
-**Phone IP:** <lan-ip>
-
-**ADB command:** always use full path `<ANDROID_SDK_DIR>/platform-tools/adb.exe`
+**ADB command:** always use full path `<Android SDK>/platform-tools/adb.exe`
 -- the PATH `adb` resolves to an old 1.0.32 install and does not support `adb pair`.
 
 ---
@@ -24,14 +22,14 @@ host API (no root, no kernel driver required).
 - **SDK platforms:** android-31, 32, 33, 34. API 34 is sufficient for target.
 - **Build tools:** 30.0.2, 30.0.3, 32.0.0, 32.1.0-rc1, 33.0.1, 34.0.0. Latest (34.0.0) present.
 - **Platform-tools (adb):** was 1.0.32 (ancient, no `adb pair`). Updated via Android Studio SDK
-  Manager to **37.0.0** (1.0.41). Now at `<ANDROID_SDK_DIR>\platform-tools\`.
+  Manager to **37.0.0** (1.0.41). Now at `<Android SDK>\platform-tools\`.
 - **cmdline-tools:** not installed. Not needed for PoC.
 
 ### ADB Wireless
 
 - Phone uses Android 11+ wireless debugging (not the legacy `adb tcpip 5555` method).
-- Paired via `adb pair <lan-ip>:39289 <code>` -- guid `adb-16e7d2b3-RSkDoo`.
-- Connected via `adb connect <lan-ip>:42879` -- device shows as `<lan-ip>:42879 device`.
+- Paired via `adb pair <phone ip>:<pairing port> <code>`.
+- Connected via `adb connect <phone ip>:<port>` -- device shows as `<phone ip>:<port> device`.
 - `adb logcat` streams successfully. Wireless ADB is the primary workflow going forward.
 - Note: the wireless debugging port (42879) is assigned dynamically by Android; if it changes
   after a reboot, re-pair or just reconnect to the new port shown on the Wireless Debugging screen.
@@ -48,13 +46,13 @@ host API (no root, no kernel driver required).
 - Gradle wrapper bootstrapped using the Gradle 8.4 binary cached in
   `~/.gradle/wrapper/dists/gradle-8.4-bin/`
 - JDK used: Android Studio's bundled JBR at
-  `<ANDROID_STUDIO_JBR>` (OpenJDK 17.0.9)
+  `<Android Studio>\jbr` (OpenJDK 17.0.9)
 - `gradle.properties` requires `android.useAndroidX=true` -- Gradle will refuse to build
   without it when AndroidX deps are present.
 - Build commands always need explicit env vars (no system-wide JAVA_HOME or ANDROID_HOME):
   ```
-  JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"
-  ANDROID_HOME="<ANDROID_SDK_DIR>"
+  JAVA_HOME="<Android Studio>/jbr"
+  ANDROID_HOME="<Android SDK>"
   CanReaderApp/gradlew.bat assembleDebug --project-dir CanReaderApp/
   ```
 

@@ -257,15 +257,17 @@ THERMAL_SIGNALS = {
     "Engine_Coolant_Temperature": 0x4C1,
 }
 
-APP_DBC_DIR = Path(
-    "android-app/CanLoggerApps/vtrux/src/main/assets/live-display/dbcs"
-)
+# Resolved lazily, so subcommands that do not read the app assets work without the clone.
+APP_DBC_SUBDIR = Path("CanLoggerApps/vtrux/src/main/assets/live-display/dbcs")
 
 
 def thermal(path: Path, bucket: float) -> None:
     import cantools
 
-    dbs = [cantools.database.load_file(APP_DBC_DIR / f"{n}.dbc")
+    from canre.utils.android_repo import android_apps_repo
+
+    app_dbc_dir = android_apps_repo() / APP_DBC_SUBDIR
+    dbs = [cantools.database.load_file(app_dbc_dir / f"{n}.dbc")
            for n in ("powertrain", "obd")]
     by_id: dict[int, list] = {}
     for db in dbs:

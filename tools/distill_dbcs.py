@@ -9,8 +9,10 @@ DBC files when needed (e.g. obd needs TRAC_TrqFbk from
 `vtrux-obd-experimental.dbc` *and* ECM coolant temp from
 `epri-obd-bus.dbc`).
 
-The output goes into the vtrux flavor's bundled assets:
-    android-app/CanLoggerApps/companion/src/vtrux/assets/live-display/dbcs/
+The output goes into the vtrux flavor's bundled assets, in the android-canbus-apps
+clone ($ANDROID_APPS_REPO, default ~/Git/android-canbus-apps):
+    CanLoggerApps/companion/src/vtrux/assets/live-display/dbcs/
+    CanLoggerApps/vtrux/src/main/assets/live-display/dbcs/
 
 Run from project root:
     py -3.12 tools/distill_dbcs.py --wican-diag-dbc <path>
@@ -31,7 +33,11 @@ overwrite them wholesale: generate with --out and carry over the changes.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from canre.utils.android_repo import android_apps_repo  # noqa: E402
 
 # Stands for the --wican-diag-dbc path in SPEC; resolved in main().
 WICAN_DIAG_DBC = "<wican diag DBC, --wican-diag-dbc>"
@@ -81,9 +87,10 @@ SPEC: dict[str, dict[str, list[int]]] = {
     },
 }
 
-OUT_DIRS = [
-    Path("android-app/CanLoggerApps/companion/src/vtrux/assets/live-display/dbcs"),
-    Path("android-app/CanLoggerApps/vtrux/src/main/assets/live-display/dbcs"),
+# Relative to the android-canbus-apps clone (canre.utils.android_repo).
+OUT_SUBDIRS = [
+    Path("CanLoggerApps/companion/src/vtrux/assets/live-display/dbcs"),
+    Path("CanLoggerApps/vtrux/src/main/assets/live-display/dbcs"),
 ]
 
 # Header reused on every distilled file. Matches the canonical DBC NS_ token set
@@ -282,7 +289,7 @@ def main() -> None:
         for bus, sources in SPEC.items()
     }
 
-    out_dirs = [Path(args.out)] if args.out else OUT_DIRS
+    out_dirs = [Path(args.out)] if args.out else [android_apps_repo() / d for d in OUT_SUBDIRS]
     for out_dir in out_dirs:
         out_dir.mkdir(parents=True, exist_ok=True)
     for bus, sources in spec.items():
@@ -296,7 +303,7 @@ def main() -> None:
         src_count = len(used)
         for out_dir in out_dirs:
             out = out_dir / f"{bus}.dbc"
-            out.write_text(text, encoding="utf-8")
+            out.write_text(text, encoding="utf-8", newline="\n")
             print(f"wrote {out} ({msg_count} msgs from {src_count} source(s))")
 
 

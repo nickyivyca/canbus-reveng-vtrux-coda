@@ -1,0 +1,15 @@
+build/
+.gradle/
+.idea/
+.kotlin/
+.cxx/
+local.properties
+*.keystore
+*.jks
+*.apk
+*.aab
+captures/
+.externalNativeBuild/
+local-paths.md
+.claude/memory/
+.claude/settings.local.json

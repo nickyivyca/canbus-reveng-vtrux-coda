@@ -40,4 +40,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.runtime)
     implementation(libs.androidx.emoji2.bundled)
+    testImplementation("junit:junit:4.13.2")
+    // android.jar's org.json is a stub that throws under JVM tests; the real one for the tests.
+    // Not shipped -- the device has its own.
+    testImplementation("org.json:json:20231013")
 }

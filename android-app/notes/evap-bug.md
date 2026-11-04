@@ -1,6 +1,6 @@
 # EVAP Indicator Bug — Wrong Signal, and Missing PENDING State
 
-**Status:** Diagnosed 2026-07-19. **Implemented 2026-07-21** on the bench PC — both asset DBC copies,
+**Status:** Diagnosed 2026-07-19. **Implemented 2026-07-21** on a Windows build machine — both asset DBC copies,
 both manifest copies, and `LiveDisplayScreen.kt` updated; `:vtrux:assembleDebug` and
 `:companion:assembleVtruxDebug` both build clean. Not yet verified against a log replay or on the
 truck.

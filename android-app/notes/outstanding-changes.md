@@ -6,11 +6,11 @@ Newest first, so the numbers do not run in document order. Index:
 |---|--------|---------|---------|
 | 15 | done 2026-10-30: 1.1 (versionCode 2) release builds; `:vtrux` and `:p914` installed on the OnePlus 7T; Coda 1.2 (versionCode 3, with HVAC 6d and Change 14) dropped as `coda-release (33).apk`, superseding (32); head-unit install pending; `:companion` release-signed too, not yet installed | **all apps** | Car and phone loads move from debug to release builds, signed with the project `debug.keystore` so they install over the current debug installs without losing data or permissions |
 | 14 | done 2026-10-30: tweaks 1-3 in Coda 1.2 with HVAC 6d; rework deferred, investigation closed | **`:coda`** (`:tpms`) | The head unit has felt laggier since the GPS/TPMS feature. The segment re-parse is ~2x faster with ~9x less garbage; the live path ~3x cheaper. The emulator did not reproduce a GPS-specific slowdown with historical builds; the head unit's own GPS stack was not tested |
-| 13 | open, not planned (owner wants to cut over eventually, 2026-10-30) | **all apps** | Move the Android loggers from BUSMASTER to PEAK TRC 2.1, which has standard records for events, adapter overrun and bus state. Until then drops are not recorded in the log (Bug 4) |
+| 13 | open, not planned: cut over once the replay/log tooling's TRC features are mature enough to test against (owner, 2026-10-30) | **all apps** | Move the Android loggers from BUSMASTER to PEAK TRC 2.1, which has standard records for events, adapter overrun and bus state. Until then drops are not recorded in the log (Bug 4) |
 | 12 | open; overflow-flag count in the 2026-10-30 builds (1.1) with Bug 4's fix; queued reads not needed for now (phone run 2026-10-30) | **gs_usb apps** (`:cancore`) | `GsUsbDevice` reads one frame per synchronous `bulkTransfer`; in the AVD the adapter discards frames above that ceiling and the app never checked its overflow flag |
 | 11 | fixed 2026-10-30 (plan `gs-usb-error-frames.md`, done); in the 1.1 release builds, not yet installed on the vehicles | **all gs_usb apps** (`:cancore`) | CAN error frames are logged as ordinary standard frames `0x004` / `0x00C`, because the `0x1FFFFFFF` mask drops `CAN_ERR_FLAG`. Normal mode kept (decided 2026-10-28) |
 | 10 | open, TBD | `:p914` | Road logs lose 25-40% of frames (~10% parked, screen off) and carry corrupted ones; integrity frames are not logged, so a log cannot be checked afterwards. Diagnosis and fix are open |
-| 9 | open, not implemented | **`:vtrux`** | Live-display throttle tile shows TPS as an "APP proxy". The real APP signal exists and is better; tile should switch to `Accelerator_Actual_Position`, scaled 0–70%. Replace-or-both waits on a corpus check for ECM override, held until Bug 4 is done |
+| 9 | done 2026-10-30 (replaced, owner); not in a release build yet | **`:vtrux`**, Vtrux `:companion` | The generator tach's green throttle arc showed TPS as an "APP proxy". It now shows `Accelerator_Actual_Position`, 0–70% full scale. A corpus check found no sign of the ECM overriding the VCM's request, so TPS was not kept alongside |
 | 8 | open, deferred | `:p914` | USB CDC reads drop bytes; synchronous `bulkTransfer` leaves gaps. Fix is async `UsbRequest` queuing. **Current theory for the road-log loss in #10** |
 | 7 | not an issue in practice; moot after the Android Auto tablet install (owner, 2026-10-29) | any USB-host vehicle | Charge-and-host simultaneously is **hub-dependent**. Silent failure: presents as "no USB device" |
 | 6 | not an issue in practice; moot after the Android Auto tablet install (owner, 2026-10-29) | **`:vtrux`** | SELinux denies the OTG role write on LineageOS 14, so `attemptRootOtgRecovery()` is a dead safety net. `[ -w ]` guard makes it report success |
@@ -188,6 +188,12 @@ times per run with `am start -W`. Two runs each, in mirrored order:
 
 **Raised 2026-10-30** at the Bug 4 review. **Open, not planned.** The owner wants to cut over
 eventually rather than invent a BUSMASTER extension or a sidecar file.
+**When (owner, 2026-10-30):** once the replay/log tooling's (can-tools) TRC features are mature,
+so the apps' TRC output can be tested against them.
+**`EC` records (reading note from the CAN replay tooling session, 2026-10-31):** write `EC` as the
+spec's 2 bytes, RX counter then TX counter. PCAN-Basic writes a 4-byte form, and PEAK-Converter
+keeps only the first 2 bytes of it, so the spec form is the only one it handles correctly. Details:
+reverse-it `tools/notes/peak_trc_error_records.md`.
 
 ### Why
 
@@ -454,9 +460,11 @@ Candidate steps, none decided:
 
 ## Change 9: live-display throttle tile should use `Accelerator_Actual_Position`, not TPS
 
-**Found 2026-08-14.** **Not implemented — owner deferred pending a decision on whether to show both.** Not a defect; the tile works. It is showing the weaker of two available signals.
+**Found 2026-08-14.** **Done 2026-10-30: replaced, not shown both (owner), after the corpus check
+below.** Not a defect; the tile worked, but showed the weaker of two available signals. The
+"tile" is the green throttle arc inside the generator tachometer.
 
-**File:** `vtrux/src/main/assets/live-display/manifest.json` (currently lines 91–93)
+**Was** (`live-display/manifest.json` in `:vtrux` and the Vtrux `:companion` flavour):
 
 ```json
 "signals": ["Throttle_Position"],
@@ -484,13 +492,51 @@ More visibly for a live display: **with the engine off, APP reads 0.0 while TPS 
 
 TPS is the throttle *body* position, which the ECM modulates on its own for idle control and torque management. APP is the demand going into the ECM — the analog voltage the VCM generates via the APP GEN MOD, echoed back onto CAN.
 
-### Open decision
+### Open decision (closed 2026-10-30: replace)
 
 Whether to replace the tile or show both. Both is defensible — APP vs TPS divergence is exactly what you would watch to spot the ECM overriding the VCM's request — but it costs a tile slot. If replaced, delete the now-wrong `_note` rather than carrying it over.
 
 **Pending investigation (owner, 2026-10-29):** whether the ECM ever actually overrides the VCM's
 request is unchecked. Look for it in the full data set before deciding replace-or-both. On hold
 until Bug 4 is wrapped up.
+
+### Corpus check: the ECM does not override the VCM's request (2026-10-30)
+
+Script: `projects/vtrux/notes/artifacts/ecm_override_check.py` (reverse-it, Seafile). InfluxDB,
+OBD bus, the 56 sessions in which `Engine_Run_Active` is ever 1 (of 176 with APP; synced
+through 2026-10-29, the bench replays of `generator-on-then-off.log` no longer in the database).
+Each session's signals forward-filled onto a 100 ms grid.
+
+| Check | Result |
+|---|---|
+| `Accelerator_Effective_Position` (0x1C3) − `Accelerator_Actual_Position` | Equal in 97.6% of 1.76 M samples. The rest are ±1 to 6 raw counts (at most 2.4%), both signs, and never > 2.5% for 0.3 s: the two messages sampled at different instants, not a limit |
+| `Engine_Torque_Driver_Requested_Extended_Range` − `Engine_Torque_Actual_Extended_Range` (0x1C3), running, APP > 5% | No shortfall > 30 Nm lasting 3 s or more. 536 lasting 0.5–3 s; 483 of them within 1 s of the request rising by > 20 Nm, i.e. the engine catching up. The other 53 were not looked at one by one |
+| `Engine_Torque_Reduction_Failure_Status` (0x1C3) | Non-zero once: value 2 for 19 s in `vtrux_app_disconnect_test`, the deliberate unplugging of the APP source |
+| `Throttle_Position` (0x3D1) by APP band, running | Rises steadily with APP (median ~10% at idle, ~42% at APP 45–50%), goes to wide open (99%) above about APP 55–60%, and moves on its own between ~6% and ~27% at idle. The ECM's normal throttle-body strategy, not an override |
+
+Not checked: `Driver_Throttle_Override_Detected` (0x0C9) and `0x1C4`'s
+`Accelerator_Pedal_Override_Active` / `Limiting_Status` are excluded from the InfluxDB upload. In
+GM's definitions they belong to cruise control and to chassis (EBCM) torque requests, which the VCM
+holds constant on the OBD bus (`influx_upload.py` excludes 0x1C7 there for that reason); a raw-log
+scan would settle them.
+
+So a TPS-vs-APP comparison would mostly show the ECM's throttle map, not overrides: replaced.
+
+### Implemented (2026-10-30)
+
+- Both `live-display/manifest.json` copies subscribe `0x0C9` `Accelerator_Actual_Position` (obd,
+  5 Hz, latest) in place of `0x3D1` `Throttle_Position`; both `live-display/dbcs/obd.dbc` copies
+  carry the `BO_ 201` block (with its `CM_`/`VAL_` lines) from `GMW8762_PPEI_GMLAN.dbc` in place of
+  `BO_ 977`. `tools/distill_dbcs.py`'s spec (reverse-it) changed to match; its obd output now
+  equals the app copy message for message.
+- `GeneratorPanel` passes APP with `throttleFullScalePct = 70.0` (new `Tachometer` parameter,
+  default 100). The `GENE_RotSpd < 400` mask that hid TPS's ~29% engine-off reading is gone: APP
+  reads 0 with the engine stopped.
+- `ThrottleArcAssetsTest` (`:display`): both manifests subscribe APP on obd and no longer name
+  TPS; both DBCs decode B4 = 0x80 as 50.2%.
+- AVD check: a 60 s slice of `vtrux_20260724_211556_T20.log` (APP 16–45%) replayed through
+  `can_display_server.py`; the arc read about 45% where the log has 43–45%, and about 16% where
+  it has ~17%.
 
 ### Set the gauge range to 0–70%, not 0–100%
 

@@ -32,11 +32,13 @@ import threading
 import time
 from pathlib import Path
 
+from canre.utils.android_repo import sync_token  # noqa: E402
+
 ADB = Path("<ANDROID_SDK_DIR>/platform-tools/adb.exe")
 PY = ["py", "-3.11"]
 SERVER = Path("tools/can_display_server.py")
 BUS_IDENTITY = Path("tools/can_display_bus_identity_vtrux.json")
-TOKEN = "ex-g6_55Kt46lWujZCwlw9n60FZt51yI"
+TOKEN = sync_token()
 PKG = "com.reverseit.vtruxcompanion"
 ACTIVITY = f"{PKG}/com.reverseit.companion.LiveDisplayActivity"
 

@@ -113,10 +113,10 @@ Extracted the ring/circle graphic from `android-app/Coda_Logo.svg.png` (top ~65%
 
 ### Build Environment (Desktop)
 
-- `local.properties` must exist at `android-app/CanLoggerApps/local.properties` with `sdk.dir=<ANDROID_SDK_DIR>
-- JAVA_HOME must be set to `<ANDROID_STUDIO_JBR>` (JDK 17) — the system default java is 1.8 and will fail
+- `local.properties` must exist at `android-app/CanLoggerApps/local.properties` with `sdk.dir` set to the machine's Android SDK (paths: `local-paths.md` (this repo, gitignored) and `android-tools-reference.md` (Seafile `reverse-it/android-app/`))
+- JAVA_HOME must be set to Android Studio's bundled JBR (JDK 17) — the system default java is 1.8 and will fail
 - Gradlew must be invoked via PowerShell with explicit env var: `[System.Environment]::SetEnvironmentVariable('JAVA_HOME', ..., 'Process')`
-- ADB device connects over TCP: `<lan-ip>:39271` (port changes each wireless debug session)
+- ADB device connects over wireless debugging (the port changes each session)
 
 See `android-app/notes/canlogger-build-notes.md` for full build infrastructure notes.
 
@@ -133,7 +133,6 @@ Device: **A007 generic Chinese Android head unit** running Zlink (Android Auto /
 | Property | Value |
 |----------|-------|
 | Model | A007 (A007_C55_HA4_U464-12-EN-D) |
-| IP address | <lan-ip> |
 | Android version (Settings) | 12 |
 | `Build.VERSION.SDK_INT` reported to apps | **29** (spoofed — see below) |
 | Build number | A007-userdebug 12 SP1A.210812.016 2023042611123 release-keys |
@@ -146,7 +145,7 @@ Device: **A007 generic Chinese Android head unit** running Zlink (Android Auto /
 
 **SDK spoofing:** The device reports `Build.VERSION.SDK_INT = 29` to all apps despite running Android 12 (`SP1A.210812.016`). This is a known ROM-level compatibility hack on some generic Chinese head units. Any code that gates behaviour on `Build.VERSION.SDK_INT >= Build.VERSION_CODES.R` (30) will silently skip on this device even though Android 12 APIs are present. See `android-app/notes/canlogger-build-notes.md` for the workaround pattern.
 
-**Debug logging:** App embeds a TCP log server on port 9876 (started in `CodaApplication.onCreate()`). Connect from PC: `py -3.11 -c "import socket,time; s=socket.create_connection(('<lan-ip>',9876),5); s.settimeout(0.5); [...]"`. Crash logs from the previous run are replayed on next startup via `cache/last_crash.txt`.
+**Debug logging:** App embeds a TCP log server on port 9876 (started in `CodaApplication.onCreate()`). Connect from PC: `py -3.11 -c "import socket,time; s=socket.create_connection(('<head unit ip>',9876),5); s.settimeout(0.5); [...]"`. Crash logs from the previous run are replayed on next startup via `cache/last_crash.txt`.
 
 ### Outcome
 

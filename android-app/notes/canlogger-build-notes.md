@@ -332,53 +332,29 @@ Segmentation: rolls on size (50 MB), time (5 min), or vehicle `LogSegmentPolicy`
 
 ---
 
-## Build Environment — Desktop
+## Build Environment
 
-JDK 17 required — system default java is 1.8 and AGP 8.3.2 rejects it.
-- JDK 17: `<ANDROID_STUDIO_JBR>`
-- Android SDK: `<ANDROID_SDK_DIR>`
+AGP 8.3.2 needs JDK 17 to 21. A machine whose system Java is outside that range (1.8 on one
+Windows build machine, 25 on another) must point `JAVA_HOME` at a suitable JDK, e.g. Android
+Studio's bundled JBR. The per-machine JDK and SDK paths are not in git: see `local-paths.md` (this repo, gitignored) and `android-tools-reference.md` (Seafile `reverse-it/android-app/`).
 
-`local.properties` (not checked in, create locally):
-```
-sdk.dir=<ANDROID_SDK_DIR>
-```
+`local.properties` (not checked in, create locally) holds `sdk.dir=<ANDROID_SDK_DIR>
+`ANDROID_HOME` overrides it.
 
 Gradlew from bash (no `cd` needed — use `--project-dir`):
 ```bash
-JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr" \
+JAVA_HOME="<JDK 17-21>" \
   android-app/CanLoggerApps/gradlew.bat \
   --project-dir android-app/CanLoggerApps \
   :coda:assembleDebug
-# or :vtrux:assembleDebug
-
----
-
-## Build Environment — the bench PC
-
-- JDK 21 (Android Studio bundled JBR): `<ANDROID_STUDIO_JBR>` (no `1` suffix)
-- Android SDK: `%LOCALAPPDATA%\Android\Sdk`
-- AGP 8.3.2 accepts JDK 21 — no issues.
-
-`local.properties`:
-```
-sdk.dir=<ANDROID_SDK_DIR>
+# or :vtrux:assembleDebug; gradlew (no .bat) on Linux
 ```
 
-Gradlew from bash:
-```bash
-JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" \
-  android-app/CanLoggerApps/gradlew.bat \
-  --project-dir android-app/CanLoggerApps \
-  :vtrux:assembleDebug
-# or :coda:assembleDebug
-```
-
-**First-build gotcha:** Gradle auto-downloads build-tools 34.0.0 on first run. If a previous failed build left a corrupt install, delete `%LOCALAPPDATA%\Android\Sdk\build-tools\34.0.0` and the `.temp\` folder, then retry. Or reinstall via Android Studio SDK Manager.
-```
+**First-build gotcha:** Gradle auto-downloads build-tools 34.0.0 on first run. If a previous failed build left a corrupt install, delete `build-tools\34.0.0` under the Android SDK and the `.temp\` folder, then retry. Or reinstall via Android Studio SDK Manager.
 
 ### `JAVA_HOME` is not optional here — the system JDK breaks the build
 
-Found 2026-08-13. The system default JDK on this machine is **Eclipse Adoptium 25.0.2**, and
+Found 2026-08-13. The system default JDK on one Windows build machine is **Eclipse Adoptium 25.0.2**, and
 Kotlin 1.9.22's `JavaVersion.parse` cannot read that version string. Building without `JAVA_HOME`
 pointed at the bundled JBR fails while *compiling the build script itself*:
 
@@ -398,12 +374,12 @@ Two things make this harder to recognise than it should be:
 The fix is the `JAVA_HOME` prefix already shown above — always pass it. In PowerShell:
 
 ```powershell
-$env:JAVA_HOME = "<ANDROID_STUDIO_JBR>"
+$env:JAVA_HOME = "<JDK 17-21>"
 ```
 
 **Deliberately not fixed by pinning `org.gradle.java.home` in `gradle.properties`.** That file
 syncs across machines via SeaDrive and is shared by all four app modules, so a machine-specific
-absolute path there would break the build on Desktop rather than fix it here. Setting it
+absolute path there would break the build on the other machines rather than fix it on this one. Setting it
 per-invocation keeps the workaround local to the machine that needs it. Whether to pin it anyway
 is the owner's call and has not been decided.
 
@@ -418,16 +394,16 @@ adb -s <transport> install -r vtrux\build\outputs\apk\debug\vtrux-debug.apk
 adb -s <transport> install -r coda\build\outputs\apk\debug\coda-debug.apk
 ```
 
-**ADB install rule — always use `-r`:** `adb install -r` (reinstall) preserves USB permissions, Magisk superuser grants, and storage permissions. Uninstalling and reinstalling wipes all of these, requiring the user to re-approve every permission and re-grant in Magisk. Only uninstall (`adb uninstall`) when switching build machines, because each machine has a different debug keystore and `-r` will fail with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` if the signing key differs.
+**ADB install rule — always use `-r`:** `adb install -r` (reinstall) preserves USB permissions, Magisk superuser grants, and storage permissions. Uninstalling and reinstalling wipes all of these, requiring the user to re-approve every permission and re-grant in Magisk, and also deletes the app's logs and TPMS store. Never uninstall. Every debug and release build on every machine is signed with the one project keystore from `reverseit.secretsDir` (Change 15), so `-r` works across build machines. `INSTALL_FAILED_UPDATE_INCOMPATIBLE` means the device has an app signed with another key; bring it to the owner rather than uninstalling.
 
-Copy to head unit drop folder (increment N from the highest existing number):
-```powershell
-Copy-Item '<repo>\android-app\CanLoggerApps\coda\build\outputs\apk\debug\coda-debug.apk' 'E:\Google Drive\To Seafile\coda-debug (N).apk'
-```
+The head unit gets release builds (`:coda:assembleRelease`, Change 15), uploaded to the drop folder
+as `coda-release (N).apk`, N the next unused number (one sequence with the older `coda-debug (N).apk`
+names; never reuse a name). The folder and the upload command are per machine, see
+`android-tools-reference.md`, *Coda APK dropoff*. A debug build goes there only if the owner asks.
 
-Head unit installs the APK from SeaDrive on the car's Android head unit (<lan-ip>). The head unit's file manager can browse `E:\Google Drive\To Seafile\` via the SeaDrive sync folder.
+The head unit installs the APK from that folder through its file manager.
 
-ADB device (phone): connected over TCP at `<lan-ip>:39789` (port changes each wireless debug session — check `canlogger-build-notes.md` for latest).
+ADB device (phone): connected over wireless debugging; the address and port change each session.
 
 ---
 
@@ -435,10 +411,10 @@ ADB device (phone): connected over TCP at `<lan-ip>:39789` (port changes each wi
 
 Using `tools/can_replayer.py` (now run from the can-tools git clone, `~/Git/can-tools/tools/can_replayer.py`; reverse-it's copy was deleted 2026-10-31) with PEAK PCAN-USB dongle on PC → Innomaker on phone OTG.
 
-`--bus N` filters to a single log channel. `--skip-confirmation` skips the "Press Enter" prompt (required when running non-interactively). Bus numbers vary by dongle insertion order — always identify by anchor IDs, not bus number.
+`--bus` replays a single bus. Since the can-tools cutover it takes a bus name found by anchor IDs, with `--vehicle` (e.g. `--vehicle vtrux --bus powertrain`), or a channel number, which on BUSMASTER or TRC input also needs `--raw-channel`. Bus numbers vary by dongle insertion order — prefer the anchor-named form. `--skip-confirmation` skips the "Press Enter" prompt (required when running non-interactively). With two or more adapters attached, `--adapter BUS=ID` picks the one to send on (ids are listed at startup). Options: `can_replayer.py --help`.
 
 ```bash
-py -3.11 tools/can_replayer.py <log> --bus N --bitrate 500000 --skip-confirmation
+<python> ~/Git/can-tools/tools/can_replayer.py <log> --vehicle <vehicle> --bus <name> --bitrate 500000 --skip-confirmation
 ```
 
 **Vtrux PT bus anchor:** `0x051` @ ~100 Hz. Known bus mapping for `generator on then off.log`:
@@ -448,7 +424,7 @@ py -3.11 tools/can_replayer.py <log> --bus N --bitrate 500000 --skip-confirmatio
 | 2 | Vehicle |
 | 3 | **Powertrain** — 0x051 present |
 
-Replay Vtrux PT bus: `can_replayer.py "generator on then off.log" --bus 3 --bitrate 500000 --skip-confirmation`
+Replay Vtrux PT bus: `can_replayer.py "generator on then off.log" --vehicle vtrux --bus powertrain --bitrate 500000 --skip-confirmation` (before the cutover: `--bus 3`)
 
 **Verification (2026-03-22):** Replayed 144,540 frames, phone logged 144,271 (0.2% drop — normal). Log landed at `/sdcard/VtruxLogs/vtrux_<session>_T1.log`, parsed correctly by `survey.py`.
 
@@ -548,11 +524,11 @@ Full hardware details in `projects/coda/notes/android-coda-app-notes.md`.
 
 **`local.properties` not synced:** This file is gitignored by convention and not in SeaDrive sync. Must be recreated on each machine.
 
-**`build/` directories ARE synced, and they carry absolute paths (found 2026-08-13):** SeaDrive syncs the Gradle `build/` folders between machines, and AGP caches machine-specific absolute paths inside them. Building on a second machine then fails in dexing with:
+**`build/` directories ARE synced (in the Seafile era, before git), and they carry absolute paths (found 2026-08-13):** SeaDrive syncs the Gradle `build/` folders between machines, and AGP caches machine-specific absolute paths inside them. Building on a second machine then fails in dexing with:
 
 ```
 Execution failed for DexingNoClasspathTransform: ...\cancore\build\intermediates\runtime_library_classes_dir\...
-  > this and base files have different roots: <repo-root>\NotGit\reverse-it\... and <repo>
+  > this and base files have different roots: <Seafile folder on machine A>\... and <SeaDrive folder on machine B>\...
 ```
 
 Nothing is wrong with the source. Delete the affected `build/` directories (`cancore/`, `coda/`, `vtrux/`) and rebuild — about 30 s. Worth suspecting first whenever a build fails right after switching machines, since the error names a path that does not exist on the current one.
@@ -641,7 +617,7 @@ The 120-ohm CAN terminator resistor used on the bench test bus is broken (exact 
 
 ### Device: OnePlus 7T (HD1901), Android 14, Magisk root
 
-ADB port at time of session: `<lan-ip>:38463` (changes each wireless debug session).
+ADB over wireless debugging (the port changes each session).
 
 ### Bug: Log session trigger wrong (screen instead of power)
 
@@ -744,22 +720,22 @@ Fix: `CanPipelineManager.removeDevice()` now returns `Boolean` (true = was activ
 
 ---
 
-## Session 2026-04-01 — the bench PC Setup + Power Sequencing Rewrite
+## Session 2026-04-01 — Second Windows Build Machine Setup + Power Sequencing Rewrite
 
-### Build environment (the bench PC)
-- Android Studio installed fresh (Meerkat era), JBR JDK 21, SDK path `%LOCALAPPDATA%\Android\Sdk`
-- `local.properties` updated for this machine's username
+### Build environment (second Windows build machine)
+- Android Studio installed fresh (Meerkat era), JBR JDK 21
+- `local.properties` updated for this machine's SDK path
 - First build required Gradle to auto-download build-tools 34.0.0 and platform 34; initial download corrupted due to `FileAlreadyExistsException`, fixed by cleaning `.temp/` folder and retrying
-- See "Build Environment -- the bench PC" section above for full details
+- See "Build Environment" above
 
-### ADB on the bench PC
-- ADB pairing via PowerShell works: `& '%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe' pair <ip:port> <code>`
+### ADB on the second Windows build machine
+- ADB pairing via PowerShell works: `& '<Android SDK>\platform-tools\adb.exe' pair <ip:port> <code>`
 - Bash `adb pair` with positional code argument gives "protocol fault" -- use PowerShell for all adb commands on this machine
 - mDNS discovery works after pairing (device shows as `adb-<guid>._adb-tls-connect._tcp`)
 - If mDNS doesn't find the device, `adb connect <ip:port>` using the port from the Wireless Debugging main screen (not the pairing port)
 
 ### Devices
-- OnePlus 7T (HD1901): wireless ADB, guid `adb-16e7d2b3-RSkDoo`
+- OnePlus 7T (HD1901): wireless ADB
 - Pixel 8 Pro (husky): USB, serial `41270DLJG00054`
 - Both have the vtrux app installed
 
@@ -796,26 +772,26 @@ ADB is on the system PATH — use `adb` directly, no full SDK path needed.
 
 **Always use PowerShell, never Git Bash for ADB.** Git Bash mangles `/sdcard/...` device paths into `C:/Program Files/Git/sdcard/...`. Run ADB commands directly from PowerShell or via `powershell -Command "adb ..."`.
 
-**Transport IDs:** After pairing, the OnePlus 7T (guid `16e7d2b3`) shows up as mDNS transport `adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp` (no space variant). If the device shows `offline` after a WiFi drop, run `adb disconnect <lan-ip>:<port>` then `adb connect <lan-ip>:<port>` using the current port from Developer Options → Wireless Debugging. The port changes every time wireless debugging is toggled — check the phone screen each session.
+**Transport IDs:** After pairing, the OnePlus 7T shows up as mDNS transport `<phone transport id>._adb-tls-connect._tcp` (no space variant). If the device shows `offline` after a WiFi drop, run `adb disconnect <phone ip>:<port>` then `adb connect <phone ip>:<port>` using the current port from Developer Options → Wireless Debugging. The port changes every time wireless debugging is toggled — check the phone screen each session.
 
 ```powershell
 # Pull a log file
-adb -s "adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp" pull /sdcard/VtruxLogs/vtrux_<session>_T0.log E:\path\to\out.log
+adb -s "<phone transport id>._adb-tls-connect._tcp" pull /sdcard/VtruxLogs/vtrux_<session>_T0.log E:\path\to\out.log
 
 # Shell command
-adb -s "adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp" shell "ls -lh /sdcard/VtruxLogs/"
+adb -s "<phone transport id>._adb-tls-connect._tcp" shell "ls -lh /sdcard/VtruxLogs/"
 
 # Install (always -r, see ADB install rule above)
-adb -s "adb-16e7d2b3-RSkDoo._adb-tls-connect._tcp" install -r vtrux\build\outputs\apk\debug\vtrux-debug.apk
+adb -s "<phone transport id>._adb-tls-connect._tcp" install -r vtrux\build\outputs\apk\debug\vtrux-debug.apk
 ```
 
-**Building on Desktop:** System Java is 1.8, which AGP 8.3.2 rejects. Use `build_vtrux.ps1` (in `android-app/CanLoggerApps/`) which sets `JAVA_HOME` to the Android Studio1 JBR before invoking Gradle:
+**Building on Desktop:** System Java is 1.8, which AGP 8.3.2 rejects. Use `build_vtrux.ps1` (in `android-app/CanLoggerApps/`), which needs `JAVA_HOME` set to a JDK 17-21 (the Android Studio JBR; path in `local-paths.md`) and stops if it is not:
 ```powershell
 powershell -File "android-app/CanLoggerApps/build_vtrux.ps1"
 ```
 APK output: `vtrux/build/outputs/apk/debug/vtrux-debug.apk`
 
-`local.properties` must have `sdk.dir=<ANDROID_SDK_DIR>
+`local.properties` must have `sdk.dir` set to this machine's Android SDK (`local-paths.md`).
 
 ### Terminator fixed; TX buffer overflow root-caused
 

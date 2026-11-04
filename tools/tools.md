@@ -22,7 +22,7 @@ When writing scripts or scratchpads that touch `CANFrame` objects:
 ---
 
 ## distill_dbcs.py
-*Source last modified: 2026-10-30 22:59:06*
+*Source last modified: 2026-11-03 20:51:57*
 *Consumed by: the Vtrux live display, `live-display/dbcs/{powertrain,obd}.dbc` in the `:vtrux` app and the Vtrux `:companion` flavour (Android repo `android-canbus-apps`)*
 
 Builds one small DBC per named bus for the live display, holding only the
@@ -44,14 +44,15 @@ py -3.12 tools/distill_dbcs.py --wican-diag-dbc <tmp>/wican.dbc --out <tmp>/dbcs
 **The app assets have drifted from this tool** (since 2026-09: `0x460`, added
 by hand for the fault display, is not in SPEC, and some comments differ). Do
 not let it overwrite them: generate with `--out` and carry over the change.
-Its default output folders still point at the Seafile copy of the apps, frozen
-since the move to git (git migration plan, step 4a).
+Its default output folders are the two asset folders in the `android-canbus-apps`
+clone, found through `canre.utils.android_repo` (`$ANDROID_APPS_REPO`, default
+`~/Git/android-canbus-apps`). It writes LF on every machine.
 
 ---
 
 ## dbc_parity_generate.py
-*Source last modified: 2026-05-10*
-*Consumed by: `android-app/CanLoggerApps/cancore/src/test/java/com/reverseit/cancore/DbcParityTest.kt`*
+*Source last modified: 2026-11-03 20:42:41*
+*Consumed by: `CanLoggerApps/cancore/src/test/java/com/reverseit/cancore/DbcParityTest.kt` in the `android-canbus-apps` clone*
 
 Generates parity test cases for the Kotlin DBC decoder by running each
 Vtrux DBC through cantools and dumping the (payload -> decoded signals)
@@ -60,6 +61,9 @@ non-multiplexed message, generates N random payloads. For multiplexed
 messages, generates N payloads per mux value (with the multiplexer bits
 forced to each value in turn). Copies the source DBC files into
 `cancore/src/test/resources/dbcs/` so the test has self-contained fixtures.
+The default output is the `android-canbus-apps` clone's `:cancore` test
+resources (`canre.utils.android_repo`); `--output-dir` overrides it. The TSV is
+written LF on every machine.
 
 **Requires:** `pip install cantools` (already a project dep).
 
@@ -120,8 +124,8 @@ distinct signal names in the TSV changed only as intended, and that the test pas
 ---
 
 ## slcan_parity_generate.py
-*Source last modified: 2026-08-12 22:49:05*
-*Consumed by: `android-app/CanLoggerApps/cancore/src/test/java/com/reverseit/cancore/SlcanParityTest.kt`*
+*Source last modified: 2026-11-03 20:42:58*
+*Consumed by: `CanLoggerApps/cancore/src/test/java/com/reverseit/cancore/SlcanParityTest.kt` in the `android-canbus-apps` clone*
 
 Generates parity expectations for the Kotlin `SlcanReader`, which reads the
 LAWICEL/SLCAN ASCII stream the 914 VCU emits over USB CDC serial. Holds a
@@ -149,7 +153,8 @@ py -3.12 tools/slcan_parity_generate.py
 **Optional flags:**
 ```
   --fixture-dir DIR  where the captures live (default: ../914/notes/artifacts)
-  --output-dir DIR   cancore test resources root
+  --output-dir DIR   cancore test resources root (default: the android-canbus-apps
+                     clone's, via canre.utils.android_repo)
   --fixtures ...     override the fixture list
   --samples N        frames sampled from each end (default: 20)
 ```

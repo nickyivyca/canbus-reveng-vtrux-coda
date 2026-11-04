@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -192,8 +193,10 @@ class DriveRowProducerTest {
 
     @Test
     fun `temperature byte positions and scaling agree with the B CAN DBC`() {
-        // Gradle runs JVM tests with the module directory as the working directory.
-        val dbc = com.reverseit.cancore.DbcParser.parse(File("../../../projects/coda/CODA-B-CAN.dbc").readText())
+        // The DBC lives in the reverse-it Seafile folder, named by REVERSE_IT_DIR as in the ESP projects.
+        val root = System.getenv("REVERSE_IT_DIR")
+        assumeTrue("REVERSE_IT_DIR not set", !root.isNullOrEmpty())
+        val dbc = com.reverseit.cancore.DbcParser.parse(File(root, "projects/coda/CODA-B-CAN.dbc").readText())
         val rnd = Random(5)
         for (ch in WheelRatioExtractor.TEMP_CHANNELS) {
             val sig = dbc.messages.getValue(ch.id).signalsByName.getValue(ch.name)

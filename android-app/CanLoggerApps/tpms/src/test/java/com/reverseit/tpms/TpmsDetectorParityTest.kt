@@ -10,7 +10,7 @@ import org.junit.Test
  * prototype's corpus epoch file (154 real drives, Feb-Sep 2026) under a grid of settings.
  *
  * Fixture: `src/test/resources/detector_parity/`, written by
- * `android-app/notes/artifacts/tpms_detector_parity.py`. Regenerate it whenever the corpus CSV or
+ * `tools/tpms_detector_parity.py`. Regenerate it whenever the corpus CSV or
  * the prototype changes.
  *
  * Requires, per settings case: the same events (drive and kind) in the same order, the same final
